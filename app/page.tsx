@@ -20,6 +20,8 @@ import {
   type DrivePhotoLocation,
   getPlaceDetails,
   getPlacesUsage,
+  getSharedPhotoBlob,
+  getSharedPhotos,
   getSharedTrip,
   GoogleDriveError,
   organizeDriveFile,
@@ -27,6 +29,7 @@ import {
   type PlacesUsage,
   saveSharedTrip,
   searchPlaces,
+  type SharedPhoto,
   type SharedTripState,
   type TripDay,
   type TripMember,
@@ -108,6 +111,28 @@ function googleMapsDirectionsUrl(place: string, placeId?: string): string {
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(place.trim())}${placeIdParameter}`;
 }
 
+function galleryDate(value: string): string {
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-AU", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function groupPhotosByPerson(photos: SharedPhoto[]): Array<{ id: string; name: string; photos: SharedPhoto[] }> {
+  const groups = new Map<string, { id: string; name: string; photos: SharedPhoto[] }>();
+  photos.forEach((photo) => {
+    const id = photo.memberId || photo.memberName;
+    const existing = groups.get(id);
+    if (existing) existing.photos.push(photo);
+    else groups.set(id, { id, name: photo.memberName || "Family member", photos: [photo] });
+  });
+  return Array.from(groups.values());
+}
+
 export default function Home() {
   const [tripName, setTripName] = useState(initialTripName);
   const tripId = sharedTripId;
@@ -143,9 +168,16 @@ export default function Home() {
   const [placeSearchState, setPlaceSearchState] = useState<"idle" | "searching" | "choosing">("idle");
   const [placeSearchError, setPlaceSearchError] = useState<string | null>(null);
   const [placesUsage, setPlacesUsage] = useState<PlacesUsage | null>(null);
+  const [activeTab, setActiveTab] = useState<"itinerary" | "gallery">("itinerary");
+  const [sharedPhotos, setSharedPhotos] = useState<SharedPhoto[]>([]);
+  const [sharedPhotoUrls, setSharedPhotoUrls] = useState<Record<string, string>>({});
+  const [galleryState, setGalleryState] = useState<"idle" | "loading" | "ready" | "offline" | "error">("idle");
+  const [galleryError, setGalleryError] = useState<string | null>(null);
   const [hasLoadedLocalState, setHasLoadedLocalState] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const previewUrlsRef = useRef(new Map<string, string>());
+  const sharedPhotoUrlsRef = useRef(new Map<string, string>());
+  const galleryRequestRef = useRef(0);
   const lastSavedTripRef = useRef("");
   const lastSyncedTripRef = useRef<SharedTripState | null>(null);
   const placeSearchTimerRef = useRef<number | null>(null);
@@ -156,6 +188,65 @@ export default function Home() {
     () => members.find((member) => member.id === currentMemberId),
     [currentMemberId, members],
   );
+
+  const refreshSharedGallery = useCallback(async () => {
+    if (!navigator.onLine) {
+      setGalleryState("offline");
+      return;
+    }
+
+    const requestId = galleryRequestRef.current + 1;
+    galleryRequestRef.current = requestId;
+    setGalleryState("loading");
+    setGalleryError(null);
+
+    try {
+      const photos = await getSharedPhotos(sharedTripId, tripName.trim() || initialTripName);
+      if (galleryRequestRef.current !== requestId) return;
+      setSharedPhotos(photos);
+
+      const liveFileIds = new Set(photos.map((photo) => photo.fileId));
+      sharedPhotoUrlsRef.current.forEach((url, fileId) => {
+        if (!liveFileIds.has(fileId)) {
+          URL.revokeObjectURL(url);
+          sharedPhotoUrlsRef.current.delete(fileId);
+        }
+      });
+
+      const missing = photos.filter((photo) => !sharedPhotoUrlsRef.current.has(photo.fileId));
+      let unavailableCount = 0;
+      for (let start = 0; start < missing.length; start += 3) {
+        const batch = missing.slice(start, start + 3);
+        const loaded = await Promise.all(batch.map(async (photo) => {
+          try {
+            const downloaded = await getSharedPhotoBlob(sharedTripId, photo.fileId);
+            return { photo, url: URL.createObjectURL(downloaded.blob) };
+          } catch {
+            return { photo, url: "" };
+          }
+        }));
+        if (galleryRequestRef.current !== requestId) {
+          loaded.forEach((item) => { if (item.url) URL.revokeObjectURL(item.url); });
+          return;
+        }
+        loaded.forEach(({ photo, url }) => {
+          if (url) sharedPhotoUrlsRef.current.set(photo.fileId, url);
+          else unavailableCount += 1;
+        });
+        setSharedPhotoUrls(Object.fromEntries(sharedPhotoUrlsRef.current));
+      }
+
+      setSharedPhotoUrls(Object.fromEntries(sharedPhotoUrlsRef.current));
+      setGalleryState("ready");
+      if (unavailableCount > 0) {
+        setGalleryError(`${unavailableCount} shared snapshot${unavailableCount === 1 ? "" : "s"} could not be opened. Tap Refresh to try again.`);
+      }
+    } catch (error) {
+      if (galleryRequestRef.current !== requestId) return;
+      setGalleryState("error");
+      setGalleryError(error instanceof Error ? error.message : "The shared photo gallery could not be loaded.");
+    }
+  }, [tripName]);
 
   const refreshSharedItinerary = useCallback(async () => {
     if (!navigator.onLine) {
@@ -278,6 +369,32 @@ export default function Home() {
       previewUrlsRef.current.clear();
     };
   }, [refreshSharedItinerary]);
+
+  useEffect(() => () => {
+    galleryRequestRef.current += 1;
+    sharedPhotoUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    sharedPhotoUrlsRef.current.clear();
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== "gallery" || !hasLoadedLocalState || !tripAccessKey) return;
+    const initialRefreshId = window.setTimeout(() => void refreshSharedGallery(), 0);
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible" && navigator.onLine) void refreshSharedGallery();
+    };
+    const intervalId = window.setInterval(refreshWhenVisible, 30_000);
+    window.addEventListener("focus", refreshWhenVisible);
+    window.addEventListener("online", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearTimeout(initialRefreshId);
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshWhenVisible);
+      window.removeEventListener("online", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [activeTab, hasLoadedLocalState, refreshSharedGallery, tripAccessKey]);
 
   useEffect(() => {
     if (!hasLoadedLocalState) return;
@@ -965,6 +1082,7 @@ export default function Home() {
           `${organizationFailures} existing Drive ${organizationFailures === 1 ? "copy" : "copies"} could not be reorganized. Tap refresh to try again.`,
         );
       }
+      if (activeTab === "gallery") void refreshSharedGallery();
       await refreshStorageHealth();
     } catch (error) {
       setGoogleState("disconnected");
@@ -994,6 +1112,23 @@ export default function Home() {
           <span className="avatar locked" aria-label={`${currentMember?.name || "Family member"} profile locked to this device`}>{profileInitials}</span>
         )}
       </header>
+
+      <nav className="primary-tabs" aria-label="App sections">
+        <button
+          className={activeTab === "itinerary" ? "active" : ""}
+          aria-current={activeTab === "itinerary" ? "page" : undefined}
+          onClick={() => setActiveTab("itinerary")}
+        >
+          Itinerary
+        </button>
+        <button
+          className={activeTab === "gallery" ? "active" : ""}
+          aria-current={activeTab === "gallery" ? "page" : undefined}
+          onClick={() => setActiveTab("gallery")}
+        >
+          Photo Gallery
+        </button>
+      </nav>
 
       <section className={`connection-card ${isOffline ? "offline" : "online"}`}>
         <span className="connection-dot" aria-hidden="true" />
@@ -1063,6 +1198,8 @@ export default function Home() {
         </aside>
       )}
 
+      {activeTab === "itinerary" ? (
+        <>
       <nav className="day-strip" aria-label="Trip days">
         {days.map((day, index) => {
           const date = new Date(`${day.date}T12:00:00`);
@@ -1278,6 +1415,93 @@ export default function Home() {
           </article>
         )}
       </section>
+        </>
+      ) : (
+        <section className="gallery-page" aria-labelledby="gallery-title">
+          <header className="gallery-page-heading">
+            <div>
+              <p className="eyebrow">Shared family memories</p>
+              <h1 id="gallery-title">Photo Gallery</h1>
+              <p>Every uploaded snapshot, organised by day, stop and photographer.</p>
+            </div>
+            <button className="secondary-button" onClick={() => void refreshSharedGallery()} disabled={galleryState === "loading" || isOffline}>
+              {galleryState === "loading" ? "Refreshing…" : "Refresh"}
+            </button>
+          </header>
+
+          {galleryError && <p className="gallery-alert" role="alert">{galleryError}</p>}
+          {galleryState === "offline" && (
+            <p className="gallery-alert">The shared gallery needs an internet connection. Your itinerary and queued uploads remain available offline.</p>
+          )}
+
+          <div className="gallery-days">
+            {days.map((day, dayIndex) => (
+              <section className="gallery-day" key={day.id} aria-labelledby={`gallery-${day.id}`}>
+                <header className="gallery-day-heading">
+                  <h2 id={`gallery-${day.id}`}>Day {dayIndex + 1}: {day.label}</h2>
+                  <time dateTime={day.date}>{galleryDate(day.date)}</time>
+                </header>
+
+                <div className="gallery-stops">
+                  {day.stops.length === 0 ? (
+                    <div className="gallery-empty-stop">No stops have been added to this day yet.</div>
+                  ) : day.stops.map((stop, stopIndex) => {
+                    const stopPhotos = sharedPhotos.filter((photo) => photo.dayId === day.id && photo.stopId === stop.id);
+                    const groups = groupPhotosByPerson(stopPhotos);
+                    return (
+                      <article className="gallery-stop" key={stop.id}>
+                        <header className="gallery-stop-heading">
+                          <div>
+                            <p>Stop {stopIndex + 1}</p>
+                            <h3>{stop.title}</h3>
+                          </div>
+                          {stop.time && <time>{stop.time}</time>}
+                        </header>
+
+                        {groups.length === 0 ? (
+                          <div className="gallery-empty-stop">
+                            <span aria-hidden="true">▧</span>
+                            <p>No shared snapshots yet.</p>
+                          </div>
+                        ) : groups.map((group) => (
+                          <section className="person-snapshots" key={group.id} aria-labelledby={`snapshots-${stop.id}-${group.id}`}>
+                            <div className="person-snapshots-heading">
+                              <span className="member-avatar" aria-hidden="true">{group.name.slice(0, 1).toUpperCase()}</span>
+                              <h4 id={`snapshots-${stop.id}-${group.id}`}>{group.name}&apos;s Snapshots</h4>
+                              <small>{group.photos.length} photo{group.photos.length === 1 ? "" : "s"}</small>
+                            </div>
+                            <div className="shared-photo-grid">
+                              {group.photos.map((photo) => {
+                                const photoUrl = sharedPhotoUrls[photo.fileId];
+                                return (
+                                  <figure className="shared-photo-card" key={photo.fileId}>
+                                    {photoUrl ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img src={photoUrl} alt={`${group.name}'s snapshot at ${stop.title}`} loading="lazy" />
+                                    ) : (
+                                      <div className="shared-photo-loading">Loading snapshot…</div>
+                                    )}
+                                    <figcaption>
+                                      <time dateTime={photo.createdAt}>
+                                        {new Date(photo.createdAt).toLocaleString("en-AU", { dateStyle: "medium", timeStyle: "short" })}
+                                      </time>
+                                      {photoUrl && <a href={photoUrl} download={photo.name}>Save photo</a>}
+                                    </figcaption>
+                                  </figure>
+                                );
+                              })}
+                            </div>
+                          </section>
+                        ))}
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        </section>
+      )}
 
       {showSettings && isAdmin && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowSettings(false)}>
