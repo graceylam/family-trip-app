@@ -1,0 +1,11 @@
+{
+  "name": "Family Trip",
+  "short_name": "Family Trip",
+  "description": "A safe, offline-first family itinerary and shared trip gallery.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f4ed",
+  "theme_color": "#214d3c",
+  "icons": []
+}
