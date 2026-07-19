@@ -19,10 +19,14 @@ type GatewayResponse = {
   suggestions?: PlaceSuggestion[];
   place?: PlaceDetails;
   usage?: PlacesUsage;
+  photos?: SharedPhoto[];
+  photoData?: string;
+  mimeType?: string;
+  fileName?: string;
 };
 
 type GatewayPayload = Record<string, unknown> & {
-  action: "ping" | "getTrip" | "saveTrip" | "upload" | "organize" | "delete" | "placesUsage" | "placesAutocomplete" | "placeDetails";
+  action: "ping" | "getTrip" | "saveTrip" | "upload" | "listPhotos" | "getPhoto" | "organize" | "delete" | "placesUsage" | "placesAutocomplete" | "placeDetails";
 };
 
 export type TripStop = {
@@ -95,6 +99,19 @@ export type DrivePhotoLocation = {
   memberId: string;
   memberName: string;
   previousTripId?: string;
+};
+
+export type SharedPhoto = {
+  fileId: string;
+  photoId: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  createdAt: string;
+  dayId: string;
+  stopId: string;
+  memberId: string;
+  memberName: string;
 };
 
 export class GoogleDriveError extends Error {
@@ -244,6 +261,7 @@ export async function uploadPhotoToDrive(
     photoId: photo.id,
     name: photo.name,
     mimeType: photo.mimeType,
+    createdAt: photo.createdAt,
     data: await blobToBase64(photo.blob),
   });
 
@@ -251,6 +269,28 @@ export async function uploadPhotoToDrive(
     throw new GoogleDriveError("Google Drive did not return the uploaded file ID.", false);
   }
   return response.fileId;
+}
+
+export async function getSharedPhotos(tripId: string, tripName: string): Promise<SharedPhoto[]> {
+  const response = await gatewayRequest({ action: "listPhotos", tripId, tripName });
+  if (!response.photos) {
+    throw new GoogleDriveError("Google Drive did not return the shared photo gallery.", false);
+  }
+  return response.photos;
+}
+
+export async function getSharedPhotoBlob(tripId: string, fileId: string): Promise<{ blob: Blob; name: string }> {
+  const response = await gatewayRequest({ action: "getPhoto", tripId, fileId });
+  if (!response.photoData || !response.mimeType) {
+    throw new GoogleDriveError("Google Drive did not return that shared photo.", false);
+  }
+  const binary = window.atob(response.photoData);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return {
+    blob: new Blob([bytes], { type: response.mimeType }),
+    name: response.fileName || "Trip photo",
+  };
 }
 
 export async function organizeDriveFile(
