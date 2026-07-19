@@ -16,10 +16,13 @@ type GatewayResponse = {
   retryable?: boolean;
   fileId?: string;
   trip?: SharedTripState;
+  suggestions?: PlaceSuggestion[];
+  place?: PlaceDetails;
+  usage?: PlacesUsage;
 };
 
 type GatewayPayload = Record<string, unknown> & {
-  action: "ping" | "getTrip" | "saveTrip" | "upload" | "organize" | "delete";
+  action: "ping" | "getTrip" | "saveTrip" | "upload" | "organize" | "delete" | "placesUsage" | "placesAutocomplete" | "placeDetails";
 };
 
 export type TripStop = {
@@ -28,6 +31,36 @@ export type TripStop = {
   title: string;
   place: string;
   note: string;
+  placeId?: string;
+  latitude?: number;
+  longitude?: number;
+  googleMapsUrl?: string;
+};
+
+export type PlaceSuggestion = {
+  placeId: string;
+  text: string;
+};
+
+export type PlaceDetails = {
+  placeId: string;
+  name: string;
+  address: string;
+  latitude: number | null;
+  longitude: number | null;
+  googleMapsUrl: string;
+};
+
+export type PlacesUsage = {
+  enabled: boolean;
+  month: string;
+  resetDate: string;
+  safeLimit: number;
+  googleFreeAllowance: number;
+  autocompleteUsed: number;
+  autocompleteRemaining: number;
+  detailsUsed: number;
+  detailsRemaining: number;
 };
 
 export type TripDay = {
@@ -242,4 +275,26 @@ export async function deleteDriveFile(
     fileId,
     previousTripId,
   });
+}
+
+export async function getPlacesUsage(): Promise<PlacesUsage> {
+  const response = await gatewayRequest({ action: "placesUsage" });
+  if (!response.usage) throw new GoogleDriveError("Google Places usage was unavailable.", false);
+  return response.usage;
+}
+
+export async function searchPlaces(input: string, sessionToken: string): Promise<{ suggestions: PlaceSuggestion[]; usage: PlacesUsage }> {
+  const response = await gatewayRequest({ action: "placesAutocomplete", input, sessionToken });
+  if (!response.suggestions || !response.usage) {
+    throw new GoogleDriveError("Google Places did not return search suggestions.", false);
+  }
+  return { suggestions: response.suggestions, usage: response.usage };
+}
+
+export async function getPlaceDetails(placeId: string, sessionToken: string): Promise<{ place: PlaceDetails; usage: PlacesUsage }> {
+  const response = await gatewayRequest({ action: "placeDetails", placeId, sessionToken });
+  if (!response.place || !response.usage) {
+    throw new GoogleDriveError("Google Places did not return that location.", false);
+  }
+  return { place: response.place, usage: response.usage };
 }

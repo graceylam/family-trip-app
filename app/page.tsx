@@ -18,10 +18,15 @@ import {
   configureGoogleDriveGateway,
   deleteDriveFile,
   type DrivePhotoLocation,
+  getPlaceDetails,
+  getPlacesUsage,
   getSharedTrip,
   GoogleDriveError,
   organizeDriveFile,
+  type PlaceSuggestion,
+  type PlacesUsage,
   saveSharedTrip,
+  searchPlaces,
   type SharedTripState,
   type TripDay,
   type TripMember,
@@ -98,8 +103,9 @@ function googleMapsSearchUrl(place: string): string {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.trim())}`;
 }
 
-function googleMapsDirectionsUrl(place: string): string {
-  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(place.trim())}`;
+function googleMapsDirectionsUrl(place: string, placeId?: string): string {
+  const placeIdParameter = placeId ? `&destination_place_id=${encodeURIComponent(placeId)}` : "";
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(place.trim())}${placeIdParameter}`;
 }
 
 export default function Home() {
@@ -133,11 +139,18 @@ export default function Home() {
   const [newDayDate, setNewDayDate] = useState("");
   const [newMemberName, setNewMemberName] = useState("");
   const [copiedMemberId, setCopiedMemberId] = useState("");
+  const [placeSuggestions, setPlaceSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [placeSearchState, setPlaceSearchState] = useState<"idle" | "searching" | "choosing">("idle");
+  const [placeSearchError, setPlaceSearchError] = useState<string | null>(null);
+  const [placesUsage, setPlacesUsage] = useState<PlacesUsage | null>(null);
   const [hasLoadedLocalState, setHasLoadedLocalState] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const previewUrlsRef = useRef(new Map<string, string>());
   const lastSavedTripRef = useRef("");
   const lastSyncedTripRef = useRef<SharedTripState | null>(null);
+  const placeSearchTimerRef = useRef<number | null>(null);
+  const placeSearchRequestRef = useRef(0);
+  const placeSessionTokenRef = useRef("");
   const isAdmin = Boolean(adminSecret);
   const currentMember = useMemo(
     () => members.find((member) => member.id === currentMemberId),
@@ -357,6 +370,10 @@ export default function Home() {
   const selectedDayIndex = days.findIndex((day) => day.id === selectedDay?.id);
   const selectedStopIndex = selectedDay?.stops.findIndex((stop) => stop.id === selectedStop?.id) ?? -1;
 
+  useEffect(() => {
+    if (showSettings && isAdmin && navigator.onLine) void refreshPlacesUsage();
+  }, [showSettings, isAdmin]);
+
   const selectedPhotos = queuedPhotos.filter((photo) => photo.stopId === selectedStop?.id);
   const waitingCount = queuedPhotos.filter(
     (photo) =>
@@ -377,7 +394,22 @@ export default function Home() {
           ? "Shared trip needs attention"
           : "Shared trip synced";
 
+  function clearPlaceSearch() {
+    setPlaceSuggestions([]);
+    setPlaceSearchError(null);
+    setPlaceSearchState("idle");
+    placeSessionTokenRef.current = "";
+    placeSearchRequestRef.current += 1;
+    if (placeSearchTimerRef.current !== null) window.clearTimeout(placeSearchTimerRef.current);
+  }
+
+  function selectStop(stopId: string) {
+    clearPlaceSearch();
+    setSelectedStopId(stopId);
+  }
+
   function selectDay(day: TripDay) {
+    clearPlaceSearch();
     setSelectedDayId(day.id);
     setSelectedStopId(day.stops[0]?.id ?? "");
   }
@@ -506,7 +538,7 @@ export default function Home() {
         day.id === selectedDay.id ? { ...day, stops: [...day.stops, stop] } : day,
       ),
     );
-    setSelectedStopId(stop.id);
+    selectStop(stop.id);
     setNewStopName("");
     setShowAddStop(false);
   }
@@ -522,7 +554,7 @@ export default function Home() {
     };
     setDays((current) => [...current, day]);
     setSelectedDayId(day.id);
-    setSelectedStopId("");
+    selectStop("");
     setNewDayName("");
     setNewDayDate("");
     setShowAddDay(false);
@@ -542,6 +574,67 @@ export default function Home() {
     setDays((current) => current.map((day) => day.id === selectedDay.id
       ? { ...day, stops: day.stops.map((stop) => stop.id === selectedStop.id ? { ...stop, ...changes } : stop) }
       : day));
+  }
+
+  function handleLocationChange(value: string) {
+    if (!currentMember || !selectedStop) return;
+    updateSelectedStop({
+      place: value,
+      placeId: undefined,
+      latitude: undefined,
+      longitude: undefined,
+      googleMapsUrl: undefined,
+    });
+    setPlaceSuggestions([]);
+    setPlaceSearchError(null);
+    placeSearchRequestRef.current += 1;
+    const requestNumber = placeSearchRequestRef.current;
+    if (placeSearchTimerRef.current !== null) window.clearTimeout(placeSearchTimerRef.current);
+    if (value.trim().length < 3 || !navigator.onLine) {
+      setPlaceSearchState("idle");
+      return;
+    }
+
+    if (!placeSessionTokenRef.current) placeSessionTokenRef.current = crypto.randomUUID().replaceAll("-", "");
+    setPlaceSearchState("searching");
+    placeSearchTimerRef.current = window.setTimeout(() => {
+      void searchPlaces(value.trim(), placeSessionTokenRef.current)
+        .then(({ suggestions, usage }) => {
+          if (placeSearchRequestRef.current !== requestNumber) return;
+          setPlaceSuggestions(suggestions);
+          setPlacesUsage(usage);
+          setPlaceSearchState("idle");
+        })
+        .catch((error: unknown) => {
+          if (placeSearchRequestRef.current !== requestNumber) return;
+          setPlaceSuggestions([]);
+          setPlaceSearchState("idle");
+          setPlaceSearchError(error instanceof Error ? error.message : "Google suggestions are unavailable. You can keep typing the location manually.");
+        });
+    }, 500);
+  }
+
+  async function choosePlace(suggestion: PlaceSuggestion) {
+    if (!currentMember) return;
+    setPlaceSearchState("choosing");
+    setPlaceSearchError(null);
+    try {
+      const { place, usage } = await getPlaceDetails(suggestion.placeId, placeSessionTokenRef.current);
+      updateSelectedStop({
+        place: place.address || place.name || suggestion.text,
+        placeId: place.placeId,
+        latitude: place.latitude ?? undefined,
+        longitude: place.longitude ?? undefined,
+        googleMapsUrl: place.googleMapsUrl || undefined,
+      });
+      setPlacesUsage(usage);
+      setPlaceSuggestions([]);
+      placeSessionTokenRef.current = "";
+    } catch (error) {
+      setPlaceSearchError(error instanceof Error ? error.message : "That Google location could not be saved. You can keep the location as typed.");
+    } finally {
+      setPlaceSearchState("idle");
+    }
   }
 
   function moveSelectedDay(offset: -1 | 1) {
@@ -583,7 +676,7 @@ export default function Home() {
     const nextDay = remaining[Math.min(index, remaining.length - 1)];
     setDays(remaining);
     setSelectedDayId(nextDay.id);
-    setSelectedStopId(nextDay.stops[0]?.id ?? "");
+    selectStop(nextDay.stops[0]?.id ?? "");
   }
 
   function deleteSelectedStop() {
@@ -596,7 +689,7 @@ export default function Home() {
     const index = selectedDay.stops.findIndex((stop) => stop.id === selectedStop.id);
     const remainingStops = selectedDay.stops.filter((stop) => stop.id !== selectedStop.id);
     setDays((current) => current.map((day) => day.id === selectedDay.id ? { ...day, stops: remainingStops } : day));
-    setSelectedStopId(remainingStops[Math.min(index, remainingStops.length - 1)]?.id ?? "");
+    selectStop(remainingStops[Math.min(index, remainingStops.length - 1)]?.id ?? "");
   }
 
   function updateSelectedDayDate(date: string) {
@@ -706,6 +799,14 @@ export default function Home() {
     } catch (error) {
       setGoogleState("disconnected");
       setGoogleError(error instanceof Error ? error.message : "Google Drive could not be connected.");
+    }
+  }
+
+  async function refreshPlacesUsage() {
+    try {
+      setPlacesUsage(await getPlacesUsage());
+    } catch (error) {
+      setPlaceSearchError(error instanceof Error ? error.message : "Google Places usage is unavailable.");
     }
   }
 
@@ -1031,7 +1132,7 @@ export default function Home() {
                 <button
                   key={stop.id}
                   className={`stop-card ${active ? "active" : ""}`}
-                  onClick={() => setSelectedStopId(stop.id)}
+                  onClick={() => selectStop(stop.id)}
                 >
                   <time>{stop.time}</time>
                   <span className="timeline-marker" aria-hidden="true" />
@@ -1063,8 +1164,32 @@ export default function Home() {
                   <div className="location-field">
                     <label>
                       <span>Location</span>
-                      <input type="search" value={selectedStop.place} onChange={(event) => updateSelectedStop({ place: event.target.value })} placeholder="Searchable place or address" readOnly={!currentMember} />
+                      <input
+                        type="search"
+                        value={selectedStop.place}
+                        onChange={(event) => handleLocationChange(event.target.value)}
+                        placeholder="Search Google Maps or type a location"
+                        readOnly={!currentMember}
+                        autoComplete="off"
+                        role="combobox"
+                        aria-autocomplete="list"
+                        aria-expanded={placeSuggestions.length > 0}
+                        aria-controls="place-suggestions"
+                      />
                     </label>
+                    {placeSearchState === "searching" && <span className="place-search-status">Searching Google Maps…</span>}
+                    {placeSuggestions.length > 0 && (
+                      <div className="place-suggestions" id="place-suggestions" role="listbox">
+                        {placeSuggestions.map((suggestion) => (
+                          <button key={suggestion.placeId} type="button" role="option" aria-selected="false" onClick={() => void choosePlace(suggestion)} disabled={placeSearchState === "choosing"}>
+                            <span aria-hidden="true">●</span>
+                            <strong>{suggestion.text}</strong>
+                          </button>
+                        ))}
+                        <small>Powered by Google</small>
+                      </div>
+                    )}
+                    {placeSearchError && <span className="place-search-error">{placeSearchError}</span>}
                     {selectedStop.place.trim() ? (
                       <div className="maps-place-card" aria-label={`Google Maps location: ${selectedStop.place}`}>
                         <span className="maps-place-pin" aria-hidden="true">●</span>
@@ -1073,8 +1198,8 @@ export default function Home() {
                           <strong>{selectedStop.place}</strong>
                         </span>
                         <span className="maps-place-actions">
-                          <a href={googleMapsSearchUrl(selectedStop.place)} target="_blank" rel="noopener noreferrer">Open map ↗</a>
-                          <a href={googleMapsDirectionsUrl(selectedStop.place)} target="_blank" rel="noopener noreferrer">Directions ↗</a>
+                          <a href={selectedStop.googleMapsUrl || googleMapsSearchUrl(selectedStop.place)} target="_blank" rel="noopener noreferrer">Open map ↗</a>
+                          <a href={googleMapsDirectionsUrl(selectedStop.place, selectedStop.placeId)} target="_blank" rel="noopener noreferrer">Directions ↗</a>
                         </span>
                       </div>
                     ) : (
@@ -1188,6 +1313,37 @@ export default function Home() {
             <p className="settings-note">
               This device is <strong>{currentMember?.name || "not assigned"}</strong> in admin mode. Everyone can add and edit itinerary items under their own locked profile; only Grace can manage profiles. If two people change the same item before syncing, both versions are kept and the newer copy is labelled with its contributor.
             </p>
+            <section className="places-usage" aria-labelledby="places-usage-title">
+              <div className="places-usage-heading">
+                <div>
+                  <p className="eyebrow">Monthly safety cap</p>
+                  <h3 id="places-usage-title">Google Places usage</h3>
+                </div>
+                <button className="member-action" onClick={() => void refreshPlacesUsage()}>Refresh</button>
+              </div>
+              {placesUsage ? (
+                <>
+                  {!placesUsage.enabled && <p className="places-setup-note">Places setup is not finished yet. Manual locations and map links still work.</p>}
+                  <div className="usage-row">
+                    <span>Autocomplete searches</span>
+                    <strong>{placesUsage.autocompleteRemaining.toLocaleString()} remaining</strong>
+                    <progress max={placesUsage.safeLimit} value={placesUsage.autocompleteUsed} />
+                    <small>{placesUsage.autocompleteUsed.toLocaleString()} of {placesUsage.safeLimit.toLocaleString()} used</small>
+                  </div>
+                  <div className="usage-row">
+                    <span>Saved-place lookups</span>
+                    <strong>{placesUsage.detailsRemaining.toLocaleString()} remaining</strong>
+                    <progress max={placesUsage.safeLimit} value={placesUsage.detailsUsed} />
+                    <small>{placesUsage.detailsUsed.toLocaleString()} of {placesUsage.safeLimit.toLocaleString()} used</small>
+                  </div>
+                  <p className="usage-footnote">
+                    The app blocks each request type at {placesUsage.safeLimit.toLocaleString()}, below Google&apos;s {placesUsage.googleFreeAllowance.toLocaleString()} monthly free allowance. Resets {placesUsage.resetDate}.
+                  </p>
+                </>
+              ) : (
+                <p className="places-setup-note">Loading Google Places usage…</p>
+              )}
+            </section>
             <div className="modal-actions">
               <button className="secondary-button" onClick={() => setShowSettings(false)}>Close</button>
               <button className="primary-button" onClick={connectGoogleDrive} disabled={googleState === "connecting"}>
