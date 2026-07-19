@@ -105,6 +105,9 @@ button { cursor: pointer; }
 .stop-editor input[readonly], .stop-editor textarea[readonly], .stop-editor input:disabled { opacity: .8; }
 .stop-editor textarea { min-height: 76px; resize: vertical; font: inherit; line-height: 1.4; }
 .stop-editor-row { display: grid; grid-template-columns: 125px 1fr; gap: 10px; }
+.location-field { display: grid; gap: 6px; }
+.maps-search-link { width: max-content; color: #d8eadf; font-size: .7rem; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; }
+.maps-search-link.disabled { color: #9fb7aa; text-decoration: none; }
 .stop-management { display: flex; flex-wrap: wrap; gap: 7px; }
 .stop-management .danger-action { margin-left: auto; color: #ffd1c8; }
 .detail-row { display: flex; flex-wrap: wrap; gap: 9px; }

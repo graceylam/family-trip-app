@@ -94,6 +94,10 @@ function timeInputValue(value: string): string {
   return match ? `${match[1].padStart(2, "0")}:${match[2]}` : "";
 }
 
+function googleMapsSearchUrl(place: string): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.trim())}`;
+}
+
 export default function Home() {
   const [tripName, setTripName] = useState(initialTripName);
   const tripId = sharedTripId;
@@ -599,7 +603,7 @@ export default function Home() {
   }
 
   function updateSelectedDayLabel(label: string) {
-    if (!currentMember || !selectedDay) return;
+    if (!isAdmin || !selectedDay) return;
     setDays((current) =>
       current.map((day) => (day.id === selectedDay.id ? { ...day, label } : day)),
     );
@@ -873,10 +877,10 @@ export default function Home() {
             value={tripName}
             onChange={(event) => setTripName(event.target.value)}
             aria-label="Trip name"
-            readOnly={!currentMember}
+            readOnly={!isAdmin}
           />
           <p className="shared-role">
-            {currentMember?.name || "Choose profile"} · {isAdmin ? "Admin contributor" : "Contributor"} · {tripSyncLabel}
+            {currentMember?.name || "Choose profile"} · {isAdmin ? "Admin" : "Contributor"} · {tripSyncLabel}
           </p>
         </div>
         {isAdmin ? (
@@ -993,7 +997,7 @@ export default function Home() {
                   onChange={(event) => updateSelectedDayLabel(event.target.value)}
                   aria-label="Change selected day name"
                   placeholder="Vienna"
-                  readOnly={!currentMember}
+                  readOnly={!isAdmin}
                 />
               </label>
               <label className="date-control">
@@ -1052,10 +1056,24 @@ export default function Home() {
                     <span>Time</span>
                     <input type="time" value={timeInputValue(selectedStop.time)} onChange={(event) => updateSelectedStop({ time: event.target.value })} disabled={!currentMember} />
                   </label>
-                  <label>
-                    <span>Location</span>
-                    <input value={selectedStop.place} onChange={(event) => updateSelectedStop({ place: event.target.value })} placeholder="Add a location" readOnly={!currentMember} />
-                  </label>
+                  <div className="location-field">
+                    <label>
+                      <span>Location</span>
+                      <input type="search" value={selectedStop.place} onChange={(event) => updateSelectedStop({ place: event.target.value })} placeholder="Searchable place or address" readOnly={!currentMember} />
+                    </label>
+                    {selectedStop.place.trim() ? (
+                      <a
+                        className="maps-search-link"
+                        href={googleMapsSearchUrl(selectedStop.place)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Search Google Maps ↗
+                      </a>
+                    ) : (
+                      <span className="maps-search-link disabled">Add a location to search Google Maps</span>
+                    )}
+                  </div>
                 </div>
                 <label>
                   <span>Notes</span>
