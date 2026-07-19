@@ -196,7 +196,9 @@ export default function Home() {
     const storedMemberId = window.localStorage.getItem(memberIdKey) || "";
     const storedTripAccessKey = window.localStorage.getItem(tripAccessKeyStorageKey) || "";
     const resolvedAdminSecret = queryAdminSecret || storedAdminSecret;
-    const resolvedMemberId = queryMemberId || storedMemberId || (resolvedAdminSecret ? "grace" : "");
+    const resolvedMemberId = queryAdminSecret
+      ? queryMemberId || "grace"
+      : storedMemberId || queryMemberId || (resolvedAdminSecret ? "grace" : "");
     const resolvedTripAccessKey = queryTripAccessKey || storedTripAccessKey;
     if (queryAdminSecret) {
       window.localStorage.setItem(adminKey, queryAdminSecret);
@@ -372,11 +374,6 @@ export default function Home() {
     setSelectedStopId(day.stops[0]?.id ?? "");
   }
 
-  function selectFamilyMember(memberId: string) {
-    setCurrentMemberId(memberId);
-    window.localStorage.setItem(memberIdKey, memberId);
-  }
-
   function addFamilyMember() {
     const name = newMemberName.trim();
     if (!isAdmin || !name) return;
@@ -392,6 +389,7 @@ export default function Home() {
     link.hash = "";
     link.searchParams.set("member", member.id);
     if (tripAccessKey) link.searchParams.set("key", tripAccessKey);
+    if (member.id === currentMember?.id && adminSecret) link.searchParams.set("admin", adminSecret);
     try {
       await navigator.clipboard.writeText(link.toString());
       setCopiedMemberId(member.id);
@@ -881,7 +879,11 @@ export default function Home() {
             {currentMember?.name || "Choose profile"} · {isAdmin ? "Admin contributor" : "Contributor"} · {tripSyncLabel}
           </p>
         </div>
-        <button className="avatar" aria-label="Open trip settings" onClick={() => setShowSettings(true)}>{profileInitials}</button>
+        {isAdmin ? (
+          <button className="avatar" aria-label="Open admin settings" onClick={() => setShowSettings(true)}>{profileInitials}</button>
+        ) : (
+          <span className="avatar locked" aria-label={`${currentMember?.name || "Family member"} profile locked to this device`}>{profileInitials}</span>
+        )}
       </header>
 
       <section className={`connection-card ${isOffline ? "offline" : "online"}`}>
@@ -1127,27 +1129,23 @@ export default function Home() {
         )}
       </section>
 
-      {showSettings && (
+      {showSettings && isAdmin && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowSettings(false)}>
           <section className="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" onMouseDown={(event) => event.stopPropagation()}>
             <p className="eyebrow">Trip settings</p>
             <h2 id="settings-title">Family profiles</h2>
             <p className="modal-copy">
-              Choose the same person on each of their devices. Profiles are shared through the family Google Drive, with no passwords or Google sign-in.
+              Grace manages the family profiles and their private links. Contributor links stay locked to their assigned person on each browser.
             </p>
             <div className="member-list">
               {members.map((member) => (
                 <div className={`member-row ${member.id === currentMember?.id ? "active" : ""}`} key={member.id}>
                   <span className="member-avatar">{member.name.slice(0, 1).toUpperCase()}</span>
                   <strong>{member.name}</strong>
-                  <button className="member-action" onClick={() => selectFamilyMember(member.id)} disabled={member.id === currentMember?.id}>
-                    {member.id === currentMember?.id ? "This device" : "Use here"}
+                  <span className="member-role">{member.id === currentMember?.id ? "Admin" : "Contributor"}</span>
+                  <button className="member-action" onClick={() => void copyMemberLink(member)}>
+                    {copiedMemberId === member.id ? "Copied" : "Copy link"}
                   </button>
-                  {isAdmin && (
-                    <button className="member-action" onClick={() => void copyMemberLink(member)}>
-                      {copiedMemberId === member.id ? "Copied" : "Copy link"}
-                    </button>
-                  )}
                 </div>
               ))}
             </div>
@@ -1163,7 +1161,7 @@ export default function Home() {
               </div>
             )}
             <p className="settings-note">
-              This device is <strong>{currentMember?.name || "not assigned"}</strong> in {isAdmin ? "admin" : "family member"} mode. Everyone can add and edit itinerary items; only the admin can manage profiles. If two people change the same item before syncing, both versions are kept and the newer copy is labelled with its contributor.
+              This device is <strong>{currentMember?.name || "not assigned"}</strong> in admin mode. Everyone can add and edit itinerary items under their own locked profile; only Grace can manage profiles. If two people change the same item before syncing, both versions are kept and the newer copy is labelled with its contributor.
             </p>
             <div className="modal-actions">
               <button className="secondary-button" onClick={() => setShowSettings(false)}>Close</button>
@@ -1179,16 +1177,8 @@ export default function Home() {
         <div className="modal-backdrop" role="presentation">
           <section className="modal" role="dialog" aria-modal="true" aria-labelledby="profile-title">
             <p className="eyebrow">Welcome to the trip</p>
-            <h2 id="profile-title">Who is using this device?</h2>
-            <p className="modal-copy">Choose your family profile. Select the same name on your phone and laptop.</p>
-            <div className="profile-choice-grid">
-              {members.map((member) => (
-                <button className="profile-choice" key={member.id} onClick={() => selectFamilyMember(member.id)}>
-                  <span>{member.name.slice(0, 1).toUpperCase()}</span>
-                  <strong>{member.name}</strong>
-                </button>
-              ))}
-            </div>
+            <h2 id="profile-title">Private invitation needed</h2>
+            <p className="modal-copy">Open the private link Grace prepared for you. It connects this browser to your own locked family profile.</p>
           </section>
         </div>
       )}

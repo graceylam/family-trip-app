@@ -28,6 +28,7 @@ button { cursor: pointer; }
 .shared-role { margin: 5px 0 0; color: var(--muted); font-size: .7rem; font-weight: 700; }
 .eyebrow { margin: 0; color: var(--forest); font-size: .72rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
 .avatar { width: 44px; height: 44px; border: 0; border-radius: 50%; color: white; background: var(--forest); font-weight: 800; }
+.avatar.locked { display: grid; flex: 0 0 44px; place-items: center; cursor: default; }
 
 .connection-card { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 13px; margin-bottom: 18px; padding: 14px 16px; border: 1px solid #d7e3d7; border-radius: 16px; background: #eef5ed; }
 .connection-card.offline { border-color: #ead9b7; background: #fff7e6; }
@@ -144,6 +145,7 @@ button { cursor: pointer; }
 .member-row { display: grid; grid-template-columns: 32px minmax(80px, 1fr) auto auto; align-items: center; gap: 8px; padding: 9px; border: 1px solid var(--line); border-radius: 12px; background: white; }
 .member-row.active { border-color: #9cb9a6; background: var(--sage); }
 .member-avatar { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; color: white; background: var(--forest); font-size: .75rem; font-weight: 800; }
+.member-role { color: var(--muted); font-size: .64rem; font-weight: 800; }
 .member-action { padding: 6px 7px; border: 0; border-radius: 7px; color: var(--forest); background: #edf3ed; font-size: .64rem; font-weight: 800; }
 .member-action:disabled { cursor: default; color: var(--muted); background: transparent; }
 .add-member-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 12px; }
