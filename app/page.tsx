@@ -90,11 +90,62 @@ const tripIdKey = "family-trip-id-v1";
 const adminKey = "family-trip-admin-key-v1";
 const memberIdKey = "family-trip-member-id-v1";
 const tripAccessKeyStorageKey = "family-trip-access-key-v1";
+const pendingTripSaveKey = "family-trip-pending-save-v1";
+const lastTripSavedAtKey = "family-trip-last-saved-at-v1";
 const sharedTripId = "vienna-2026-family-trip";
 const initialTripName = "2026 Vienna Trip";
 
+type PendingTripSave = {
+  version: 1;
+  fingerprint: string;
+  queuedAt: string;
+  draft: SharedTripState;
+  baseTrip: SharedTripState;
+};
+
 function tripFingerprint(tripName: string, days: TripDay[], members: TripMember[]): string {
   return JSON.stringify({ tripName, days, members });
+}
+
+function sharedTripFingerprint(trip: SharedTripState): string {
+  return tripFingerprint(trip.tripName, trip.days, trip.members);
+}
+
+function readPendingTripSave(): PendingTripSave | null {
+  try {
+    const raw = window.localStorage.getItem(pendingTripSaveKey);
+    if (!raw) return null;
+    const pending = JSON.parse(raw) as Partial<PendingTripSave>;
+    if (
+      pending.version !== 1 ||
+      !pending.fingerprint ||
+      !pending.draft ||
+      !pending.baseTrip ||
+      pending.draft.tripId !== sharedTripId ||
+      pending.baseTrip.tripId !== sharedTripId
+    ) {
+      window.localStorage.removeItem(pendingTripSaveKey);
+      return null;
+    }
+    return pending as PendingTripSave;
+  } catch {
+    window.localStorage.removeItem(pendingTripSaveKey);
+    return null;
+  }
+}
+
+function writePendingTripSave(pending: PendingTripSave): void {
+  window.localStorage.setItem(pendingTripSaveKey, JSON.stringify(pending));
+}
+
+function clearPendingTripSave(): void {
+  window.localStorage.removeItem(pendingTripSaveKey);
+}
+
+function savedTimeLabel(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Shared trip synced";
+  return `Saved at ${date.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" })}`;
 }
 
 function timeInputValue(value: string): string {
@@ -143,7 +194,9 @@ export default function Home() {
   const [currentMemberId, setCurrentMemberId] = useState("");
   const [tripRevision, setTripRevision] = useState(1);
   const [sharedStateReady, setSharedStateReady] = useState(false);
-  const [tripSyncState, setTripSyncState] = useState<"loading" | "synced" | "saving" | "offline" | "error">("loading");
+  const [tripSyncState, setTripSyncState] = useState<"loading" | "synced" | "unsaved" | "saving" | "offline" | "error">("loading");
+  const [hasPendingTripSave, setHasPendingTripSave] = useState(false);
+  const [lastTripSavedAt, setLastTripSavedAt] = useState("");
   const [googleState, setGoogleState] = useState<"disconnected" | "connecting" | "connected" | "uploading">("disconnected");
   const [googleError, setGoogleError] = useState<string | null>(null);
   const [days, setDays] = useState<TripDay[]>(initialDays);
@@ -180,6 +233,14 @@ export default function Home() {
   const galleryRequestRef = useRef(0);
   const lastSavedTripRef = useRef("");
   const lastSyncedTripRef = useRef<SharedTripState | null>(null);
+  const pendingTripSaveRef = useRef<PendingTripSave | null>(null);
+  const tripSaveInFlightRef = useRef(false);
+  const latestTripDraftRef = useRef({
+    tripName: initialTripName,
+    days: initialDays,
+    members: initialMembers,
+    revision: 1,
+  });
   const placeSearchTimerRef = useRef<number | null>(null);
   const placeSearchRequestRef = useRef(0);
   const placeSessionTokenRef = useRef("");
@@ -188,6 +249,90 @@ export default function Home() {
     () => members.find((member) => member.id === currentMemberId),
     [currentMemberId, members],
   );
+  latestTripDraftRef.current = { tripName, days, members, revision: tripRevision };
+
+  const processPendingTripSave = useCallback(async () => {
+    if (
+      tripSaveInFlightRef.current ||
+      !currentMember ||
+      isOffline ||
+      !navigator.onLine
+    ) return;
+
+    tripSaveInFlightRef.current = true;
+    try {
+      while (pendingTripSaveRef.current && navigator.onLine) {
+        const sending = pendingTripSaveRef.current;
+        setTripSyncState("saving");
+        setGoogleError(null);
+
+        let saved: SharedTripState | null = null;
+        let finalError: unknown = null;
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+          try {
+            saved = await saveSharedTrip(
+              sending.draft,
+              currentMember,
+              sending.baseTrip,
+              adminSecret || undefined,
+            );
+            break;
+          } catch (error) {
+            finalError = error;
+            const retryable = error instanceof GoogleDriveError ? error.retryable : true;
+            if (!retryable || attempt === 3 || !navigator.onLine) break;
+            await new Promise((resolve) => window.setTimeout(resolve, 700 * 2 ** (attempt - 1)));
+          }
+        }
+
+        if (!saved) {
+          setTripSyncState(navigator.onLine ? "error" : "offline");
+          setGoogleError(
+            finalError instanceof Error
+              ? `${finalError.message} Your changes are still safe on this device.`
+              : "The itinerary could not be saved after three attempts. Your changes are still safe on this device.",
+          );
+          return;
+        }
+
+        const savedFingerprint = sharedTripFingerprint(saved);
+        lastSyncedTripRef.current = saved;
+        lastSavedTripRef.current = savedFingerprint;
+        setLastTripSavedAt(saved.updatedAt);
+        window.localStorage.setItem(lastTripSavedAtKey, saved.updatedAt);
+        setGoogleState((current) => current === "uploading" ? current : "connected");
+
+        const latestPending = pendingTripSaveRef.current;
+        const latestWasAcknowledged =
+          !latestPending ||
+          latestPending.fingerprint === sending.fingerprint ||
+          latestPending.fingerprint === savedFingerprint;
+
+        if (latestWasAcknowledged) {
+          pendingTripSaveRef.current = null;
+          clearPendingTripSave();
+          setHasPendingTripSave(false);
+          setTripName(saved.tripName);
+          setDays(saved.days);
+          setMembers(saved.members);
+          setTripRevision(saved.revision);
+          setSelectedDayId((current) => saved.days.some((day) => day.id === current) ? current : saved.days[0]?.id ?? "");
+          setSelectedStopId((current) => saved.days.some((day) => day.stops.some((stop) => stop.id === current))
+            ? current
+            : saved.days[0]?.stops[0]?.id ?? "");
+          setTripSyncState("synced");
+          setGoogleError(null);
+          return;
+        }
+
+        // A newer edit arrived while this request was running. Keep it on screen
+        // and in local storage, then send it only after the earlier save completes.
+        setTripSyncState("unsaved");
+      }
+    } finally {
+      tripSaveInFlightRef.current = false;
+    }
+  }, [adminSecret, currentMember, isOffline]);
 
   const refreshSharedGallery = useCallback(async () => {
     if (!navigator.onLine) {
@@ -257,22 +402,36 @@ export default function Home() {
 
     setTripSyncState("loading");
     try {
-      const [trip] = await Promise.all([
-        getSharedTrip(sharedTripId, { tripName: initialTripName, days: initialDays, members: initialMembers }),
-        checkGoogleDriveGateway(),
-      ]);
-      setTripName(trip.tripName);
-      setDays(trip.days);
-      setMembers(trip.members);
-      setSelectedDayId((current) => trip.days.some((day) => day.id === current) ? current : trip.days[0]?.id ?? "");
-      setSelectedStopId((current) => trip.days.some((day) => day.stops.some((stop) => stop.id === current))
-        ? current
-        : trip.days[0]?.stops[0]?.id ?? "");
-      setTripRevision(trip.revision);
+      const trip = await getSharedTrip(
+        sharedTripId,
+        { tripName: initialTripName, days: initialDays, members: initialMembers },
+      );
       lastSyncedTripRef.current = trip;
-      lastSavedTripRef.current = tripFingerprint(trip.tripName, trip.days, trip.members);
+      lastSavedTripRef.current = sharedTripFingerprint(trip);
+      setLastTripSavedAt(trip.updatedAt);
+      window.localStorage.setItem(lastTripSavedAtKey, trip.updatedAt);
+
+      const pending = pendingTripSaveRef.current;
+      if (pending && pending.fingerprint !== lastSavedTripRef.current) {
+        setHasPendingTripSave(true);
+        setTripSyncState("unsaved");
+      } else {
+        if (pending) {
+          pendingTripSaveRef.current = null;
+          clearPendingTripSave();
+          setHasPendingTripSave(false);
+        }
+        setTripName(trip.tripName);
+        setDays(trip.days);
+        setMembers(trip.members);
+        setSelectedDayId((current) => trip.days.some((day) => day.id === current) ? current : trip.days[0]?.id ?? "");
+        setSelectedStopId((current) => trip.days.some((day) => day.stops.some((stop) => stop.id === current))
+          ? current
+          : trip.days[0]?.stops[0]?.id ?? "");
+        setTripRevision(trip.revision);
+        setTripSyncState("synced");
+      }
       setSharedStateReady(true);
-      setTripSyncState("synced");
       setGoogleState((current) => current === "uploading" ? current : "connected");
       setGoogleError(null);
       return true;
@@ -286,16 +445,39 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    let localDays = initialDays;
     const saved = window.localStorage.getItem(itineraryKey);
     if (saved) {
       try {
-        setDays(JSON.parse(saved));
+        localDays = JSON.parse(saved) as TripDay[];
       } catch {
         window.localStorage.removeItem(itineraryKey);
       }
     }
-    const savedTripName = window.localStorage.getItem(tripNameKey);
-    if (savedTripName) setTripName(savedTripName);
+    const localTripName = window.localStorage.getItem(tripNameKey) || initialTripName;
+    const pending = readPendingTripSave();
+    const localTrip: SharedTripState = pending?.draft ?? {
+      tripId: sharedTripId,
+      tripName: localTripName,
+      days: localDays,
+      members: initialMembers,
+      revision: 1,
+      updatedAt: new Date().toISOString(),
+    };
+    const localBase = pending?.baseTrip ?? localTrip;
+    pendingTripSaveRef.current = pending;
+    lastSyncedTripRef.current = localBase;
+    lastSavedTripRef.current = sharedTripFingerprint(localBase);
+    // This mount-only hydration intentionally restores the durable local draft
+    // before the first remote refresh can replace anything on screen.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHasPendingTripSave(Boolean(pending));
+    setTripName(localTrip.tripName);
+    setDays(localTrip.days);
+    setMembers(localTrip.members);
+    setTripRevision(localTrip.revision);
+    setLastTripSavedAt(window.localStorage.getItem(lastTripSavedAtKey) || "");
+
     const savedTripId = window.localStorage.getItem(tripIdKey) || "";
     if (savedTripId && savedTripId !== sharedTripId) setPreviousTripId(savedTripId);
     window.localStorage.setItem(tripIdKey, sharedTripId);
@@ -335,6 +517,31 @@ export default function Home() {
     window.addEventListener("online", updateConnection);
     window.addEventListener("offline", updateConnection);
 
+    const preservePendingOnExit = () => {
+      const latest = latestTripDraftRef.current;
+      const fingerprint = tripFingerprint(latest.tripName, latest.days, latest.members);
+      const existing = pendingTripSaveRef.current;
+      if ((fingerprint === lastSavedTripRef.current && !existing) || !lastSyncedTripRef.current) return;
+      if (existing?.fingerprint === fingerprint) return;
+      const pendingBeforeExit: PendingTripSave = {
+        version: 1,
+        fingerprint,
+        queuedAt: new Date().toISOString(),
+        draft: {
+          tripId: sharedTripId,
+          tripName: latest.tripName.trim() || initialTripName,
+          days: latest.days,
+          members: latest.members,
+          revision: latest.revision,
+          updatedAt: new Date().toISOString(),
+        },
+        baseTrip: existing?.baseTrip ?? lastSyncedTripRef.current,
+      };
+      pendingTripSaveRef.current = pendingBeforeExit;
+      writePendingTripSave(pendingBeforeExit);
+    };
+    window.addEventListener("pagehide", preservePendingOnExit);
+
     if (navigator.onLine) setGoogleState("connecting");
     void refreshSharedItinerary();
 
@@ -343,12 +550,13 @@ export default function Home() {
     }
 
     let queueLoadCancelled = false;
+    const previewUrls = previewUrlsRef.current;
     void Promise.all([listQueuedPhotos(), getStorageHealth()])
       .then(([records, health]) => {
         if (queueLoadCancelled) return;
         const views = records.map((record) => {
           const previewUrl = URL.createObjectURL(record.blob);
-          previewUrlsRef.current.set(record.id, previewUrl);
+          previewUrls.set(record.id, previewUrl);
           return { ...record, previewUrl };
         });
         setQueuedPhotos(views);
@@ -365,8 +573,9 @@ export default function Home() {
       queueLoadCancelled = true;
       window.removeEventListener("online", updateConnection);
       window.removeEventListener("offline", updateConnection);
-      previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
-      previewUrlsRef.current.clear();
+      window.removeEventListener("pagehide", preservePendingOnExit);
+      previewUrls.forEach((url) => URL.revokeObjectURL(url));
+      previewUrls.clear();
     };
   }, [refreshSharedItinerary]);
 
@@ -415,7 +624,7 @@ export default function Home() {
     if (!hasLoadedLocalState) return;
 
     const refreshWhenActive = () => {
-      if (currentMember && tripFingerprint(tripName, days, members) !== lastSavedTripRef.current) return;
+      if (pendingTripSaveRef.current) return;
       if (document.visibilityState === "visible" && navigator.onLine) {
         void refreshSharedItinerary();
       }
@@ -434,12 +643,15 @@ export default function Home() {
   }, [currentMember, days, hasLoadedLocalState, members, refreshSharedItinerary, tripName]);
 
   useEffect(() => {
-    if (!hasLoadedLocalState || !sharedStateReady || !currentMember || !lastSyncedTripRef.current || isOffline) return;
+    if (!hasLoadedLocalState || !sharedStateReady || !currentMember || !lastSyncedTripRef.current) return;
     const fingerprint = tripFingerprint(tripName, days, members);
-    if (fingerprint === lastSavedTripRef.current) return;
+    const existingPending = pendingTripSaveRef.current;
+    if (fingerprint === lastSavedTripRef.current && !existingPending) {
+      setHasPendingTripSave(false);
+      return;
+    }
 
-    const timeoutId = window.setTimeout(() => {
-      setTripSyncState("saving");
+    if (!existingPending || existingPending.fingerprint !== fingerprint) {
       const draft: SharedTripState = {
         tripId: sharedTripId,
         tripName: tripName.trim() || initialTripName,
@@ -448,25 +660,30 @@ export default function Home() {
         revision: tripRevision,
         updatedAt: new Date().toISOString(),
       };
-      void saveSharedTrip(draft, currentMember, lastSyncedTripRef.current!, adminSecret || undefined)
-        .then((saved) => {
-          setTripName(saved.tripName);
-          setDays(saved.days);
-          setTripRevision(saved.revision);
-          setMembers(saved.members);
-          lastSyncedTripRef.current = saved;
-          lastSavedTripRef.current = tripFingerprint(saved.tripName, saved.days, saved.members);
-          setTripSyncState("synced");
-          setGoogleError(null);
-        })
-        .catch((error: unknown) => {
-          setTripSyncState("error");
-          setGoogleError(error instanceof Error ? error.message : "The itinerary change could not be shared.");
-        });
+      const pending: PendingTripSave = {
+        version: 1,
+        fingerprint,
+        queuedAt: new Date().toISOString(),
+        draft,
+        // Keep the original base until the backend merges this change. Replacing
+        // it with a newer remote response could turn another person's edit into
+        // an accidental local deletion.
+        baseTrip: existingPending?.baseTrip ?? lastSyncedTripRef.current,
+      };
+      pendingTripSaveRef.current = pending;
+      writePendingTripSave(pending);
+    }
+
+    setHasPendingTripSave(true);
+    setTripSyncState(isOffline ? "offline" : "unsaved");
+    if (isOffline || !navigator.onLine) return;
+
+    const timeoutId = window.setTimeout(() => {
+      void processPendingTripSave();
     }, 900);
 
     return () => window.clearTimeout(timeoutId);
-  }, [adminSecret, currentMember, days, hasLoadedLocalState, isOffline, members, sharedStateReady, tripName, tripRevision]);
+  }, [currentMember, days, hasLoadedLocalState, isOffline, members, processPendingTripSave, sharedStateReady, tripName, tripRevision]);
 
   const selectedDay = useMemo(
     () => days.find((day) => day.id === selectedDayId) ?? days[0],
@@ -502,14 +719,16 @@ export default function Home() {
   );
   const queuedBytes = queuedPhotos.reduce((total, photo) => total + photo.size, 0);
   const tripSyncLabel = isOffline
-    ? "Offline copy"
+    ? hasPendingTripSave ? "Offline · changes kept safely" : "Offline copy"
     : tripSyncState === "saving"
-      ? "Sharing changes…"
+      ? "Saving changes…"
+      : tripSyncState === "unsaved"
+        ? "Unsaved changes"
       : tripSyncState === "loading"
         ? "Refreshing shared trip…"
         : tripSyncState === "error"
-          ? "Shared trip needs attention"
-          : "Shared trip synced";
+          ? hasPendingTripSave ? "Save failed · changes kept safely" : "Shared trip needs attention"
+          : lastTripSavedAt ? savedTimeLabel(lastTripSavedAt) : "Shared trip synced";
 
   function clearPlaceSearch() {
     setPlaceSuggestions([]);
@@ -1136,7 +1355,9 @@ export default function Home() {
           <strong>{isOffline ? "Travelling offline" : "Ready for the trip"}</strong>
           <p>
             {isOffline
-              ? "Your itinerary works here. Photos will wait safely for Wi-Fi."
+              ? hasPendingTripSave
+                ? "Your itinerary changes are saved on this device and will retry when you reconnect."
+                : "Your itinerary works here. Photos will wait safely for Wi-Fi."
               : googleState === "uploading"
                 ? "Syncing eligible photos with Google Drive now."
                 : googleState === "connected" && waitingCount > 0
@@ -1152,6 +1373,11 @@ export default function Home() {
           <button className="text-button" onClick={() => setShowSafety((value) => !value)}>
             Safety
           </button>
+          {hasPendingTripSave && tripSyncState === "error" && (
+            <button className="sync-button" onClick={() => void processPendingTripSave()}>
+              Retry itinerary save
+            </button>
+          )}
           {googleState === "connected" && waitingCount > 0 ? (
             <button className="sync-button" onClick={uploadQueuedPhotos}>
               Upload now — I’m on Wi-Fi
