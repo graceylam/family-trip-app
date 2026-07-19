@@ -98,6 +98,10 @@ function googleMapsSearchUrl(place: string): string {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.trim())}`;
 }
 
+function googleMapsDirectionsUrl(place: string): string {
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(place.trim())}`;
+}
+
 export default function Home() {
   const [tripName, setTripName] = useState(initialTripName);
   const tripId = sharedTripId;
@@ -1062,16 +1066,19 @@ export default function Home() {
                       <input type="search" value={selectedStop.place} onChange={(event) => updateSelectedStop({ place: event.target.value })} placeholder="Searchable place or address" readOnly={!currentMember} />
                     </label>
                     {selectedStop.place.trim() ? (
-                      <a
-                        className="maps-search-link"
-                        href={googleMapsSearchUrl(selectedStop.place)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Search Google Maps ↗
-                      </a>
+                      <div className="maps-place-card" aria-label={`Google Maps location: ${selectedStop.place}`}>
+                        <span className="maps-place-pin" aria-hidden="true">●</span>
+                        <span className="maps-place-copy">
+                          <small>Google Maps location</small>
+                          <strong>{selectedStop.place}</strong>
+                        </span>
+                        <span className="maps-place-actions">
+                          <a href={googleMapsSearchUrl(selectedStop.place)} target="_blank" rel="noopener noreferrer">Open map ↗</a>
+                          <a href={googleMapsDirectionsUrl(selectedStop.place)} target="_blank" rel="noopener noreferrer">Directions ↗</a>
+                        </span>
+                      </div>
                     ) : (
-                      <span className="maps-search-link disabled">Add a location to search Google Maps</span>
+                      <span className="maps-place-empty">Add a location to attach Google Maps</span>
                     )}
                   </div>
                 </div>

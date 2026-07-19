@@ -1,4 +1,4 @@
-const CACHE_NAME = "family-trip-shell-v4";
+const CACHE_NAME = "family-trip-shell-v5";
 const APP_SHELL = ["./"];
 
 self.addEventListener("install", (event) => {

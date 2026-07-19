@@ -106,8 +106,14 @@ button { cursor: pointer; }
 .stop-editor textarea { min-height: 76px; resize: vertical; font: inherit; line-height: 1.4; }
 .stop-editor-row { display: grid; grid-template-columns: 125px 1fr; gap: 10px; }
 .location-field { display: grid; gap: 6px; }
-.maps-search-link { width: max-content; color: #d8eadf; font-size: .7rem; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; }
-.maps-search-link.disabled { color: #9fb7aa; text-decoration: none; }
+.maps-place-card { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 4px 8px; padding: 9px 10px; border: 1px solid rgba(255,255,255,.2); border-radius: 10px; background: rgba(255,255,255,.08); }
+.maps-place-pin { width: 12px; height: 12px; margin-top: 2px; border: 3px solid #f7aaa0; border-radius: 50%; color: #df5f52; background: #df5f52; box-shadow: 0 2px 6px rgba(0,0,0,.2); font-size: 0; }
+.maps-place-copy { display: grid; min-width: 0; gap: 2px; }
+.maps-place-copy small { color: #b9d0c2; font-size: .61rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.maps-place-copy strong { overflow: hidden; color: white; font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }
+.maps-place-actions { grid-column: 2; display: flex; flex-wrap: wrap; gap: 12px; }
+.maps-place-actions a { color: #d8eadf; font-size: .68rem; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; }
+.maps-place-empty { color: #9fb7aa; font-size: .7rem; font-weight: 800; }
 .stop-management { display: flex; flex-wrap: wrap; gap: 7px; }
 .stop-management .danger-action { margin-left: auto; color: #ffd1c8; }
 .detail-row { display: flex; flex-wrap: wrap; gap: 9px; }
