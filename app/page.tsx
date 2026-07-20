@@ -33,6 +33,7 @@ import {
   type SharedPhoto,
   type SharedTripState,
   type TripDay,
+  type TripExpense,
   type TripMember,
   type TripStop,
   uploadPhotoToDrive,
@@ -95,6 +96,8 @@ const pendingTripSaveKey = "family-trip-pending-save-v1";
 const lastTripSavedAtKey = "family-trip-last-saved-at-v1";
 const sharedTripId = "vienna-2026-family-trip";
 const initialTripName = "2026 Vienna Trip";
+const expenseCategories = ["Food & Drink", "Transport", "Accommodation", "Tickets & Activities", "Shopping", "Other"];
+const currencyOptions = ["EUR", "AUD", "USD", "GBP", "CZK", "HUF", "CHF"];
 
 type PendingTripSave = {
   version: 1;
@@ -184,6 +187,21 @@ function galleryDate(value: string): string {
   });
 }
 
+function expenseDate(value: string): string {
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function expenseMoney(amount: number | null, currency: string): string {
+  if (amount === null || !Number.isFinite(amount)) return "—";
+  try {
+    return new Intl.NumberFormat("en-AU", { style: "currency", currency }).format(amount);
+  } catch {
+    return `${currency} ${amount.toFixed(2)}`;
+  }
+}
+
 function groupPhotosByPerson(photos: SharedPhoto[]): Array<{ id: string; name: string; photos: SharedPhoto[] }> {
   const groups = new Map<string, { id: string; name: string; photos: SharedPhoto[] }>();
   photos.forEach((photo) => {
@@ -232,7 +250,16 @@ export default function Home() {
   const [placeSearchState, setPlaceSearchState] = useState<"idle" | "searching" | "choosing">("idle");
   const [placeSearchError, setPlaceSearchError] = useState<string | null>(null);
   const [placesUsage, setPlacesUsage] = useState<PlacesUsage | null>(null);
-  const [activeTab, setActiveTab] = useState<"itinerary" | "gallery">("itinerary");
+  const [activeTab, setActiveTab] = useState<"itinerary" | "gallery" | "expenses">("itinerary");
+  const [newExpenseItem, setNewExpenseItem] = useState("");
+  const [newExpenseAmount, setNewExpenseAmount] = useState("");
+  const [newExpenseCategory, setNewExpenseCategory] = useState(expenseCategories[0]);
+  const [newExpenseLocalCurrency, setNewExpenseLocalCurrency] = useState("EUR");
+  const [newExpenseHomeAmount, setNewExpenseHomeAmount] = useState("");
+  const [newExpenseHomeCurrency, setNewExpenseHomeCurrency] = useState("AUD");
+  const [expensePersonFilter, setExpensePersonFilter] = useState("");
+  const [expenseDayFilter, setExpenseDayFilter] = useState("");
+  const [expenseCategoryFilter, setExpenseCategoryFilter] = useState("");
   const [sharedPhotos, setSharedPhotos] = useState<SharedPhoto[]>([]);
   const [sharedPhotoUrls, setSharedPhotoUrls] = useState<Record<string, string>>({});
   const [galleryState, setGalleryState] = useState<"idle" | "loading" | "ready" | "offline" | "error">("idle");
@@ -709,6 +736,25 @@ export default function Home() {
     [selectedDay, selectedStopId],
   );
 
+  const expenseRows = useMemo(() => days.flatMap((day, dayIndex) =>
+    day.stops.flatMap((stop, stopIndex) => (stop.expenses ?? []).map((expense) => ({
+      day,
+      dayIndex,
+      stop,
+      stopIndex,
+      expense,
+    }))),
+  ), [days]);
+  const expenseFilterCategories = useMemo(
+    () => Array.from(new Set(expenseRows.map(({ expense }) => expense.category))).sort(),
+    [expenseRows],
+  );
+  const filteredExpenseRows = useMemo(() => expenseRows.filter(({ day, expense }) =>
+    (!expensePersonFilter || expense.memberId === expensePersonFilter) &&
+    (!expenseDayFilter || day.id === expenseDayFilter) &&
+    (!expenseCategoryFilter || expense.category === expenseCategoryFilter),
+  ), [expenseCategoryFilter, expenseDayFilter, expensePersonFilter, expenseRows]);
+
   const profileInitials = (currentMember?.name || "Family")
     .split(/\s+/)
     .map((part) => part[0])
@@ -921,6 +967,39 @@ export default function Home() {
     setDays((current) => sortItineraryChronologically(current.map((day) => day.id === selectedDay.id
       ? { ...day, stops: day.stops.map((stop) => stop.id === selectedStop.id ? { ...stop, ...changes } : stop) }
       : day)));
+  }
+
+  function addExpense() {
+    if (!currentMember || !selectedStop) return;
+    const item = newExpenseItem.trim();
+    const localAmount = Number(newExpenseAmount);
+    const parsedHomeAmount = newExpenseHomeAmount.trim() ? Number(newExpenseHomeAmount) : null;
+    if (!item || !Number.isFinite(localAmount) || localAmount <= 0) return;
+    if (parsedHomeAmount !== null && (!Number.isFinite(parsedHomeAmount) || parsedHomeAmount < 0)) return;
+
+    const expense: TripExpense = {
+      id: crypto.randomUUID(),
+      item,
+      category: newExpenseCategory,
+      memberId: currentMember.id,
+      memberName: currentMember.name,
+      localAmount,
+      localCurrency: newExpenseLocalCurrency,
+      homeAmount: parsedHomeAmount,
+      homeCurrency: newExpenseHomeCurrency,
+      createdAt: new Date().toISOString(),
+    };
+    updateSelectedStop({ expenses: [...(selectedStop.expenses ?? []), expense] });
+    setNewExpenseItem("");
+    setNewExpenseAmount("");
+    setNewExpenseHomeAmount("");
+  }
+
+  function deleteExpense(expenseId: string) {
+    if (!currentMember || !selectedStop) return;
+    const expense = (selectedStop.expenses ?? []).find((item) => item.id === expenseId);
+    if (!expense || (!isAdmin && expense.memberId !== currentMember.id)) return;
+    updateSelectedStop({ expenses: (selectedStop.expenses ?? []).filter((item) => item.id !== expenseId) });
   }
 
   function handleLocationChange(value: string) {
@@ -1335,6 +1414,13 @@ export default function Home() {
         >
           Photo Gallery
         </button>
+        <button
+          className={activeTab === "expenses" ? "active" : ""}
+          aria-current={activeTab === "expenses" ? "page" : undefined}
+          onClick={() => setActiveTab("expenses")}
+        >
+          Expenses
+        </button>
       </nav>
 
       <section className={`connection-card ${isOffline ? "offline" : "online"}`}>
@@ -1566,6 +1652,60 @@ export default function Home() {
               </div>
             </div>
 
+            <section className="stop-expenses" aria-labelledby="stop-expenses-title">
+              <div className="stop-expenses-heading">
+                <div>
+                  <p className="eyebrow">Shared spending</p>
+                  <h3 id="stop-expenses-title">Expenses at this stop</h3>
+                </div>
+                <span>{(selectedStop.expenses ?? []).length}</span>
+              </div>
+              <div className="expense-entry-grid">
+                <label>
+                  <span>Item</span>
+                  <input value={newExpenseItem} onChange={(event) => setNewExpenseItem(event.target.value)} placeholder="Train tickets" />
+                </label>
+                <label>
+                  <span>Amount</span>
+                  <div className="money-input">
+                    <select value={newExpenseLocalCurrency} onChange={(event) => setNewExpenseLocalCurrency(event.target.value)} aria-label="Local currency">
+                      {currencyOptions.map((currency) => <option key={currency}>{currency}</option>)}
+                    </select>
+                    <input type="number" inputMode="decimal" min="0" step="0.01" value={newExpenseAmount} onChange={(event) => setNewExpenseAmount(event.target.value)} placeholder="0.00" aria-label="Local amount" />
+                  </div>
+                </label>
+                <label>
+                  <span>Category</span>
+                  <select value={newExpenseCategory} onChange={(event) => setNewExpenseCategory(event.target.value)}>
+                    {expenseCategories.map((category) => <option key={category}>{category}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>Home amount <small>optional</small></span>
+                  <div className="money-input">
+                    <select value={newExpenseHomeCurrency} onChange={(event) => setNewExpenseHomeCurrency(event.target.value)} aria-label="Home currency">
+                      {currencyOptions.map((currency) => <option key={currency}>{currency}</option>)}
+                    </select>
+                    <input type="number" inputMode="decimal" min="0" step="0.01" value={newExpenseHomeAmount} onChange={(event) => setNewExpenseHomeAmount(event.target.value)} placeholder="0.00" aria-label="Home amount" />
+                  </div>
+                </label>
+              </div>
+              <button className="primary-button add-expense-button" onClick={addExpense} disabled={!currentMember || !newExpenseItem.trim() || !(Number(newExpenseAmount) > 0)}>
+                Add expense as {currentMember?.name || "family member"}
+              </button>
+              {(selectedStop.expenses ?? []).length > 0 && (
+                <div className="stop-expense-list">
+                  {(selectedStop.expenses ?? []).map((expense) => (
+                    <div className="stop-expense-row" key={expense.id}>
+                      <div><strong>{expense.item}</strong><small>{expense.category} · {expense.memberName}</small></div>
+                      <strong>{expenseMoney(expense.localAmount, expense.localCurrency)}</strong>
+                      {(isAdmin || expense.memberId === currentMember?.id) && <button onClick={() => deleteExpense(expense.id)} aria-label={`Delete ${expense.item} expense`}>Delete</button>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
             <div className="photo-actions">
               <input
                 ref={fileInputRef}
@@ -1626,7 +1766,7 @@ export default function Home() {
         )}
       </section>
         </>
-      ) : (
+      ) : activeTab === "gallery" ? (
         <section className="gallery-page" aria-labelledby="gallery-title">
           <header className="gallery-page-heading">
             <div>
@@ -1709,6 +1849,70 @@ export default function Home() {
                 </div>
               </section>
             ))}
+          </div>
+        </section>
+      ) : (
+        <section className="expenses-page" aria-labelledby="expenses-title">
+          <header className="expenses-page-heading">
+            <div>
+              <p className="eyebrow">Shared family spending</p>
+              <h1 id="expenses-title">Expenses</h1>
+              <p>Costs entered at itinerary stops, with the person recorded automatically.</p>
+            </div>
+          </header>
+
+          <div className="expense-filters" aria-label="Expense filters">
+            <label>
+              <span>Person</span>
+              <select value={expensePersonFilter} onChange={(event) => setExpensePersonFilter(event.target.value)}>
+                <option value="">All people</option>
+                {members.map((member) => <option value={member.id} key={member.id}>{member.name}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Day</span>
+              <select value={expenseDayFilter} onChange={(event) => setExpenseDayFilter(event.target.value)}>
+                <option value="">All days</option>
+                {days.map((day, index) => <option value={day.id} key={day.id}>Day {index + 1}: {day.label}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Category</span>
+              <select value={expenseCategoryFilter} onChange={(event) => setExpenseCategoryFilter(event.target.value)}>
+                <option value="">All categories</option>
+                {expenseFilterCategories.map((category) => <option value={category} key={category}>{category}</option>)}
+              </select>
+            </label>
+            {(expensePersonFilter || expenseDayFilter || expenseCategoryFilter) && (
+              <button className="text-button" onClick={() => { setExpensePersonFilter(""); setExpenseDayFilter(""); setExpenseCategoryFilter(""); }}>Clear filters</button>
+            )}
+          </div>
+
+          <div className="expenses-table-card">
+            <div className="expenses-table-scroll">
+              <table className="expenses-table">
+                <thead><tr><th>Date</th><th>Item</th><th>Category</th><th>Person</th><th>Local Currency</th><th>Home Currency</th></tr></thead>
+                <tbody>
+                  {filteredExpenseRows.map(({ day, stop, expense }) => (
+                    <tr key={expense.id}>
+                      <td data-label="Date"><time dateTime={day.date}>{expenseDate(day.date)}</time><small>{stop.title}</small></td>
+                      <td data-label="Item"><strong>{expense.item}</strong></td>
+                      <td data-label="Category"><span className="expense-category">{expense.category}</span></td>
+                      <td data-label="Person">{expense.memberName}</td>
+                      <td data-label="Local Currency">{expenseMoney(expense.localAmount, expense.localCurrency)}</td>
+                      <td data-label="Home Currency">{expenseMoney(expense.homeAmount, expense.homeCurrency)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {filteredExpenseRows.length === 0 && (
+              <div className="expenses-empty">
+                <span aria-hidden="true">$</span>
+                <strong>{expenseRows.length === 0 ? "No expenses yet" : "No expenses match these filters"}</strong>
+                <p>{expenseRows.length === 0 ? "Open an itinerary stop to add the first shared expense." : "Clear or change the filters to see more expenses."}</p>
+              </div>
+            )}
           </div>
         </section>
       )}
