@@ -35,10 +35,24 @@ export type TripStop = {
   title: string;
   place: string;
   note: string;
+  expenses?: TripExpense[];
   placeId?: string;
   latitude?: number;
   longitude?: number;
   googleMapsUrl?: string;
+};
+
+export type TripExpense = {
+  id: string;
+  item: string;
+  category: string;
+  memberId: string;
+  memberName: string;
+  localAmount: number;
+  localCurrency: string;
+  homeAmount: number | null;
+  homeCurrency: string;
+  createdAt: string;
 };
 
 export type PlaceSuggestion = {
