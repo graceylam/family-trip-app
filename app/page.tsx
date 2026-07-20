@@ -1636,10 +1636,12 @@ export default function Home() {
         </div>
 
         {selectedStop && (
-          <article className="memory-panel">
-            <div className="memory-hero">
-              <p className="eyebrow">Selected stop</p>
-              <div className="stop-editor">
+          <div className="stop-workspace">
+            <section className="memory-panel selected-stop-panel" aria-labelledby="selected-stop-title">
+              <div className="memory-hero">
+                <p className="eyebrow">Itinerary details</p>
+                <h2 id="selected-stop-title">Selected stop</h2>
+                <div className="stop-editor">
                 <label>
                   <span>Stop name</span>
                   <input value={selectedStop.title} onChange={(event) => updateSelectedStop({ title: event.target.value })} readOnly={!currentMember} />
@@ -1702,8 +1704,9 @@ export default function Home() {
                 <div className="stop-management" aria-label="Stop actions">
                   <button className="danger-action" onClick={deleteSelectedStop} disabled={!currentMember}>Delete stop</button>
                 </div>
+                </div>
               </div>
-            </div>
+            </section>
 
             <section className="stop-expenses" aria-labelledby="stop-expenses-title">
               <div className="stop-expenses-heading">
@@ -1752,7 +1755,12 @@ export default function Home() {
               )}
             </section>
 
-            <div className="photo-actions">
+            <section className="photo-panel" aria-labelledby="add-photos-title">
+              <div className="photo-panel-heading">
+                <p className="eyebrow">Photo upload</p>
+                <h3 id="add-photos-title">Add photos</h3>
+              </div>
+              <div className="photo-actions">
               <input
                 ref={fileInputRef}
                 className="visually-hidden"
@@ -1771,14 +1779,14 @@ export default function Home() {
               <p>Take photos with the iPhone Camera first, then choose them here.</p>
               {queueState === "loading" && <p className="queue-message">Opening your offline photo queue…</p>}
               {queueError && <p className="queue-message error" role="alert">{queueError}</p>}
-            </div>
+              </div>
 
-            <div className="gallery-heading">
+              <div className="gallery-heading">
               <h3>Memories from this stop</h3>
               <span>{selectedPhotos.length} queued</span>
-            </div>
+              </div>
 
-            {selectedPhotos.length === 0 ? (
+              {selectedPhotos.length === 0 ? (
               <div className="empty-gallery">
                 <div className="empty-icon">▧</div>
                 <strong>No photos assigned yet</strong>
@@ -1807,8 +1815,9 @@ export default function Home() {
                   </figure>
                 ))}
               </div>
-            )}
-          </article>
+              )}
+            </section>
+          </div>
         )}
       </section>
         </>

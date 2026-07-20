@@ -96,10 +96,11 @@ button { cursor: pointer; }
 .stop-copy small { margin-top: 3px; color: var(--muted); font-size: .72rem; }
 .photo-count { min-width: 24px; padding: 4px 7px; border-radius: 99px; color: white; background: var(--forest); font-size: .68rem; font-weight: 800; text-align: center; }
 
+.stop-workspace { display: grid; min-width: 0; gap: 18px; }
 .memory-panel { overflow: hidden; }
 .memory-hero { padding: 26px; color: white; background: linear-gradient(135deg, #2d5a46 0%, #1e4133 100%); }
 .memory-hero .eyebrow { color: #cfe1d5; }
-.memory-hero h2 { font-size: clamp(2rem, 5vw, 3rem); }
+.memory-hero h2 { margin: 4px 0 20px; font-size: clamp(2rem, 5vw, 3rem); }
 .memory-hero > p:not(.eyebrow) { margin: 10px 0 18px; color: #dbe7df; line-height: 1.5; }
 .stop-editor { display: grid; gap: 12px; margin-top: 12px; }
 .stop-editor label { display: grid; gap: 5px; }
@@ -131,8 +132,11 @@ button { cursor: pointer; }
 .stop-management .danger-action { margin-left: auto; color: #ffd1c8; }
 .detail-row { display: flex; flex-wrap: wrap; gap: 9px; }
 .detail-row span { padding: 7px 10px; border: 1px solid rgba(255,255,255,.18); border-radius: 99px; background: rgba(255,255,255,.08); font-size: .74rem; }
-.photo-actions { padding: 20px 24px; border-bottom: 1px solid var(--line); text-align: center; }
-.stop-expenses { padding: 20px 24px; border-bottom: 1px solid var(--line); background: #fffdf8; }
+.stop-expenses, .photo-panel { overflow: hidden; border: 1px solid var(--line); border-radius: 22px; background: #fffdf8; box-shadow: var(--shadow); }
+.stop-expenses { padding: 22px 24px; }
+.photo-panel-heading { padding: 22px 24px 0; }
+.photo-panel-heading h3 { margin: 3px 0 0; font-family: Georgia, "Times New Roman", serif; font-size: 1.35rem; }
+.photo-actions { padding: 16px 24px 20px; border-bottom: 1px solid var(--line); text-align: center; }
 .stop-expenses-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .stop-expenses-heading h3 { margin: 3px 0 0; font-family: Georgia, "Times New Roman", serif; font-size: 1.15rem; }
 .stop-expenses-heading > span { display: grid; min-width: 28px; height: 28px; place-items: center; border-radius: 50%; color: white; background: var(--forest); font-size: .72rem; font-weight: 800; }
