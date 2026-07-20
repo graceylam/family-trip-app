@@ -52,6 +52,8 @@ export type TripExpense = {
   localCurrency: string;
   homeAmount: number | null;
   homeCurrency: string;
+  exchangeRate?: number;
+  exchangeRateDate?: string;
   createdAt: string;
 };
 
