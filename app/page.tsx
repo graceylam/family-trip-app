@@ -256,6 +256,8 @@ export default function Home() {
   const [newExpenseAmount, setNewExpenseAmount] = useState("");
   const [newExpenseCategory, setNewExpenseCategory] = useState(expenseCategories[0]);
   const [newExpenseLocalCurrency, setNewExpenseLocalCurrency] = useState("EUR");
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [expenseEditDraft, setExpenseEditDraft] = useState({ item: "", amount: "", category: expenseCategories[0], localCurrency: "EUR" });
   const [expenseConversionState, setExpenseConversionState] = useState<"idle" | "converting">("idle");
   const [expenseConversionError, setExpenseConversionError] = useState<string | null>(null);
   const [expensePersonFilter, setExpensePersonFilter] = useState("");
@@ -1055,6 +1057,70 @@ export default function Home() {
     updateSelectedStop({ expenses: (selectedStop.expenses ?? []).filter((item) => item.id !== expenseId) });
   }
 
+  function startEditingExpense(expense: TripExpense) {
+    if (!currentMember || (!isAdmin && expense.memberId !== currentMember.id)) return;
+    setExpenseEditDraft({
+      item: expense.item,
+      amount: String(expense.localAmount),
+      category: expense.category,
+      localCurrency: expense.localCurrency,
+    });
+    setExpenseConversionError(null);
+    setEditingExpenseId(expense.id);
+  }
+
+  function cancelEditingExpense() {
+    setEditingExpenseId(null);
+    setExpenseConversionError(null);
+  }
+
+  function openExpenseEditor(dayId: string, stopId: string, expense: TripExpense) {
+    if (!currentMember || (!isAdmin && expense.memberId !== currentMember.id)) return;
+    setSelectedDayId(dayId);
+    setSelectedStopId(stopId);
+    startEditingExpense(expense);
+    setActiveTab("itinerary");
+  }
+
+  async function saveEditedExpense(expenseId: string) {
+    if (!currentMember || !selectedStop) return;
+    const existingExpense = (selectedStop.expenses ?? []).find((expense) => expense.id === expenseId);
+    if (!existingExpense || (!isAdmin && existingExpense.memberId !== currentMember.id)) return;
+    const item = expenseEditDraft.item.trim();
+    const localAmount = Number(expenseEditDraft.amount);
+    if (!item || !Number.isFinite(localAmount) || localAmount <= 0) return;
+
+    setExpenseConversionState("converting");
+    setExpenseConversionError(null);
+    let exchangeRate: number | undefined;
+    let exchangeRateDate: string | undefined;
+    let homeAmount: number | null = null;
+    try {
+      const conversion = await getLatestExchangeRate(expenseEditDraft.localCurrency, "AUD");
+      exchangeRate = conversion.rate;
+      exchangeRateDate = conversion.date;
+      homeAmount = convertedAmount(localAmount, conversion.rate);
+    } catch {
+      setExpenseConversionError("Expense updated in its local currency, but AUD conversion is waiting. Use Refresh AUD conversions from the Expenses tab when online.");
+    }
+
+    updateSelectedStop({
+      expenses: (selectedStop.expenses ?? []).map((expense) => expense.id === expenseId ? {
+        ...expense,
+        item,
+        category: expenseEditDraft.category,
+        localAmount,
+        localCurrency: expenseEditDraft.localCurrency,
+        homeAmount,
+        homeCurrency: "AUD",
+        exchangeRate,
+        exchangeRateDate,
+      } : expense),
+    });
+    setEditingExpenseId(null);
+    setExpenseConversionState("idle");
+  }
+
   function handleLocationChange(value: string) {
     if (!currentMember || !selectedStop) return;
     updateSelectedStop({
@@ -1744,11 +1810,46 @@ export default function Home() {
               {expenseConversionError && <p className="expense-conversion-alert" role="alert">{expenseConversionError}</p>}
               {(selectedStop.expenses ?? []).length > 0 && (
                 <div className="stop-expense-list">
-                  {(selectedStop.expenses ?? []).map((expense) => (
+                  {(selectedStop.expenses ?? []).map((expense) => editingExpenseId === expense.id ? (
+                    <div className="expense-edit-card" key={expense.id}>
+                      <div className="expense-edit-grid">
+                        <label>
+                          <span>Item</span>
+                          <input value={expenseEditDraft.item} onChange={(event) => setExpenseEditDraft((draft) => ({ ...draft, item: event.target.value }))} aria-label="Edit expense item" />
+                        </label>
+                        <label>
+                          <span>Amount</span>
+                          <div className="money-input">
+                            <select value={expenseEditDraft.localCurrency} onChange={(event) => setExpenseEditDraft((draft) => ({ ...draft, localCurrency: event.target.value }))} aria-label="Edit expense currency">
+                              {currencyOptions.map((currency) => <option key={currency}>{currency}</option>)}
+                            </select>
+                            <input type="number" inputMode="decimal" min="0" step="0.01" value={expenseEditDraft.amount} onChange={(event) => setExpenseEditDraft((draft) => ({ ...draft, amount: event.target.value }))} aria-label="Edit expense amount" />
+                          </div>
+                        </label>
+                        <label>
+                          <span>Category</span>
+                          <select value={expenseEditDraft.category} onChange={(event) => setExpenseEditDraft((draft) => ({ ...draft, category: event.target.value }))} aria-label="Edit expense category">
+                            {expenseCategories.map((category) => <option key={category}>{category}</option>)}
+                          </select>
+                        </label>
+                      </div>
+                      <div className="expense-edit-actions">
+                        <button className="text-button" onClick={cancelEditingExpense} disabled={expenseConversionState === "converting"}>Cancel</button>
+                        <button className="primary-button" onClick={() => void saveEditedExpense(expense.id)} disabled={!expenseEditDraft.item.trim() || !(Number(expenseEditDraft.amount) > 0) || expenseConversionState === "converting"}>
+                          {expenseConversionState === "converting" ? "Updating AUD…" : "Save expense"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
                     <div className="stop-expense-row" key={expense.id}>
                       <div><strong>{expense.item}</strong><small>{expense.category} · {expense.memberName}</small></div>
                       <strong>{expenseMoney(expense.localAmount, expense.localCurrency)}</strong>
-                      {(isAdmin || expense.memberId === currentMember?.id) && <button onClick={() => deleteExpense(expense.id)} aria-label={`Delete ${expense.item} expense`}>Delete</button>}
+                      {(isAdmin || expense.memberId === currentMember?.id) && (
+                        <div className="stop-expense-actions">
+                          <button onClick={() => startEditingExpense(expense)} aria-label={`Edit ${expense.item} expense`}>Edit</button>
+                          <button onClick={() => deleteExpense(expense.id)} aria-label={`Delete ${expense.item} expense`}>Delete</button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1953,12 +2054,16 @@ export default function Home() {
           <div className="expenses-table-card">
             <div className="expenses-table-scroll">
               <table className="expenses-table">
-                <thead><tr><th>Date</th><th>Item</th><th>Category</th><th>Person</th><th>Local Currency</th><th>Home Currency</th></tr></thead>
+                <thead><tr><th>Date</th><th>Item</th><th>Location</th><th>Category</th><th>Person</th><th>Local Currency</th><th>Home Currency</th></tr></thead>
                 <tbody>
-                  {filteredExpenseRows.map(({ day, stop, expense }) => (
+                  {filteredExpenseRows.map(({ day, dayIndex, stop, stopIndex, expense }) => (
                     <tr key={expense.id}>
-                      <td data-label="Date"><time dateTime={day.date}>{expenseDate(day.date)}</time><small>{stop.title}</small></td>
-                      <td data-label="Item"><strong>{expense.item}</strong></td>
+                      <td data-label="Date"><time dateTime={day.date}>{expenseDate(day.date)}</time></td>
+                      <td data-label="Item">
+                        <strong>{expense.item}</strong>
+                        {(isAdmin || expense.memberId === currentMember?.id) && <button className="expense-table-edit" onClick={() => openExpenseEditor(day.id, stop.id, expense)} aria-label={`Edit ${expense.item} from Day ${dayIndex + 1}, Stop ${stopIndex + 1}`}>Edit</button>}
+                      </td>
+                      <td data-label="Location">{stop.title}</td>
                       <td data-label="Category"><span className="expense-category">{expense.category}</span></td>
                       <td data-label="Person">{expense.memberName}</td>
                       <td data-label="Local Currency">{expenseMoney(expense.localAmount, expense.localCurrency)}</td>
