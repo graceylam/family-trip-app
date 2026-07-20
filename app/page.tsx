@@ -2,6 +2,7 @@
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { sortItineraryChronologically } from "../lib/chronology";
+import { convertedAmount, getLatestExchangeRate } from "../lib/exchangeRates";
 import {
   addQueuedPhotos,
   deleteQueuedPhoto,
@@ -255,8 +256,8 @@ export default function Home() {
   const [newExpenseAmount, setNewExpenseAmount] = useState("");
   const [newExpenseCategory, setNewExpenseCategory] = useState(expenseCategories[0]);
   const [newExpenseLocalCurrency, setNewExpenseLocalCurrency] = useState("EUR");
-  const [newExpenseHomeAmount, setNewExpenseHomeAmount] = useState("");
-  const [newExpenseHomeCurrency, setNewExpenseHomeCurrency] = useState("AUD");
+  const [expenseConversionState, setExpenseConversionState] = useState<"idle" | "converting">("idle");
+  const [expenseConversionError, setExpenseConversionError] = useState<string | null>(null);
   const [expensePersonFilter, setExpensePersonFilter] = useState("");
   const [expenseDayFilter, setExpenseDayFilter] = useState("");
   const [expenseCategoryFilter, setExpenseCategoryFilter] = useState("");
@@ -969,13 +970,25 @@ export default function Home() {
       : day)));
   }
 
-  function addExpense() {
+  async function addExpense() {
     if (!currentMember || !selectedStop) return;
     const item = newExpenseItem.trim();
     const localAmount = Number(newExpenseAmount);
-    const parsedHomeAmount = newExpenseHomeAmount.trim() ? Number(newExpenseHomeAmount) : null;
     if (!item || !Number.isFinite(localAmount) || localAmount <= 0) return;
-    if (parsedHomeAmount !== null && (!Number.isFinite(parsedHomeAmount) || parsedHomeAmount < 0)) return;
+
+    setExpenseConversionState("converting");
+    setExpenseConversionError(null);
+    let exchangeRate: number | undefined;
+    let exchangeRateDate: string | undefined;
+    let homeAmount: number | null = null;
+    try {
+      const conversion = await getLatestExchangeRate(newExpenseLocalCurrency, "AUD");
+      exchangeRate = conversion.rate;
+      exchangeRateDate = conversion.date;
+      homeAmount = convertedAmount(localAmount, conversion.rate);
+    } catch {
+      setExpenseConversionError("Expense saved in its local currency, but AUD conversion is waiting. Use Refresh AUD conversions from the Expenses tab when online.");
+    }
 
     const expense: TripExpense = {
       id: crypto.randomUUID(),
@@ -985,14 +998,54 @@ export default function Home() {
       memberName: currentMember.name,
       localAmount,
       localCurrency: newExpenseLocalCurrency,
-      homeAmount: parsedHomeAmount,
-      homeCurrency: newExpenseHomeCurrency,
+      homeAmount,
+      homeCurrency: "AUD",
+      exchangeRate,
+      exchangeRateDate,
       createdAt: new Date().toISOString(),
     };
     updateSelectedStop({ expenses: [...(selectedStop.expenses ?? []), expense] });
     setNewExpenseItem("");
     setNewExpenseAmount("");
-    setNewExpenseHomeAmount("");
+    setExpenseConversionState("idle");
+  }
+
+  async function refreshAudConversions() {
+    if (!currentMember || isOffline) return;
+    const missingCurrencies = Array.from(new Set(expenseRows
+      .filter(({ expense }) => expense.homeAmount === null)
+      .map(({ expense }) => expense.localCurrency)));
+    if (missingCurrencies.length === 0) return;
+
+    setExpenseConversionState("converting");
+    setExpenseConversionError(null);
+    try {
+      const rates = new Map(await Promise.all(missingCurrencies.map(async (currency) => {
+        const conversion = await getLatestExchangeRate(currency, "AUD");
+        return [currency, conversion] as const;
+      })));
+      setDays((current) => current.map((day) => ({
+        ...day,
+        stops: day.stops.map((stop) => ({
+          ...stop,
+          expenses: (stop.expenses ?? []).map((expense) => {
+            if (expense.homeAmount !== null) return expense;
+            const conversion = rates.get(expense.localCurrency);
+            return conversion ? {
+              ...expense,
+              homeAmount: convertedAmount(expense.localAmount, conversion.rate),
+              homeCurrency: "AUD",
+              exchangeRate: conversion.rate,
+              exchangeRateDate: conversion.date,
+            } : expense;
+          }),
+        })),
+      })));
+    } catch {
+      setExpenseConversionError("AUD conversion is temporarily unavailable. Local amounts remain saved and unchanged.");
+    } finally {
+      setExpenseConversionState("idle");
+    }
   }
 
   function deleteExpense(expenseId: string) {
@@ -1680,19 +1733,12 @@ export default function Home() {
                     {expenseCategories.map((category) => <option key={category}>{category}</option>)}
                   </select>
                 </label>
-                <label>
-                  <span>Home amount <small>optional</small></span>
-                  <div className="money-input">
-                    <select value={newExpenseHomeCurrency} onChange={(event) => setNewExpenseHomeCurrency(event.target.value)} aria-label="Home currency">
-                      {currencyOptions.map((currency) => <option key={currency}>{currency}</option>)}
-                    </select>
-                    <input type="number" inputMode="decimal" min="0" step="0.01" value={newExpenseHomeAmount} onChange={(event) => setNewExpenseHomeAmount(event.target.value)} placeholder="0.00" aria-label="Home amount" />
-                  </div>
-                </label>
               </div>
-              <button className="primary-button add-expense-button" onClick={addExpense} disabled={!currentMember || !newExpenseItem.trim() || !(Number(newExpenseAmount) > 0)}>
-                Add expense as {currentMember?.name || "family member"}
+              <button className="primary-button add-expense-button" onClick={() => void addExpense()} disabled={!currentMember || !newExpenseItem.trim() || !(Number(newExpenseAmount) > 0) || expenseConversionState === "converting"}>
+                {expenseConversionState === "converting" ? "Converting to AUD…" : `Add expense as ${currentMember?.name || "family member"}`}
               </button>
+              <p className="expense-rate-note">AUD is calculated automatically using the latest daily reference rate and saved with the expense.</p>
+              {expenseConversionError && <p className="expense-conversion-alert" role="alert">{expenseConversionError}</p>}
               {(selectedStop.expenses ?? []).length > 0 && (
                 <div className="stop-expense-list">
                   {(selectedStop.expenses ?? []).map((expense) => (
@@ -1859,7 +1905,14 @@ export default function Home() {
               <h1 id="expenses-title">Expenses</h1>
               <p>Costs entered at itinerary stops, with the person recorded automatically.</p>
             </div>
+            {expenseRows.some(({ expense }) => expense.homeAmount === null) && (
+              <button className="secondary-button" onClick={() => void refreshAudConversions()} disabled={isOffline || expenseConversionState === "converting"}>
+                {expenseConversionState === "converting" ? "Converting…" : "Refresh AUD conversions"}
+              </button>
+            )}
           </header>
+
+          {expenseConversionError && <p className="gallery-alert" role="alert">{expenseConversionError}</p>}
 
           <div className="expense-filters" aria-label="Expense filters">
             <label>
@@ -1900,7 +1953,7 @@ export default function Home() {
                       <td data-label="Category"><span className="expense-category">{expense.category}</span></td>
                       <td data-label="Person">{expense.memberName}</td>
                       <td data-label="Local Currency">{expenseMoney(expense.localAmount, expense.localCurrency)}</td>
-                      <td data-label="Home Currency">{expenseMoney(expense.homeAmount, expense.homeCurrency)}</td>
+                      <td data-label="Home Currency">{expenseMoney(expense.homeAmount, "AUD")}{expense.exchangeRateDate && <small>Rate dated {expense.exchangeRateDate}</small>}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -136,13 +136,15 @@ button { cursor: pointer; }
 .stop-expenses-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .stop-expenses-heading h3 { margin: 3px 0 0; font-family: Georgia, "Times New Roman", serif; font-size: 1.15rem; }
 .stop-expenses-heading > span { display: grid; min-width: 28px; height: 28px; place-items: center; border-radius: 50%; color: white; background: var(--forest); font-size: .72rem; font-weight: 800; }
-.expense-entry-grid { display: grid; grid-template-columns: 1.25fr 1fr 1fr 1fr; gap: 10px; }
+.expense-entry-grid { display: grid; grid-template-columns: 1.35fr 1fr 1fr; gap: 10px; }
 .expense-entry-grid label { display: grid; align-content: start; gap: 5px; color: var(--muted); font-size: .65rem; font-weight: 800; }
 .expense-entry-grid label > span { letter-spacing: .05em; text-transform: uppercase; }
 .expense-entry-grid label small { font-size: .56rem; font-weight: 700; text-transform: none; }
 .expense-entry-grid input, .expense-entry-grid select, .expense-filters select { min-width: 0; width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: white; }
 .money-input { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 5px; }
 .add-expense-button { width: 100%; margin-top: 12px; }
+.expense-rate-note { margin: 8px 0 0; color: var(--muted); font-size: .65rem; line-height: 1.4; text-align: center; }
+.expense-conversion-alert { margin: 10px 0 0; padding: 9px 10px; border-radius: 9px; color: #8b3d2d; background: #fff0eb; font-size: .68rem; font-weight: 700; line-height: 1.4; }
 .stop-expense-list { display: grid; gap: 7px; margin-top: 14px; }
 .stop-expense-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: white; }
 .stop-expense-row div { min-width: 0; }
@@ -176,7 +178,7 @@ button { cursor: pointer; }
 
 .gallery-page { display: grid; gap: 20px; }
 .expenses-page { display: grid; gap: 20px; }
-.expenses-page-heading { padding: 8px 2px 2px; }
+.expenses-page-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 8px 2px 2px; }
 .expenses-page-heading h1 { margin: 5px 0 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(2rem, 5vw, 3.1rem); font-weight: 500; letter-spacing: -.03em; }
 .expenses-page-heading p:last-child { margin: 7px 0 0; color: var(--muted); font-size: .86rem; }
 .expense-filters { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,253,248,.9); }
@@ -189,6 +191,7 @@ button { cursor: pointer; }
 .expenses-table td { padding: 14px; border-top: 1px solid var(--line); vertical-align: top; white-space: nowrap; }
 .expenses-table tbody tr:first-child td { border-top: 0; }
 .expenses-table td:first-child small { display: block; margin-top: 3px; max-width: 150px; overflow: hidden; color: var(--muted); font-size: .62rem; text-overflow: ellipsis; }
+.expenses-table td:last-child small { display: block; margin-top: 3px; color: var(--muted); font-size: .58rem; }
 .expense-category { display: inline-block; padding: 5px 8px; border-radius: 99px; color: var(--forest); background: var(--sage); font-size: .65rem; font-weight: 800; }
 .expenses-empty { display: grid; justify-items: center; gap: 7px; padding: 48px 20px; border-top: 1px solid var(--line); color: var(--muted); text-align: center; }
 .expenses-empty span { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 50%; color: white; background: #91aa99; font-family: Georgia, serif; font-size: 1.3rem; }
@@ -287,6 +290,8 @@ button { cursor: pointer; }
   .member-row { grid-template-columns: 32px 1fr auto; }
   .member-row .member-action:last-child { grid-column: 2 / -1; justify-self: start; }
   .gallery-page-heading { align-items: flex-start; flex-direction: column; }
+  .expenses-page-heading { align-items: flex-start; flex-direction: column; }
+  .expenses-page-heading .secondary-button { width: 100%; }
   .gallery-page-heading .secondary-button { width: 100%; }
   .gallery-day-heading, .gallery-stop { padding-inline: 16px; }
   .shared-photo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
