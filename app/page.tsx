@@ -302,6 +302,7 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const previewUrlsRef = useRef(new Map<string, string>());
   const sharedPhotoUrlsRef = useRef(new Map<string, string>());
+  const sharedPhotoBlobsRef = useRef(new Map<string, Blob>());
   const galleryRequestRef = useRef(0);
   const lastSavedTripRef = useRef("");
   const lastSyncedTripRef = useRef<SharedTripState | null>(null);
@@ -428,6 +429,7 @@ export default function Home() {
         if (!liveFileIds.has(fileId)) {
           URL.revokeObjectURL(url);
           sharedPhotoUrlsRef.current.delete(fileId);
+          sharedPhotoBlobsRef.current.delete(fileId);
         }
       });
 
@@ -438,17 +440,20 @@ export default function Home() {
         const loaded = await Promise.all(batch.map(async (photo) => {
           try {
             const downloaded = await getSharedPhotoBlob(sharedTripId, photo.fileId);
-            return { photo, url: URL.createObjectURL(downloaded.blob) };
+            return { photo, blob: downloaded.blob, url: URL.createObjectURL(downloaded.blob) };
           } catch {
-            return { photo, url: "" };
+            return { photo, blob: null, url: "" };
           }
         }));
         if (galleryRequestRef.current !== requestId) {
           loaded.forEach((item) => { if (item.url) URL.revokeObjectURL(item.url); });
           return;
         }
-        loaded.forEach(({ photo, url }) => {
-          if (url) sharedPhotoUrlsRef.current.set(photo.fileId, url);
+        loaded.forEach(({ photo, blob, url }) => {
+          if (url && blob) {
+            sharedPhotoUrlsRef.current.set(photo.fileId, url);
+            sharedPhotoBlobsRef.current.set(photo.fileId, blob);
+          }
           else unavailableCount += 1;
         });
         setSharedPhotoUrls(Object.fromEntries(sharedPhotoUrlsRef.current));
@@ -658,6 +663,7 @@ export default function Home() {
     galleryRequestRef.current += 1;
     sharedPhotoUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
     sharedPhotoUrlsRef.current.clear();
+    sharedPhotoBlobsRef.current.clear();
   }, []);
 
   useEffect(() => {
@@ -1567,42 +1573,49 @@ export default function Home() {
       : [...current, stopId]);
   }
 
-  async function downloadSelectedStops() {
+  async function shareSelectedStops() {
     if (!downloadDay || selectedDownloadStopIds.length === 0) return;
     const photos = sharedPhotos.filter((photo) =>
       photo.dayId === downloadDay.id && selectedDownloadStopIds.includes(photo.stopId),
     );
     if (photos.length === 0) return;
 
+    const files = photos.map((photo) => {
+      const blob = sharedPhotoBlobsRef.current.get(photo.fileId);
+      return blob ? new File([blob], photo.name, { type: blob.type || "image/jpeg" }) : null;
+    });
+    if (files.some((file) => file === null)) {
+      setBulkDownloadError("Some selected photos are still loading. Wait for the gallery to finish, then open the Share Sheet again.");
+      void refreshSharedGallery();
+      return;
+    }
+
     setBulkDownloadState("downloading");
     setBulkDownloadError(null);
     try {
-      const ready: Array<{ name: string; url: string }> = [];
-      for (let start = 0; start < photos.length; start += 3) {
-        const batch = await Promise.all(photos.slice(start, start + 3).map(async (photo) => {
-          const existingUrl = sharedPhotoUrlsRef.current.get(photo.fileId);
-          if (existingUrl) return { name: photo.name, url: existingUrl };
-          const downloaded = await getSharedPhotoBlob(sharedTripId, photo.fileId);
-          const url = URL.createObjectURL(downloaded.blob);
-          sharedPhotoUrlsRef.current.set(photo.fileId, url);
-          return { name: photo.name, url };
-        }));
-        ready.push(...batch);
-        setSharedPhotoUrls(Object.fromEntries(sharedPhotoUrlsRef.current));
+      const shareFiles = files.filter((file): file is File => file !== null);
+      if (navigator.share && navigator.canShare?.({ files: shareFiles })) {
+        await navigator.share({
+          files: shareFiles,
+          title: `${tripName} · ${downloadDay.label}`,
+        });
+      } else {
+        photos.forEach((photo) => {
+          const url = sharedPhotoUrlsRef.current.get(photo.fileId);
+          if (!url) return;
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = photo.name;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+        });
       }
-
-      ready.forEach(({ name, url }) => {
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = name;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-      });
       setDownloadDayId("");
       setSelectedDownloadStopIds([]);
     } catch (error) {
-      setBulkDownloadError(error instanceof Error ? error.message : "The selected photos could not be downloaded.");
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setBulkDownloadError(error instanceof Error ? error.message : "The selected photos could not be shared.");
     } finally {
       setBulkDownloadState("idle");
     }
@@ -2017,7 +2030,7 @@ export default function Home() {
                     <time dateTime={day.date}>{galleryDate(day.date)}</time>
                   </div>
                   <button className="gallery-day-download" onClick={() => openDayDownload(day)} disabled={!sharedPhotos.some((photo) => photo.dayId === day.id)}>
-                    Download day
+                    Share day
                   </button>
                 </header>
 
@@ -2248,8 +2261,8 @@ export default function Home() {
         <div className="modal-backdrop" role="presentation" onMouseDown={() => bulkDownloadState === "idle" && setDownloadDayId("")}>
           <section className="modal" role="dialog" aria-modal="true" aria-labelledby="download-day-title" onMouseDown={(event) => event.stopPropagation()}>
             <p className="eyebrow">Photo Gallery</p>
-            <h2 id="download-day-title">Download Day {days.findIndex((day) => day.id === downloadDay.id) + 1}</h2>
-            <p className="modal-copy">Choose the stops to download. Your browser may ask you to allow multiple downloads; on iPhone, files are saved to Downloads rather than directly to Apple Photos.</p>
+            <h2 id="download-day-title">Share Day {days.findIndex((day) => day.id === downloadDay.id) + 1}</h2>
+            <p className="modal-copy">Choose the stops, then use the iPhone Share Sheet and tap <strong>Save Images</strong> to add them directly to Apple Photos. Browsers without file sharing will use Downloads as a fallback.</p>
             <div className="download-stop-list">
               {downloadDay.stops.map((stop, stopIndex) => {
                 const photoCount = sharedPhotos.filter((photo) => photo.dayId === downloadDay.id && photo.stopId === stop.id).length;
@@ -2264,8 +2277,8 @@ export default function Home() {
             {bulkDownloadError && <p className="gallery-alert" role="alert">{bulkDownloadError}</p>}
             <div className="modal-actions">
               <button className="secondary-button" onClick={() => setDownloadDayId("")} disabled={bulkDownloadState === "downloading"}>Cancel</button>
-              <button className="primary-button" onClick={() => void downloadSelectedStops()} disabled={selectedDownloadStopIds.length === 0 || bulkDownloadState === "downloading"}>
-                {bulkDownloadState === "downloading" ? "Preparing downloads…" : "Download selected stops"}
+              <button className="primary-button" onClick={() => void shareSelectedStops()} disabled={selectedDownloadStopIds.length === 0 || bulkDownloadState === "downloading"}>
+                {bulkDownloadState === "downloading" ? "Opening Share Sheet…" : "Open Share Sheet"}
               </button>
             </div>
           </section>
