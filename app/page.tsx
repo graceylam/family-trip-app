@@ -203,6 +203,29 @@ function expenseMoney(amount: number | null, currency: string): string {
   }
 }
 
+function FittedDayTitle({ children }: { children: string }) {
+  const titleRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    const title = titleRef.current;
+    if (!title) return;
+    const fitTitle = () => {
+      title.style.fontSize = "";
+      let size = Number.parseFloat(window.getComputedStyle(title).fontSize);
+      while (title.scrollWidth > title.clientWidth && size > 18) {
+        size -= 1;
+        title.style.fontSize = `${size}px`;
+      }
+    };
+    fitTitle();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fitTitle);
+    observer?.observe(title);
+    return () => observer?.disconnect();
+  }, [children]);
+
+  return <h2 className="day-name-title" ref={titleRef}>{children}</h2>;
+}
+
 function groupPhotosByPerson(photos: SharedPhoto[]): Array<{ id: string; name: string; photos: SharedPhoto[] }> {
   const groups = new Map<string, { id: string; name: string; photos: SharedPhoto[] }>();
   photos.forEach((photo) => {
@@ -240,11 +263,15 @@ export default function Home() {
   const [showSafety, setShowSafety] = useState(false);
   const [showAddStop, setShowAddStop] = useState(false);
   const [showAddDay, setShowAddDay] = useState(false);
+  const [showEditDay, setShowEditDay] = useState(false);
+  const [showDeleteDayConfirm, setShowDeleteDayConfirm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [newStopName, setNewStopName] = useState("");
   const [newStopTime, setNewStopTime] = useState("12:00");
   const [newDayName, setNewDayName] = useState("");
   const [newDayDate, setNewDayDate] = useState("");
+  const [editDayName, setEditDayName] = useState("");
+  const [editDayDate, setEditDayDate] = useState("");
   const [newMemberName, setNewMemberName] = useState("");
   const [copiedMemberId, setCopiedMemberId] = useState("");
   const [placeSuggestions, setPlaceSuggestions] = useState<PlaceSuggestion[]>([]);
@@ -738,6 +765,7 @@ export default function Home() {
     () => selectedDay?.stops.find((stop) => stop.id === selectedStopId) ?? selectedDay?.stops[0],
     [selectedDay, selectedStopId],
   );
+  const selectedDayNumber = Math.max(1, days.findIndex((day) => day.id === selectedDay?.id) + 1);
 
   const expenseRows = useMemo(() => days.flatMap((day, dayIndex) =>
     day.stops.flatMap((stop, stopIndex) => (stop.expenses ?? []).map((expense) => ({
@@ -1182,19 +1210,34 @@ export default function Home() {
     }
   }
 
+  function openEditDayDetails() {
+    if (!currentMember || !selectedDay) return;
+    setEditDayName(selectedDay.label);
+    setEditDayDate(selectedDay.date);
+    setShowEditDay(true);
+  }
+
+  function saveDayDetails() {
+    if (!currentMember || !selectedDay || !editDayDate || (isAdmin && !editDayName.trim())) return;
+    const selectedDayId = selectedDay.id;
+    setDays((current) => sortItineraryChronologically(current.map((day) => day.id === selectedDayId ? {
+      ...day,
+      date: editDayDate,
+      label: isAdmin ? editDayName.trim() : day.label,
+    } : day)));
+    setShowEditDay(false);
+  }
+
   function deleteSelectedDay() {
     if (!currentMember || !selectedDay || days.length <= 1) return;
-    const hasLocalPhotos = queuedPhotos.some((photo) => selectedDay.stops.some((stop) => stop.id === photo.stopId));
-    const warning = hasLocalPhotos
-      ? "This day has photos on this device. Their Apple Photos and Drive copies will remain, but they will no longer be assigned in this itinerary. Delete the day?"
-      : "Delete this day from the shared itinerary? Photos already in Apple Photos or Drive will not be deleted.";
-    if (!window.confirm(warning)) return;
     const index = days.findIndex((day) => day.id === selectedDay.id);
     const remaining = days.filter((day) => day.id !== selectedDay.id);
     const nextDay = remaining[Math.min(index, remaining.length - 1)];
     setDays(sortItineraryChronologically(remaining));
     setSelectedDayId(nextDay.id);
     selectStop(nextDay.stops[0]?.id ?? "");
+    setShowDeleteDayConfirm(false);
+    setShowEditDay(false);
   }
 
   function deleteSelectedStop() {
@@ -1210,22 +1253,6 @@ export default function Home() {
       current.map((day) => day.id === selectedDay.id ? { ...day, stops: remainingStops } : day),
     ));
     selectStop(remainingStops[Math.min(index, remainingStops.length - 1)]?.id ?? "");
-  }
-
-  function updateSelectedDayDate(date: string) {
-    if (!currentMember || !selectedDay || !date) return;
-    setDays((current) =>
-      sortItineraryChronologically(
-        current.map((day) => (day.id === selectedDay.id ? { ...day, date } : day)),
-      ),
-    );
-  }
-
-  function updateSelectedDayLabel(label: string) {
-    if (!isAdmin || !selectedDay) return;
-    setDays((current) =>
-      current.map((day) => (day.id === selectedDay.id ? { ...day, label } : day)),
-    );
   }
 
   async function togglePrivacy(photoId: string) {
@@ -1644,39 +1671,14 @@ export default function Home() {
 
       <section className="content-grid">
         <div className="timeline-panel">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">{selectedDay?.label}</p>
-              <h2>Today’s plan</h2>
+          <header className="day-overview">
+            <FittedDayTitle>{selectedDay?.label ?? "Trip day"}</FittedDayTitle>
+            <p className="day-date-line">Day {selectedDayNumber}: <time dateTime={selectedDay?.date}>{galleryDate(selectedDay?.date ?? "")}</time></p>
+            <div className="day-toolbar" aria-label="Day actions">
+              <button className="day-tool-button" onClick={openEditDayDetails} disabled={!currentMember}>Edit Day Details</button>
+              <button className="day-tool-button primary" onClick={() => setShowAddStop(true)} disabled={!currentMember}>+ Add Stop</button>
             </div>
-            <div className="day-actions">
-              <label className="date-control name-control">
-                <span>Day name</span>
-                <input
-                  type="text"
-                  value={selectedDay?.label ?? ""}
-                  onChange={(event) => updateSelectedDayLabel(event.target.value)}
-                  aria-label="Change selected day name"
-                  placeholder="Vienna"
-                  readOnly={!isAdmin}
-                />
-              </label>
-              <label className="date-control">
-                <span>Date</span>
-                <input
-                  type="date"
-                  value={selectedDay?.date ?? ""}
-                  onChange={(event) => updateSelectedDayDate(event.target.value)}
-                  aria-label="Change selected trip day date"
-                  disabled={!currentMember}
-                />
-              </label>
-              <button className="secondary-button" onClick={() => setShowAddStop(true)} disabled={!currentMember}>+ Add stop</button>
-              <div className="compact-actions" aria-label="Day actions">
-                <button className="danger-action" onClick={deleteSelectedDay} disabled={!currentMember || days.length <= 1}>Delete day</button>
-              </div>
-            </div>
-          </div>
+          </header>
 
           <div className="timeline">
             {selectedDay?.stops.map((stop) => {
@@ -2185,6 +2187,50 @@ export default function Home() {
             <div className="modal-actions">
               <button className="secondary-button" onClick={() => setShowAddStop(false)}>Cancel</button>
               <button className="primary-button" onClick={addStop} disabled={!newStopName.trim()}>Add stop</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {showEditDay && selectedDay && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowEditDay(false)}>
+          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="edit-day-title" onMouseDown={(event) => event.stopPropagation()}>
+            <p className="eyebrow">Day {selectedDayNumber}</p>
+            <h2 id="edit-day-title">Edit day details</h2>
+            <label>
+              Day name
+              <input value={editDayName} onChange={(event) => setEditDayName(event.target.value)} readOnly={!isAdmin} aria-label="Edit day name" />
+            </label>
+            {!isAdmin && <p className="modal-field-note">Only Grace can rename an existing day.</p>}
+            <label>
+              Date
+              <input type="date" value={editDayDate} onChange={(event) => setEditDayDate(event.target.value)} aria-label="Edit day date" />
+            </label>
+            <div className="modal-danger-zone">
+              <button className="danger-button" onClick={() => { setShowEditDay(false); setShowDeleteDayConfirm(true); }} disabled={days.length <= 1}>Delete Day</button>
+              {days.length <= 1 && <small>A trip must keep at least one day.</small>}
+            </div>
+            <div className="modal-actions">
+              <button className="secondary-button" onClick={() => setShowEditDay(false)}>Cancel</button>
+              <button className="primary-button" onClick={saveDayDetails} disabled={!editDayDate || (isAdmin && !editDayName.trim())}>Save changes</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {showDeleteDayConfirm && selectedDay && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => { setShowDeleteDayConfirm(false); setShowEditDay(true); }}>
+          <section className="modal confirmation-modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-day-title" onMouseDown={(event) => event.stopPropagation()}>
+            <p className="eyebrow">Please confirm</p>
+            <h2 id="delete-day-title">Delete Day {selectedDayNumber}?</h2>
+            <p className="modal-copy">
+              {queuedPhotos.some((photo) => selectedDay.stops.some((stop) => stop.id === photo.stopId))
+                ? "This day has photos on this device. Their Apple Photos and Drive copies will remain, but they will no longer be assigned in this itinerary."
+                : "This removes the day from the shared itinerary. Photos already in Apple Photos or Drive will not be deleted."}
+            </p>
+            <div className="modal-actions">
+              <button className="secondary-button" onClick={() => { setShowDeleteDayConfirm(false); setShowEditDay(true); }}>Keep day</button>
+              <button className="danger-button solid" onClick={deleteSelectedDay}>Delete Day</button>
             </div>
           </section>
         </div>
