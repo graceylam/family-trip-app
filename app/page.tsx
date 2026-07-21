@@ -226,6 +226,105 @@ function FittedDayTitle({ children }: { children: string }) {
   return <h2 className="day-name-title" ref={titleRef}>{children}</h2>;
 }
 
+type LeafletMap = { remove: () => void; fitBounds: (bounds: [number, number][], options?: Record<string, unknown>) => void };
+type LeafletLayer = { addTo: (map: LeafletMap) => LeafletLayer; bindPopup: (content: string) => LeafletLayer };
+type LeafletApi = {
+  map: (element: HTMLElement) => LeafletMap & { setView: (center: [number, number], zoom: number) => LeafletMap };
+  tileLayer: (url: string, options: Record<string, unknown>) => LeafletLayer;
+  marker: (position: [number, number], options: Record<string, unknown>) => LeafletLayer;
+  divIcon: (options: Record<string, unknown>) => unknown;
+};
+
+let leafletLoader: Promise<LeafletApi> | null = null;
+
+function loadLeaflet(): Promise<LeafletApi> {
+  if (leafletLoader) return leafletLoader;
+  leafletLoader = new Promise((resolve, reject) => {
+    const leafletWindow = window as Window & { L?: LeafletApi };
+    if (leafletWindow.L) {
+      resolve(leafletWindow.L);
+      return;
+    }
+    if (!document.querySelector('link[data-family-leaflet="true"]')) {
+      const stylesheet = document.createElement("link");
+      stylesheet.rel = "stylesheet";
+      stylesheet.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      stylesheet.dataset.familyLeaflet = "true";
+      document.head.appendChild(stylesheet);
+    }
+    const existingScript = document.querySelector<HTMLScriptElement>('script[data-family-leaflet="true"]');
+    const script = existingScript ?? document.createElement("script");
+    const finish = () => leafletWindow.L ? resolve(leafletWindow.L) : reject(new Error("The map could not be opened."));
+    script.addEventListener("load", finish, { once: true });
+    script.addEventListener("error", () => reject(new Error("The map could not be downloaded.")), { once: true });
+    if (!existingScript) {
+      script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+      script.dataset.familyLeaflet = "true";
+      document.head.appendChild(script);
+    }
+  });
+  return leafletLoader;
+}
+
+function escapeMapText(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;",
+  })[character] ?? character);
+}
+
+function DayPinMap({ day }: { day: TripDay }) {
+  const mapElementRef = useRef<HTMLDivElement>(null);
+  const [mapError, setMapError] = useState("");
+  const locatedStops = day.stops.filter((stop) => Number.isFinite(stop.latitude) && Number.isFinite(stop.longitude));
+
+  useEffect(() => {
+    let disposed = false;
+    let map: LeafletMap | null = null;
+    void loadLeaflet()
+      .then((leaflet) => {
+        if (disposed || !mapElementRef.current) return;
+        map = leaflet.map(mapElementRef.current).setView([48.2082, 16.3738], 12);
+        leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+          maxZoom: 19,
+        }).addTo(map);
+        const bounds: [number, number][] = [];
+        day.stops.forEach((stop, index) => {
+          if (!Number.isFinite(stop.latitude) || !Number.isFinite(stop.longitude)) return;
+          const position: [number, number] = [stop.latitude!, stop.longitude!];
+          bounds.push(position);
+          const icon = leaflet.divIcon({
+            className: "numbered-map-marker-wrap",
+            html: `<span class="numbered-map-marker"><b>${index + 1}</b></span>`,
+            iconSize: [34, 42],
+            iconAnchor: [17, 42],
+          });
+          leaflet.marker(position, { icon }).addTo(map!).bindPopup(`<strong>Stop ${index + 1}: ${escapeMapText(stop.title)}</strong><br>${escapeMapText(stop.place)}`);
+        });
+        if (bounds.length > 0) map.fitBounds(bounds, { padding: [36, 36], maxZoom: 15 });
+      })
+      .catch((error: unknown) => {
+        if (!disposed) setMapError(error instanceof Error ? error.message : "The map could not be opened.");
+      });
+    return () => {
+      disposed = true;
+      map?.remove();
+    };
+  }, [day]);
+
+  return (
+    <div className="day-map-canvas-wrap">
+      <div ref={mapElementRef} className="day-map-canvas" aria-label={`Map of ${day.label}`} />
+      {locatedStops.length === 0 && !mapError && <p className="day-map-overlay">Add a Google location to a stop to place its numbered pin.</p>}
+      {mapError && <p className="day-map-overlay error" role="alert">{mapError}</p>}
+    </div>
+  );
+}
+
 function groupPhotosByPerson(photos: SharedPhoto[]): Array<{ id: string; name: string; photos: SharedPhoto[] }> {
   const groups = new Map<string, { id: string; name: string; photos: SharedPhoto[] }>();
   photos.forEach((photo) => {
@@ -284,6 +383,7 @@ export default function Home() {
   const [placeSearchError, setPlaceSearchError] = useState<string | null>(null);
   const [placesUsage, setPlacesUsage] = useState<PlacesUsage | null>(null);
   const [activeTab, setActiveTab] = useState<"itinerary" | "gallery" | "expenses">("itinerary");
+  const [itineraryView, setItineraryView] = useState<"itinerary" | "map">("itinerary");
   const [newExpenseItem, setNewExpenseItem] = useState("");
   const [newExpenseAmount, setNewExpenseAmount] = useState("");
   const [newExpenseCategory, setNewExpenseCategory] = useState(expenseCategories[0]);
@@ -1032,8 +1132,13 @@ export default function Home() {
 
   function updateSelectedStop(changes: Partial<TripStop>) {
     if (!currentMember || !selectedDay || !selectedStop) return;
+    updateStopById(selectedStop.id, changes);
+  }
+
+  function updateStopById(stopId: string, changes: Partial<TripStop>) {
+    if (!currentMember || !selectedDay) return;
     setDays((current) => sortItineraryChronologically(current.map((day) => day.id === selectedDay.id
-      ? { ...day, stops: day.stops.map((stop) => stop.id === selectedStop.id ? { ...stop, ...changes } : stop) }
+      ? { ...day, stops: day.stops.map((stop) => stop.id === stopId ? { ...stop, ...changes } : stop) }
       : day)));
   }
 
@@ -1188,7 +1293,13 @@ export default function Home() {
 
   function handleLocationChange(value: string) {
     if (!currentMember || !selectedStop) return;
-    updateSelectedStop({
+    handleLocationChangeForStop(selectedStop.id, value);
+  }
+
+  function handleLocationChangeForStop(stopId: string, value: string) {
+    if (!currentMember) return;
+    setSelectedStopId(stopId);
+    updateStopById(stopId, {
       place: value,
       placeId: undefined,
       latitude: undefined,
@@ -1723,18 +1834,22 @@ export default function Home() {
         </button>
       </nav>
 
-      <section className="content-grid">
+      <section className={`content-grid ${itineraryView === "map" ? "map-mode" : ""}`}>
         <div className="timeline-panel">
           <header className="day-overview">
             <FittedDayTitle>{selectedDay?.label ?? "Trip day"}</FittedDayTitle>
             <p className="day-date-line">Day {selectedDayNumber}: <time dateTime={selectedDay?.date}>{galleryDate(selectedDay?.date ?? "")}</time></p>
+            <div className="day-view-toggle" aria-label="Itinerary display">
+              <button className={itineraryView === "itinerary" ? "active" : ""} aria-pressed={itineraryView === "itinerary"} onClick={() => setItineraryView("itinerary")}>Itinerary View</button>
+              <button className={itineraryView === "map" ? "active" : ""} aria-pressed={itineraryView === "map"} onClick={() => setItineraryView("map")}>Map View</button>
+            </div>
             <div className="day-toolbar" aria-label="Day actions">
               <button className="day-tool-button" onClick={openEditDayDetails} disabled={!currentMember}>Edit Day Details</button>
               <button className="day-tool-button primary" onClick={() => setShowAddStop(true)} disabled={!currentMember}>+ Add Stop</button>
             </div>
           </header>
 
-          <div className="timeline">
+          {itineraryView === "itinerary" ? <div className="timeline">
             {selectedDay?.stops.map((stop) => {
               const active = stop.id === selectedStop?.id;
               const count = queuedPhotos.filter((photo) => photo.stopId === stop.id).length;
@@ -1754,10 +1869,61 @@ export default function Home() {
                 </button>
               );
             })}
-          </div>
+          </div> : selectedDay ? (
+            <div className="day-map-layout">
+              <DayPinMap day={selectedDay} />
+              <aside className="map-stop-sidebar" aria-label="Day stop locations">
+                <div className="map-stop-sidebar-heading">
+                  <strong>Day locations</strong>
+                  <small>Only pins are shown—no billable route is calculated.</small>
+                </div>
+                {selectedDay.stops.map((stop, index) => {
+                  const hasPin = Number.isFinite(stop.latitude) && Number.isFinite(stop.longitude);
+                  const isSelectedMapStop = stop.id === selectedStop?.id;
+                  return (
+                    <div className={`map-stop-location ${hasPin ? "located" : "missing"}`} key={stop.id}>
+                      <span className="map-stop-number">{index + 1}</span>
+                      <div>
+                        <strong>Stop {index + 1}: {stop.title}</strong>
+                        {hasPin ? (
+                          <>
+                            <small>{stop.place}</small>
+                            <a href={stop.googleMapsUrl || googleMapsSearchUrl(stop.place)} target="_blank" rel="noopener noreferrer">Open in Google Maps ↗</a>
+                          </>
+                        ) : (
+                          <div className="map-missing-location-field">
+                            <input
+                              type="search"
+                              value={stop.place}
+                              onFocus={() => selectStop(stop.id)}
+                              onChange={(event) => handleLocationChangeForStop(stop.id, event.target.value)}
+                              placeholder="Add Google location"
+                              aria-label={`Location for Stop ${index + 1}: ${stop.title}`}
+                              autoComplete="off"
+                              readOnly={!currentMember}
+                            />
+                            {isSelectedMapStop && placeSearchState === "searching" && <small>Searching Google Maps…</small>}
+                            {isSelectedMapStop && placeSuggestions.length > 0 && (
+                              <div className="map-place-suggestions">
+                                {placeSuggestions.map((suggestion) => (
+                                  <button key={suggestion.placeId} type="button" onClick={() => void choosePlace(suggestion)} disabled={placeSearchState === "choosing"}>{suggestion.text}</button>
+                                ))}
+                                <small>Powered by Google</small>
+                              </div>
+                            )}
+                            {isSelectedMapStop && placeSearchError && <small className="error">{placeSearchError}</small>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </aside>
+            </div>
+          ) : null}
         </div>
 
-        {selectedStop && (
+        {itineraryView === "itinerary" && selectedStop && (
           <div className="stop-workspace">
             <section className="memory-panel selected-stop-panel" aria-labelledby="selected-stop-title">
               <div className="memory-hero">
