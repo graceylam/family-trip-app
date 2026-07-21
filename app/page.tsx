@@ -265,6 +265,10 @@ export default function Home() {
   const [showAddDay, setShowAddDay] = useState(false);
   const [showEditDay, setShowEditDay] = useState(false);
   const [showDeleteDayConfirm, setShowDeleteDayConfirm] = useState(false);
+  const [downloadDayId, setDownloadDayId] = useState("");
+  const [selectedDownloadStopIds, setSelectedDownloadStopIds] = useState<string[]>([]);
+  const [bulkDownloadState, setBulkDownloadState] = useState<"idle" | "downloading">("idle");
+  const [bulkDownloadError, setBulkDownloadError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [newStopName, setNewStopName] = useState("");
   const [newStopTime, setNewStopTime] = useState("12:00");
@@ -785,6 +789,7 @@ export default function Home() {
     (!expenseDayFilter || day.id === expenseDayFilter) &&
     (!expenseCategoryFilter || expense.category === expenseCategoryFilter),
   ), [expenseCategoryFilter, expenseDayFilter, expensePersonFilter, expenseRows]);
+  const downloadDay = useMemo(() => days.find((day) => day.id === downloadDayId), [days, downloadDayId]);
   const expenseTotals = useMemo(() => {
     const localByCurrency = new Map<string, number>();
     let homeAmount = 0;
@@ -1479,16 +1484,16 @@ export default function Home() {
           photo.status !== "uploaded",
       );
 
-      for (const queuedPhoto of uploadCandidates) {
+      const uploadOnePhoto = async (queuedPhoto: QueuedPhotoView) => {
         const record = await getQueuedPhoto(queuedPhoto.id);
-        if (!record || record.isPrivate) continue;
+        if (!record || record.isPrivate) return;
         const location = driveLocationForStop(record.stopId, record.memberId, record.memberName);
         if (!location) {
           await savePhotoChanges(record.id, {
             status: "needsAttention",
             lastError: "This photo no longer has a matching day and location.",
           });
-          continue;
+          return;
         }
 
         let uploaded = false;
@@ -1526,7 +1531,11 @@ export default function Home() {
           }
         }
 
-        if (!uploaded) continue;
+        return uploaded;
+      };
+
+      for (let start = 0; start < uploadCandidates.length; start += 2) {
+        await Promise.all(uploadCandidates.slice(start, start + 2).map(uploadOnePhoto));
       }
 
       setGoogleState("connected");
@@ -1540,6 +1549,62 @@ export default function Home() {
     } catch (error) {
       setGoogleState("disconnected");
       setGoogleError(error instanceof Error ? error.message : "Google Drive sync failed.");
+    }
+  }
+
+  function openDayDownload(day: TripDay) {
+    const stopIdsWithPhotos = day.stops
+      .filter((stop) => sharedPhotos.some((photo) => photo.dayId === day.id && photo.stopId === stop.id))
+      .map((stop) => stop.id);
+    setDownloadDayId(day.id);
+    setSelectedDownloadStopIds(stopIdsWithPhotos);
+    setBulkDownloadError(null);
+  }
+
+  function toggleDownloadStop(stopId: string) {
+    setSelectedDownloadStopIds((current) => current.includes(stopId)
+      ? current.filter((id) => id !== stopId)
+      : [...current, stopId]);
+  }
+
+  async function downloadSelectedStops() {
+    if (!downloadDay || selectedDownloadStopIds.length === 0) return;
+    const photos = sharedPhotos.filter((photo) =>
+      photo.dayId === downloadDay.id && selectedDownloadStopIds.includes(photo.stopId),
+    );
+    if (photos.length === 0) return;
+
+    setBulkDownloadState("downloading");
+    setBulkDownloadError(null);
+    try {
+      const ready: Array<{ name: string; url: string }> = [];
+      for (let start = 0; start < photos.length; start += 3) {
+        const batch = await Promise.all(photos.slice(start, start + 3).map(async (photo) => {
+          const existingUrl = sharedPhotoUrlsRef.current.get(photo.fileId);
+          if (existingUrl) return { name: photo.name, url: existingUrl };
+          const downloaded = await getSharedPhotoBlob(sharedTripId, photo.fileId);
+          const url = URL.createObjectURL(downloaded.blob);
+          sharedPhotoUrlsRef.current.set(photo.fileId, url);
+          return { name: photo.name, url };
+        }));
+        ready.push(...batch);
+        setSharedPhotoUrls(Object.fromEntries(sharedPhotoUrlsRef.current));
+      }
+
+      ready.forEach(({ name, url }) => {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = name;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      });
+      setDownloadDayId("");
+      setSelectedDownloadStopIds([]);
+    } catch (error) {
+      setBulkDownloadError(error instanceof Error ? error.message : "The selected photos could not be downloaded.");
+    } finally {
+      setBulkDownloadState("idle");
     }
   }
 
@@ -1947,8 +2012,13 @@ export default function Home() {
             {days.map((day, dayIndex) => (
               <section className="gallery-day" key={day.id} aria-labelledby={`gallery-${day.id}`}>
                 <header className="gallery-day-heading">
-                  <h2 id={`gallery-${day.id}`}>Day {dayIndex + 1}: {day.label}</h2>
-                  <time dateTime={day.date}>{galleryDate(day.date)}</time>
+                  <div>
+                    <h2 id={`gallery-${day.id}`}>Day {dayIndex + 1}: {day.label}</h2>
+                    <time dateTime={day.date}>{galleryDate(day.date)}</time>
+                  </div>
+                  <button className="gallery-day-download" onClick={() => openDayDownload(day)} disabled={!sharedPhotos.some((photo) => photo.dayId === day.id)}>
+                    Download day
+                  </button>
                 </header>
 
                 <div className="gallery-stops">
@@ -2168,6 +2238,34 @@ export default function Home() {
               <button className="secondary-button" onClick={() => setShowSettings(false)}>Close</button>
               <button className="primary-button" onClick={connectGoogleDrive} disabled={googleState === "connecting"}>
                 {googleState === "connecting" ? "Refreshing…" : "Refresh shared trip"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {downloadDay && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => bulkDownloadState === "idle" && setDownloadDayId("")}>
+          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="download-day-title" onMouseDown={(event) => event.stopPropagation()}>
+            <p className="eyebrow">Photo Gallery</p>
+            <h2 id="download-day-title">Download Day {days.findIndex((day) => day.id === downloadDay.id) + 1}</h2>
+            <p className="modal-copy">Choose the stops to download. Your browser may ask you to allow multiple downloads; on iPhone, files are saved to Downloads rather than directly to Apple Photos.</p>
+            <div className="download-stop-list">
+              {downloadDay.stops.map((stop, stopIndex) => {
+                const photoCount = sharedPhotos.filter((photo) => photo.dayId === downloadDay.id && photo.stopId === stop.id).length;
+                return (
+                  <label className="download-stop-option" key={stop.id}>
+                    <input type="checkbox" checked={selectedDownloadStopIds.includes(stop.id)} onChange={() => toggleDownloadStop(stop.id)} disabled={photoCount === 0 || bulkDownloadState === "downloading"} />
+                    <span><strong>Stop {stopIndex + 1}: {stop.title}</strong><small>{photoCount} photo{photoCount === 1 ? "" : "s"}</small></span>
+                  </label>
+                );
+              })}
+            </div>
+            {bulkDownloadError && <p className="gallery-alert" role="alert">{bulkDownloadError}</p>}
+            <div className="modal-actions">
+              <button className="secondary-button" onClick={() => setDownloadDayId("")} disabled={bulkDownloadState === "downloading"}>Cancel</button>
+              <button className="primary-button" onClick={() => void downloadSelectedStops()} disabled={selectedDownloadStopIds.length === 0 || bulkDownloadState === "downloading"}>
+                {bulkDownloadState === "downloading" ? "Preparing downloads…" : "Download selected stops"}
               </button>
             </div>
           </section>
