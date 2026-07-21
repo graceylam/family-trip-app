@@ -203,12 +203,15 @@ button { cursor: pointer; }
 .expense-filters label { display: grid; min-width: 150px; flex: 1 1 160px; gap: 5px; color: var(--muted); font-size: .65rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
 .expense-filters .text-button { padding: 10px; }
 .expenses-table-card { overflow: hidden; border: 1px solid var(--line); border-radius: 20px; background: white; box-shadow: var(--shadow); }
-.expenses-table-scroll { overflow-x: auto; }
-.expenses-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+.expenses-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.expenses-table { width: 100%; min-width: 880px; border-collapse: collapse; font-size: .78rem; }
 .expenses-table th { padding: 12px 14px; color: #dce9e1; background: var(--forest); font-size: .62rem; letter-spacing: .06em; text-align: left; text-transform: uppercase; white-space: nowrap; }
 .expenses-table td { padding: 14px; border-top: 1px solid var(--line); vertical-align: top; white-space: nowrap; }
 .expenses-table tbody tr:first-child td { border-top: 0; }
 .expenses-table td:last-child small { display: block; margin-top: 3px; color: var(--muted); font-size: .58rem; }
+.expenses-table tfoot th, .expenses-table tfoot td { padding: 14px; border-top: 2px solid var(--forest); color: var(--forest); background: #f0f3ed; text-align: left; white-space: nowrap; }
+.expenses-table tfoot th { font-size: .68rem; letter-spacing: .07em; text-transform: uppercase; }
+.expenses-table tfoot td:last-child small { display: block; margin-top: 3px; color: var(--muted); font-size: .58rem; }
 .expense-table-edit { display: block; margin-top: 5px; padding: 0; border: 0; color: var(--forest); background: transparent; font-size: .62rem; font-weight: 800; text-decoration: underline; text-underline-offset: 2px; }
 .expense-category { display: inline-block; padding: 5px 8px; border-radius: 99px; color: var(--forest); background: var(--sage); font-size: .65rem; font-weight: 800; }
 .expenses-empty { display: grid; justify-items: center; gap: 7px; padding: 48px 20px; border-top: 1px solid var(--line); color: var(--muted); text-align: center; }
@@ -300,15 +303,6 @@ button { cursor: pointer; }
   .stop-editor-row { grid-template-columns: 1fr; }
   .expense-entry-grid { grid-template-columns: 1fr 1fr; }
   .expense-edit-grid { grid-template-columns: 1fr 1fr; }
-  .expenses-table-scroll { overflow: visible; }
-  .expenses-table, .expenses-table tbody, .expenses-table tr, .expenses-table td { display: block; width: 100%; }
-  .expenses-table thead { display: none; }
-  .expenses-table tbody { display: grid; gap: 10px; padding: 12px; }
-  .expenses-table tr { overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: #fffdf8; }
-  .expenses-table td { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; padding: 9px 12px; border-top: 1px solid var(--line); white-space: normal; }
-  .expenses-table td:first-child { border-top: 0; }
-  .expenses-table td::before { color: var(--muted); content: attr(data-label); font-size: .6rem; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
-  .expense-category { justify-self: start; }
   .date-control input, .name-control input { width: 145px; }
   .storage-facts { grid-template-columns: 1fr; }
   .member-row { grid-template-columns: 32px 1fr auto; }
