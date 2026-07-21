@@ -1590,78 +1590,12 @@ export default function Home() {
         </button>
       </nav>
 
-      <section className={`connection-card ${isOffline ? "offline" : "online"}`}>
-        <span className="connection-dot" aria-hidden="true" />
-        <div>
-          <strong>{isOffline ? "Travelling offline" : "Ready for the trip"}</strong>
-          <p>
-            {isOffline
-              ? hasPendingTripSave
-                ? "Your itinerary changes are saved on this device and will retry when you reconnect."
-                : "Your itinerary works here. Photos will wait safely for Wi-Fi."
-              : googleState === "uploading"
-                ? "Syncing eligible photos with Google Drive now."
-                : googleState === "connected" && waitingCount > 0
-                  ? `${waitingCount} photo action${waitingCount === 1 ? " is" : "s are"} waiting for Google Drive.`
-                  : googleState === "connected"
-                    ? `${currentMember?.name || "Choose profile"} · ${tripSyncLabel}`
-                    : googleState === "connecting"
-                      ? "Itinerary available offline · checking Google Drive"
-                      : "Itinerary available offline · Google Drive needs a connection check"}
-          </p>
-        </div>
-        <div className="connection-actions">
-          <button className="text-button" onClick={() => setShowSafety((value) => !value)}>
-            Safety
-          </button>
+      {googleError && (
+        <aside className="sync-error" role="alert">
+          <span>{googleError}</span>
           {hasPendingTripSave && tripSyncState === "error" && (
-            <button className="sync-button" onClick={() => void processPendingTripSave()}>
-              Retry itinerary save
-            </button>
+            <button className="sync-button" onClick={() => void processPendingTripSave()}>Retry itinerary save</button>
           )}
-          {googleState === "connected" && waitingCount > 0 ? (
-            <button className="sync-button" onClick={uploadQueuedPhotos}>
-              Upload now — I’m on Wi-Fi
-            </button>
-          ) : googleState === "uploading" ? (
-            <button className="sync-button" disabled>Uploading…</button>
-          ) : googleState === "connected" ? (
-            hasDriveCopies ? (
-              <button className="sync-button" onClick={uploadQueuedPhotos}>Refresh Drive folders</button>
-            ) : (
-              <button className="sync-button" disabled>Drive connected</button>
-            )
-          ) : (
-            <button className="sync-button" onClick={connectGoogleDrive} disabled={googleState === "connecting"}>
-              {googleState === "connecting" ? "Checking…" : "Check Drive"}
-            </button>
-          )}
-        </div>
-      </section>
-
-      {googleError && <aside className="sync-error" role="alert">{googleError}</aside>}
-
-      {showSafety && (
-        <aside className="safety-note">
-          <strong>Your originals stay in Apple Photos.</strong>
-          <p>
-            This app only holds temporary upload copies. If its offline queue is ever cleared,
-            select the originals from Apple Photos again—your memories remain safe.
-          </p>
-          <dl className="storage-facts">
-            <div>
-              <dt>Offline queue</dt>
-              <dd>{queuedPhotos.length} photos · {formatBytes(queuedBytes)}</dd>
-            </div>
-            <div>
-              <dt>Storage protection</dt>
-              <dd>{storageHealth?.persistent ? "Persistent" : "Best effort"}</dd>
-            </div>
-            <div>
-              <dt>Browser storage</dt>
-              <dd>{formatBytes(storageHealth?.usage ?? null)} of {formatBytes(storageHealth?.quota ?? null)}</dd>
-            </div>
-          </dl>
         </aside>
       )}
 
@@ -1881,8 +1815,27 @@ export default function Home() {
 
             <section className="photo-panel" aria-labelledby="add-photos-title">
               <div className="photo-panel-heading">
-                <p className="eyebrow">Photo upload</p>
-                <h3 id="add-photos-title">Add photos</h3>
+                <div>
+                  <p className="eyebrow">Photo upload</p>
+                  <h3 id="add-photos-title">Add photos</h3>
+                </div>
+                {isOffline ? (
+                  <button className="sync-button" disabled>Drive offline</button>
+                ) : googleState === "connected" && waitingCount > 0 ? (
+                  <button className="sync-button" onClick={uploadQueuedPhotos}>Upload now — I’m on Wi-Fi</button>
+                ) : googleState === "uploading" ? (
+                  <button className="sync-button" disabled>Uploading…</button>
+                ) : googleState === "connected" ? (
+                  hasDriveCopies ? (
+                    <button className="sync-button" onClick={uploadQueuedPhotos}>Refresh Drive folders</button>
+                  ) : (
+                    <button className="sync-button" disabled>Drive connected</button>
+                  )
+                ) : (
+                  <button className="sync-button" onClick={connectGoogleDrive} disabled={googleState === "connecting"}>
+                    {googleState === "connecting" ? "Checking Drive…" : "Check Drive"}
+                  </button>
+                )}
               </div>
               <div className="photo-actions">
               <input
@@ -1900,10 +1853,37 @@ export default function Home() {
               >
                 {queueState === "saving" ? "Saving temporary copies…" : "Choose from Apple Photos"}
               </button>
+              <button className="photo-status-button" onClick={() => setShowSafety((value) => !value)} aria-expanded={showSafety}>
+                Photo Upload Status
+              </button>
               <p>Take photos with the iPhone Camera first, then choose them here.</p>
               {queueState === "loading" && <p className="queue-message">Opening your offline photo queue…</p>}
               {queueError && <p className="queue-message error" role="alert">{queueError}</p>}
               </div>
+
+              {showSafety && (
+                <aside className="safety-note photo-safety-note">
+                  <strong>Your originals stay in Apple Photos.</strong>
+                  <p>
+                    This app only holds temporary upload copies. If its offline queue is ever cleared,
+                    select the originals from Apple Photos again—your memories remain safe.
+                  </p>
+                  <dl className="storage-facts">
+                    <div>
+                      <dt>Offline queue</dt>
+                      <dd>{queuedPhotos.length} photos · {formatBytes(queuedBytes)}</dd>
+                    </div>
+                    <div>
+                      <dt>Storage protection</dt>
+                      <dd>{storageHealth?.persistent ? "Persistent" : "Best effort"}</dd>
+                    </div>
+                    <div>
+                      <dt>Browser storage</dt>
+                      <dd>{formatBytes(storageHealth?.usage ?? null)} of {formatBytes(storageHealth?.quota ?? null)}</dd>
+                    </div>
+                  </dl>
+                </aside>
+              )}
 
               <div className="gallery-heading">
               <h3>Memories from this stop</h3>
