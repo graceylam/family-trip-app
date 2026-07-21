@@ -785,6 +785,27 @@ export default function Home() {
     (!expenseDayFilter || day.id === expenseDayFilter) &&
     (!expenseCategoryFilter || expense.category === expenseCategoryFilter),
   ), [expenseCategoryFilter, expenseDayFilter, expensePersonFilter, expenseRows]);
+  const expenseTotals = useMemo(() => {
+    const localByCurrency = new Map<string, number>();
+    let homeAmount = 0;
+    let missingHomeAmounts = 0;
+    filteredExpenseRows.forEach(({ expense }) => {
+      localByCurrency.set(
+        expense.localCurrency,
+        (localByCurrency.get(expense.localCurrency) ?? 0) + expense.localAmount,
+      );
+      if (expense.homeAmount === null) missingHomeAmounts += 1;
+      else homeAmount += expense.homeAmount;
+    });
+    return {
+      local: Array.from(localByCurrency.entries())
+        .sort(([currencyA], [currencyB]) => currencyA.localeCompare(currencyB))
+        .map(([currency, amount]) => expenseMoney(amount, currency))
+        .join(" + "),
+      homeAmount,
+      missingHomeAmounts,
+    };
+  }, [filteredExpenseRows]);
 
   const profileInitials = (currentMember?.name || "Family")
     .split(/\s+/)
@@ -2073,6 +2094,18 @@ export default function Home() {
                     </tr>
                   ))}
                 </tbody>
+                {filteredExpenseRows.length > 0 && (
+                  <tfoot>
+                    <tr>
+                      <th colSpan={5} scope="row">Total</th>
+                      <td>{expenseTotals.local}</td>
+                      <td>
+                        <strong>{expenseMoney(expenseTotals.homeAmount, "AUD")}</strong>
+                        {expenseTotals.missingHomeAmounts > 0 && <small>{expenseTotals.missingHomeAmounts} awaiting conversion</small>}
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
             {filteredExpenseRows.length === 0 && (
