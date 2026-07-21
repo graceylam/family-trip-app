@@ -258,6 +258,7 @@ export default function Home() {
   const [queuedPhotos, setQueuedPhotos] = useState<QueuedPhotoView[]>([]);
   const [queueState, setQueueState] = useState<"loading" | "ready" | "saving" | "unavailable">("loading");
   const [queueError, setQueueError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{ completed: number; total: number } | null>(null);
   const [storageHealth, setStorageHealth] = useState<StorageHealth | null>(null);
   const [isOffline, setIsOffline] = useState(false);
   const [showSafety, setShowSafety] = useState(false);
@@ -829,15 +830,19 @@ export default function Home() {
   }, [showSettings, isAdmin]);
 
   const selectedPhotos = queuedPhotos.filter((photo) => photo.stopId === selectedStop?.id);
-  const waitingCount = queuedPhotos.filter(
+  const pendingQueuePhotos = queuedPhotos.filter(
     (photo) =>
-      (!photo.isPrivate && (photo.status === "waiting" || photo.status === "needsAttention")) ||
+      (!photo.isPrivate && photo.status !== "uploaded") ||
       photo.pendingCloudDeletion,
-  ).length;
+  );
+  const waitingCount = pendingQueuePhotos.length;
   const hasDriveCopies = queuedPhotos.some(
     (photo) => photo.status === "uploaded" && Boolean(photo.googleDriveFileId),
   );
-  const queuedBytes = queuedPhotos.reduce((total, photo) => total + photo.size, 0);
+  const queuedBytes = pendingQueuePhotos.reduce((total, photo) => total + photo.size, 0);
+  const uploadProgressPercent = uploadProgress?.total
+    ? Math.round((uploadProgress.completed / uploadProgress.total) * 100)
+    : 0;
   const tripSyncLabel = isOffline
     ? hasPendingTripSave ? "Offline · changes kept safely" : "Offline copy"
     : tripSyncState === "saving"
@@ -1432,6 +1437,7 @@ export default function Home() {
 
     setGoogleState("uploading");
     setGoogleError(null);
+    setUploadProgress(null);
 
     try {
       await checkGoogleDriveGateway();
@@ -1489,16 +1495,24 @@ export default function Home() {
           !photo.pendingCloudDeletion &&
           photo.status !== "uploaded",
       );
+      setUploadProgress({ completed: 0, total: uploadCandidates.length });
+      const finishUploadProgress = () => setUploadProgress((current) => current
+        ? { ...current, completed: Math.min(current.completed + 1, current.total) }
+        : current);
 
       const uploadOnePhoto = async (queuedPhoto: QueuedPhotoView) => {
         const record = await getQueuedPhoto(queuedPhoto.id);
-        if (!record || record.isPrivate) return;
+        if (!record || record.isPrivate) {
+          finishUploadProgress();
+          return;
+        }
         const location = driveLocationForStop(record.stopId, record.memberId, record.memberName);
         if (!location) {
           await savePhotoChanges(record.id, {
             status: "needsAttention",
             lastError: "This photo no longer has a matching day and location.",
           });
+          finishUploadProgress();
           return;
         }
 
@@ -1537,15 +1551,22 @@ export default function Home() {
           }
         }
 
+        finishUploadProgress();
         return uploaded;
       };
 
+      let uploadFailures = 0;
       for (let start = 0; start < uploadCandidates.length; start += 2) {
-        await Promise.all(uploadCandidates.slice(start, start + 2).map(uploadOnePhoto));
+        const results = await Promise.all(uploadCandidates.slice(start, start + 2).map(uploadOnePhoto));
+        uploadFailures += results.filter((uploaded) => uploaded !== true).length;
       }
 
       setGoogleState("connected");
-      if (organizationFailures > 0) {
+      if (uploadFailures > 0) {
+        setGoogleError(
+          `${uploadFailures} ${uploadFailures === 1 ? "photo" : "photos"} could not be uploaded after three attempts. The originals remain safe in Apple Photos; tap Upload now to retry.`,
+        );
+      } else if (organizationFailures > 0) {
         setGoogleError(
           `${organizationFailures} existing Drive ${organizationFailures === 1 ? "copy" : "copies"} could not be reorganized. Tap refresh to try again.`,
         );
@@ -1555,6 +1576,8 @@ export default function Home() {
     } catch (error) {
       setGoogleState("disconnected");
       setGoogleError(error instanceof Error ? error.message : "Google Drive sync failed.");
+    } finally {
+      window.setTimeout(() => setUploadProgress(null), 1200);
     }
   }
 
@@ -1668,12 +1691,10 @@ export default function Home() {
         </button>
       </nav>
 
-      {googleError && (
+      {googleError && hasPendingTripSave && tripSyncState === "error" && (
         <aside className="sync-error" role="alert">
           <span>{googleError}</span>
-          {hasPendingTripSave && tripSyncState === "error" && (
-            <button className="sync-button" onClick={() => void processPendingTripSave()}>Retry itinerary save</button>
-          )}
+          <button className="sync-button" onClick={() => void processPendingTripSave()}>Retry itinerary save</button>
         </aside>
       )}
 
@@ -1934,6 +1955,25 @@ export default function Home() {
               <button className="photo-status-button" onClick={() => setShowSafety((value) => !value)} aria-expanded={showSafety}>
                 Photo Upload Status
               </button>
+              <div className={`photo-upload-feedback ${googleError ? "error" : ""}`} role={googleError ? "alert" : "status"} aria-live="polite">
+                <strong>
+                  {googleError
+                    ? googleError
+                    : googleState === "uploading"
+                      ? `Uploading ${uploadProgress?.completed ?? 0} of ${uploadProgress?.total ?? waitingCount} photos…`
+                      : isOffline
+                        ? `${waitingCount} ${waitingCount === 1 ? "photo" : "photos"} safely waiting offline`
+                        : waitingCount > 0
+                          ? `${waitingCount} ${waitingCount === 1 ? "photo needs" : "photos need"} uploading`
+                          : "All selected photos are uploaded"}
+                </strong>
+                {googleState === "uploading" && uploadProgress && uploadProgress.total > 0 && (
+                  <>
+                    <progress value={uploadProgress.completed} max={uploadProgress.total} aria-label="Photo upload progress" />
+                    <small>{uploadProgressPercent}% complete</small>
+                  </>
+                )}
+              </div>
               <p>Take photos with the iPhone Camera first, then choose them here.</p>
               {queueState === "loading" && <p className="queue-message">Opening your offline photo queue…</p>}
               {queueError && <p className="queue-message error" role="alert">{queueError}</p>}
@@ -1949,7 +1989,7 @@ export default function Home() {
                   <dl className="storage-facts">
                     <div>
                       <dt>Offline queue</dt>
-                      <dd>{queuedPhotos.length} photos · {formatBytes(queuedBytes)}</dd>
+                      <dd>{waitingCount} photos · {formatBytes(queuedBytes)}</dd>
                     </div>
                     <div>
                       <dt>Storage protection</dt>
