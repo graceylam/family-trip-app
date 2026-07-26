@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import MemoryLane from "./MemoryLane";
 import { sortItineraryChronologically } from "../lib/chronology";
 import { convertedAmount, getLatestExchangeRate } from "../lib/exchangeRates";
 import {
@@ -382,7 +383,7 @@ export default function Home() {
   const [placeSearchState, setPlaceSearchState] = useState<"idle" | "searching" | "choosing">("idle");
   const [placeSearchError, setPlaceSearchError] = useState<string | null>(null);
   const [placesUsage, setPlacesUsage] = useState<PlacesUsage | null>(null);
-  const [activeTab, setActiveTab] = useState<"itinerary" | "gallery" | "expenses">("itinerary");
+  const [activeTab, setActiveTab] = useState<"itinerary" | "gallery" | "expenses" | "memory">("itinerary");
   const [itineraryView, setItineraryView] = useState<"itinerary" | "map">("itinerary");
   const [newExpenseItem, setNewExpenseItem] = useState("");
   const [newExpenseAmount, setNewExpenseAmount] = useState("");
@@ -768,7 +769,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (activeTab !== "gallery" || !hasLoadedLocalState || !tripAccessKey) return;
+    if ((activeTab !== "gallery" && activeTab !== "memory") || !hasLoadedLocalState || !tripAccessKey) return;
     const initialRefreshId = window.setTimeout(() => void refreshSharedGallery(), 0);
 
     const refreshWhenVisible = () => {
@@ -1132,14 +1133,26 @@ export default function Home() {
 
   function updateSelectedStop(changes: Partial<TripStop>) {
     if (!currentMember || !selectedDay || !selectedStop) return;
-    updateStopById(selectedStop.id, changes);
+    updateStopInDay(selectedDay.id, selectedStop.id, changes);
   }
 
-  function updateStopById(stopId: string, changes: Partial<TripStop>) {
-    if (!currentMember || !selectedDay) return;
-    setDays((current) => sortItineraryChronologically(current.map((day) => day.id === selectedDay.id
+  function updateStopInDay(dayId: string, stopId: string, changes: Partial<TripStop>) {
+    if (!currentMember) return;
+    setDays((current) => sortItineraryChronologically(current.map((day) => day.id === dayId
       ? { ...day, stops: day.stops.map((stop) => stop.id === stopId ? { ...stop, ...changes } : stop) }
       : day)));
+  }
+
+  function saveStopMemory(dayId: string, stopId: string, comment: string) {
+    if (!currentMember) return;
+    updateStopInDay(dayId, stopId, {
+      memory: comment ? {
+        comment,
+        updatedByMemberId: currentMember.id,
+        updatedByMemberName: currentMember.name,
+        updatedAt: new Date().toISOString(),
+      } : undefined,
+    });
   }
 
   async function addExpense() {
@@ -1296,10 +1309,17 @@ export default function Home() {
     handleLocationChangeForStop(selectedStop.id, value);
   }
 
-  function handleLocationChangeForStop(stopId: string, value: string) {
-    if (!currentMember) return;
+  function focusMemoryLocation(dayId: string, stopId: string) {
+    clearPlaceSearch();
+    setSelectedDayId(dayId);
     setSelectedStopId(stopId);
-    updateStopById(stopId, {
+  }
+
+  function handleLocationChangeForStop(stopId: string, value: string, dayId = selectedDay?.id) {
+    if (!currentMember) return;
+    if (dayId) setSelectedDayId(dayId);
+    setSelectedStopId(stopId);
+    if (dayId) updateStopInDay(dayId, stopId, {
       place: value,
       placeId: undefined,
       latitude: undefined,
@@ -1682,7 +1702,7 @@ export default function Home() {
           `${organizationFailures} existing Drive ${organizationFailures === 1 ? "copy" : "copies"} could not be reorganized. Tap refresh to try again.`,
         );
       }
-      if (activeTab === "gallery") void refreshSharedGallery();
+      if (activeTab === "gallery" || activeTab === "memory") void refreshSharedGallery();
       await refreshStorageHealth();
     } catch (error) {
       setGoogleState("disconnected");
@@ -1799,6 +1819,13 @@ export default function Home() {
           onClick={() => setActiveTab("expenses")}
         >
           Expenses
+        </button>
+        <button
+          className={activeTab === "memory" ? "active" : ""}
+          aria-current={activeTab === "memory" ? "page" : undefined}
+          onClick={() => setActiveTab("memory")}
+        >
+          Memory Lane
         </button>
       </nav>
 
@@ -2299,6 +2326,25 @@ export default function Home() {
             ))}
           </div>
         </section>
+      ) : activeTab === "memory" ? (
+        <MemoryLane
+          tripName={tripName}
+          days={days}
+          currentMember={currentMember}
+          sharedPhotos={sharedPhotos}
+          sharedPhotoUrls={sharedPhotoUrls}
+          galleryState={galleryState}
+          galleryError={galleryError}
+          selectedLocationStopId={selectedStopId}
+          placeSuggestions={placeSuggestions}
+          placeSearchState={placeSearchState}
+          placeSearchError={placeSearchError}
+          onRefreshPhotos={() => void refreshSharedGallery()}
+          onSaveMemory={saveStopMemory}
+          onFocusLocation={focusMemoryLocation}
+          onLocationChange={(dayId, stopId, value) => handleLocationChangeForStop(stopId, value, dayId)}
+          onChoosePlace={(suggestion) => void choosePlace(suggestion)}
+        />
       ) : (
         <section className="expenses-page" aria-labelledby="expenses-title">
           <header className="expenses-page-heading">
