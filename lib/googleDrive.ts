@@ -36,10 +36,18 @@ export type TripStop = {
   place: string;
   note: string;
   expenses?: TripExpense[];
+  memory?: TripStopMemory;
   placeId?: string;
   latitude?: number;
   longitude?: number;
   googleMapsUrl?: string;
+};
+
+export type TripStopMemory = {
+  comment: string;
+  updatedByMemberId: string;
+  updatedByMemberName: string;
+  updatedAt: string;
 };
 
 export type TripExpense = {
