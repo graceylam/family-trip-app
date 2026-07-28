@@ -377,6 +377,7 @@ export default function Home() {
   const [newDayDate, setNewDayDate] = useState("");
   const [editDayName, setEditDayName] = useState("");
   const [editDayDate, setEditDayDate] = useState("");
+  const [editDayStoryTitle, setEditDayStoryTitle] = useState("");
   const [newMemberName, setNewMemberName] = useState("");
   const [copiedMemberId, setCopiedMemberId] = useState("");
   const [placeSuggestions, setPlaceSuggestions] = useState<PlaceSuggestion[]>([]);
@@ -1382,6 +1383,7 @@ export default function Home() {
     if (!currentMember || !selectedDay) return;
     setEditDayName(selectedDay.label);
     setEditDayDate(selectedDay.date);
+    setEditDayStoryTitle(selectedDay.storyTitle ?? "");
     setShowEditDay(true);
   }
 
@@ -1392,6 +1394,7 @@ export default function Home() {
       ...day,
       date: editDayDate,
       label: isAdmin ? editDayName.trim() : day.label,
+      storyTitle: editDayStoryTitle.trim(),
     } : day)));
     setShowEditDay(false);
   }
@@ -1406,6 +1409,11 @@ export default function Home() {
     selectStop(nextDay.stops[0]?.id ?? "");
     setShowDeleteDayConfirm(false);
     setShowEditDay(false);
+  }
+
+  function updateDayStory(dayId: string, changes: Partial<Pick<TripDay, "storyTitle" | "coverPhotoId">>) {
+    if (!currentMember) return;
+    setDays((current) => current.map((day) => day.id === dayId ? { ...day, ...changes } : day));
   }
 
   function deleteSelectedStop() {
@@ -1779,7 +1787,7 @@ export default function Home() {
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">Family trip</p>
+          <p className="eyebrow">Our next adventure</p>
           <input
             className="trip-title-input"
             value={tripName}
@@ -1790,6 +1798,7 @@ export default function Home() {
           <p className="shared-role">
             {currentMember?.name || "Choose profile"} · {isAdmin ? "Admin" : "Contributor"} · {tripSyncLabel}
           </p>
+          <p className="trip-story-line">Plan it together. Live every moment. Keep the stories forever.</p>
         </div>
         {isAdmin ? (
           <button className="avatar" aria-label="Open admin settings" onClick={() => setShowSettings(true)}>{profileInitials}</button>
@@ -1804,28 +1813,32 @@ export default function Home() {
           aria-current={activeTab === "itinerary" ? "page" : undefined}
           onClick={() => setActiveTab("itinerary")}
         >
-          Itinerary
+          <span>Itinerary</span>
+          <small>Plan the adventure</small>
         </button>
         <button
           className={activeTab === "gallery" ? "active" : ""}
           aria-current={activeTab === "gallery" ? "page" : undefined}
           onClick={() => setActiveTab("gallery")}
         >
-          Photo Gallery
+          <span>Photo Gallery</span>
+          <small>Our snapshots</small>
         </button>
         <button
           className={activeTab === "expenses" ? "active" : ""}
           aria-current={activeTab === "expenses" ? "page" : undefined}
           onClick={() => setActiveTab("expenses")}
         >
-          Expenses
+          <span>Expenses</span>
+          <small>The practical bit</small>
         </button>
         <button
           className={activeTab === "memory" ? "active" : ""}
           aria-current={activeTab === "memory" ? "page" : undefined}
           onClick={() => setActiveTab("memory")}
         >
-          Memory Lane
+          <span>Memory Lane</span>
+          <small>Relive the story</small>
         </button>
       </nav>
 
@@ -1864,8 +1877,10 @@ export default function Home() {
       <section className={`content-grid ${itineraryView === "map" ? "map-mode" : ""}`}>
         <div className="timeline-panel">
           <header className="day-overview">
+            <p className="chapter-kicker">Chapter {selectedDayNumber}</p>
             <FittedDayTitle>{selectedDay?.label ?? "Trip day"}</FittedDayTitle>
-            <p className="day-date-line">Day {selectedDayNumber}: <time dateTime={selectedDay?.date}>{galleryDate(selectedDay?.date ?? "")}</time></p>
+            <p className="day-story-title">{selectedDay?.storyTitle || "A new chapter waiting to be written"}</p>
+            <p className="day-date-line">Day {selectedDayNumber} · <time dateTime={selectedDay?.date}>{galleryDate(selectedDay?.date ?? "")}</time></p>
             <div className="day-view-toggle" aria-label="Itinerary display">
               <button className={itineraryView === "itinerary" ? "active" : ""} aria-pressed={itineraryView === "itinerary"} onClick={() => setItineraryView("itinerary")}>Itinerary View</button>
               <button className={itineraryView === "map" ? "active" : ""} aria-pressed={itineraryView === "map"} onClick={() => setItineraryView("map")}>Map View</button>
@@ -2240,9 +2255,9 @@ export default function Home() {
         <section className="gallery-page" aria-labelledby="gallery-title">
           <header className="gallery-page-heading">
             <div>
-              <p className="eyebrow">Shared family memories</p>
-              <h1 id="gallery-title">Photo Gallery</h1>
-              <p>Every uploaded snapshot, organised by day, stop and photographer.</p>
+              <p className="eyebrow">Seen through all of our eyes</p>
+              <h1 id="gallery-title">Our Snapshots</h1>
+              <p>The little moments, funny angles and favourite views we each brought home.</p>
             </div>
             <button className="secondary-button" onClick={() => void refreshSharedGallery()} disabled={galleryState === "loading" || isOffline}>
               {galleryState === "loading" ? "Refreshing…" : "Refresh"}
@@ -2259,7 +2274,9 @@ export default function Home() {
               <section className="gallery-day" key={day.id} aria-labelledby={`gallery-${day.id}`}>
                 <header className="gallery-day-heading">
                   <div>
-                    <h2 id={`gallery-${day.id}`}>Day {dayIndex + 1}: {day.label}</h2>
+                    <p>Chapter {dayIndex + 1}</p>
+                    <h2 id={`gallery-${day.id}`}>{day.label}</h2>
+                    <strong>{day.storyTitle || "A day worth remembering"}</strong>
                     <time dateTime={day.date}>{galleryDate(day.date)}</time>
                   </div>
                   <button className="gallery-day-download" onClick={() => openDayDownload(day)} disabled={!sharedPhotos.some((photo) => photo.dayId === day.id)}>
@@ -2286,7 +2303,7 @@ export default function Home() {
                         {groups.length === 0 ? (
                           <div className="gallery-empty-stop">
                             <span aria-hidden="true">▧</span>
-                            <p>No shared snapshots yet.</p>
+                            <p>No snapshots here yet. Who will capture the first one?</p>
                           </div>
                         ) : groups.map((group) => (
                           <section className="person-snapshots" key={group.id} aria-labelledby={`snapshots-${stop.id}-${group.id}`}>
@@ -2341,6 +2358,7 @@ export default function Home() {
           placeSearchError={placeSearchError}
           onRefreshPhotos={() => void refreshSharedGallery()}
           onSaveMemory={saveStopMemory}
+          onUpdateDayStory={updateDayStory}
           onFocusLocation={focusMemoryLocation}
           onLocationChange={(dayId, stopId, value) => handleLocationChangeForStop(stopId, value, dayId)}
           onChoosePlace={(suggestion) => void choosePlace(suggestion)}
@@ -2349,9 +2367,9 @@ export default function Home() {
         <section className="expenses-page" aria-labelledby="expenses-title">
           <header className="expenses-page-heading">
             <div>
-              <p className="eyebrow">Shared family spending</p>
-              <h1 id="expenses-title">Expenses</h1>
-              <p>Costs entered at itinerary stops, with the person recorded automatically.</p>
+              <p className="eyebrow">The practical chapter</p>
+              <h1 id="expenses-title">The Adventure So Far</h1>
+              <p>Every ticket, treat and train ride—kept tidy while the story stays fun.</p>
             </div>
             {expenseRows.some(({ expense }) => expense.homeAmount === null) && (
               <button className="secondary-button" onClick={() => void refreshAudConversions()} disabled={isOffline || expenseConversionState === "converting"}>
@@ -2582,6 +2600,17 @@ export default function Home() {
               Date
               <input type="date" value={editDayDate} onChange={(event) => setEditDayDate(event.target.value)} aria-label="Edit day date" />
             </label>
+            <label>
+              Day subtitle
+              <input
+                value={editDayStoryTitle}
+                onChange={(event) => setEditDayStoryTitle(event.target.value)}
+                placeholder="Palaces, pastries & sore feet"
+                maxLength={120}
+                aria-label="Edit day subtitle"
+              />
+            </label>
+            <p className="modal-field-note">Everyone can add the line that captures what made this day special.</p>
             <div className="modal-danger-zone">
               <button className="danger-button" onClick={() => { setShowEditDay(false); setShowDeleteDayConfirm(true); }} disabled={days.length <= 1}>Delete Day</button>
               {days.length <= 1 && <small>A trip must keep at least one day.</small>}
