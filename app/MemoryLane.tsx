@@ -23,6 +23,7 @@ type MemoryLaneProps = {
   placeSearchError: string | null;
   onRefreshPhotos: () => void;
   onSaveMemory: (dayId: string, stopId: string, comment: string) => void;
+  onUpdateDayStory: (dayId: string, changes: Partial<Pick<TripDay, "storyTitle" | "coverPhotoId">>) => void;
   onFocusLocation: (dayId: string, stopId: string) => void;
   onLocationChange: (dayId: string, stopId: string, value: string) => void;
   onChoosePlace: (suggestion: PlaceSuggestion) => void;
@@ -393,6 +394,7 @@ export default function MemoryLane({
   placeSearchError,
   onRefreshPhotos,
   onSaveMemory,
+  onUpdateDayStory,
   onFocusLocation,
   onLocationChange,
   onChoosePlace,
@@ -402,6 +404,7 @@ export default function MemoryLane({
   const [lightboxPhoto, setLightboxPhoto] = useState<SharedPhoto | null>(null);
   const [editingMemoryStopId, setEditingMemoryStopId] = useState("");
   const [memoryDraft, setMemoryDraft] = useState("");
+  const [showCoverPicker, setShowCoverPicker] = useState(false);
   const [showHighlight, setShowHighlight] = useState(false);
   const [highlightStep, setHighlightStep] = useState<HighlightStep>("scope");
   const [orientation, setOrientation] = useState<HighlightOrientation>("portrait");
@@ -432,6 +435,9 @@ export default function MemoryLane({
     [availableDayPhotos, selectedPhotoIds],
   );
   const previewPhoto = selectedHighlightPhotos[previewIndex] ?? selectedHighlightPhotos[0];
+  const selectedCoverPhoto = dayPhotos.find((photo) => photo.fileId === selectedDay?.coverPhotoId)
+    ?? availableDayPhotos[0];
+  const selectedCoverUrl = selectedCoverPhoto ? sharedPhotoUrls[selectedCoverPhoto.fileId] : "";
 
   useEffect(() => {
     if (hasChosenInitialDayRef.current || sharedPhotos.length === 0) return;
@@ -579,9 +585,9 @@ export default function MemoryLane({
     <section className="memory-lane-page" aria-labelledby="memory-lane-title">
       <header className="memory-lane-heading">
         <div>
-          <p className="eyebrow">Your shared story</p>
+          <p className="eyebrow">The story we made together</p>
           <h1 id="memory-lane-title">Memory Lane</h1>
-          <p>Relive the trip, one day at a time.</p>
+          <p>Every place has a story. Every photo brings a little piece of it back.</p>
         </div>
         <button className="primary-button" onClick={openHighlight} disabled={availableDayPhotos.length === 0}>
           Create Highlight
@@ -619,10 +625,20 @@ export default function MemoryLane({
         </aside>
 
         <div className="memory-recap-column">
-          <header className="memory-day-heading">
-            <p>Day {days.findIndex((day) => day.id === selectedDay.id) + 1}</p>
-            <h2>{selectedDay.label}</h2>
-            <time dateTime={selectedDay.date}>{memoryDate(selectedDay.date)}</time>
+          <header className={`memory-day-heading ${selectedCoverUrl ? "has-cover" : ""}`}>
+            {selectedCoverUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={selectedCoverUrl} alt="" className="memory-day-cover" />
+            )}
+            <div className="memory-day-heading-copy">
+              <p>Chapter {days.findIndex((day) => day.id === selectedDay.id) + 1}</p>
+              <h2>{selectedDay.label}</h2>
+              <strong>{selectedDay.storyTitle || "A day worth remembering"}</strong>
+              <time dateTime={selectedDay.date}>{memoryDate(selectedDay.date)}</time>
+              <button className="memory-cover-button" onClick={() => setShowCoverPicker(true)} disabled={!currentMember || availableDayPhotos.length === 0}>
+                {selectedDay.coverPhotoId ? "Change cover photo" : "Choose a cover photo"}
+              </button>
+            </div>
           </header>
 
           {selectedDay.stops.length === 0 && (
@@ -715,7 +731,7 @@ export default function MemoryLane({
                     })}
                   </div>
                 ) : (
-                  <p className="memory-no-photos">No photos yet</p>
+                  <p className="memory-no-photos">No snapshots yet. This part of the story is still waiting.</p>
                 )}
 
                 {editing ? (
@@ -747,8 +763,9 @@ export default function MemoryLane({
             );
           })}
 
+          <p className="memory-day-closing">And that was Day {days.findIndex((day) => day.id === selectedDay.id) + 1}.</p>
           <button className="memory-create-bottom" onClick={openHighlight} disabled={availableDayPhotos.length === 0}>
-            Create Day Highlight
+            Turn this chapter into a highlight
           </button>
           {galleryState !== "loading" && (
             <button className="text-button memory-refresh" onClick={onRefreshPhotos}>Refresh shared photos</button>
@@ -769,6 +786,43 @@ export default function MemoryLane({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={sharedPhotoUrls[lightboxPhoto.fileId]} alt={`${lightboxPhoto.memberName}'s trip memory`} onClick={(event) => event.stopPropagation()} />
           <small>{lightboxPhoto.memberName}&apos;s snapshot</small>
+        </div>
+      )}
+
+      {showCoverPicker && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowCoverPicker(false)}>
+          <section className="modal memory-cover-modal" role="dialog" aria-modal="true" aria-labelledby="cover-picker-title" onMouseDown={(event) => event.stopPropagation()}>
+            <p className="eyebrow">Set the scene</p>
+            <h2 id="cover-picker-title">Choose this chapter&apos;s cover</h2>
+            <p className="modal-copy">Pick the photo that brings the whole day rushing back.</p>
+            <div className="memory-cover-grid">
+              {availableDayPhotos.map((photo) => {
+                const url = sharedPhotoUrls[photo.fileId];
+                const selected = selectedDay.coverPhotoId === photo.fileId;
+                return (
+                  <button
+                    className={selected ? "selected" : ""}
+                    key={photo.fileId}
+                    onClick={() => {
+                      onUpdateDayStory(selectedDay.id, { coverPhotoId: photo.fileId });
+                      setShowCoverPicker(false);
+                    }}
+                    aria-pressed={selected}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={url} alt={`${photo.memberName}'s snapshot`} />
+                    <small>{selected ? "Current cover" : `By ${photo.memberName}`}</small>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="modal-actions">
+              {selectedDay.coverPhotoId && (
+                <button className="text-button" onClick={() => { onUpdateDayStory(selectedDay.id, { coverPhotoId: "" }); setShowCoverPicker(false); }}>Use first photo automatically</button>
+              )}
+              <button className="secondary-button" onClick={() => setShowCoverPicker(false)}>Cancel</button>
+            </div>
+          </section>
         </div>
       )}
 
