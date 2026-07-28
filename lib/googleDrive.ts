@@ -95,6 +95,8 @@ export type TripDay = {
   id: string;
   date: string;
   label: string;
+  storyTitle?: string;
+  coverPhotoId?: string;
   stops: TripStop[];
 };
 
