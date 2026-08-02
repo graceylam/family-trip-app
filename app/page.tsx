@@ -195,6 +195,10 @@ function googleMapsDirectionsUrl(place: string, placeId?: string): string {
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(place.trim())}${placeIdParameter}`;
 }
 
+function googleMapsEmbedUrl(place: string): string {
+  return `https://www.google.com/maps?q=${encodeURIComponent(place.trim())}&output=embed`;
+}
+
 function galleryDate(value: string): string {
   const date = new Date(`${value}T12:00:00`);
   if (Number.isNaN(date.getTime())) return value;
@@ -407,6 +411,7 @@ export default function Home() {
   const [placesUsage, setPlacesUsage] = useState<PlacesUsage | null>(null);
   const [activeTab, setActiveTab] = useState<"itinerary" | "gallery" | "expenses" | "memory">("itinerary");
   const [itineraryView, setItineraryView] = useState<"itinerary" | "map">("itinerary");
+  const [stopDetailsTab, setStopDetailsTab] = useState<"details" | "journal" | "expenses">("details");
   const [newExpenseItem, setNewExpenseItem] = useState("");
   const [newExpenseAmount, setNewExpenseAmount] = useState("");
   const [newExpenseCategory, setNewExpenseCategory] = useState(expenseCategories[0]);
@@ -2083,10 +2088,28 @@ export default function Home() {
 
         {itineraryView === "itinerary" && selectedStop && (
           <div className="stop-workspace">
-            <section className="memory-panel selected-stop-panel" aria-labelledby="selected-stop-title">
-              <div className="memory-hero">
+            <section className="stop-details-shell" aria-labelledby="selected-stop-title">
+              <div className="stop-details-shell-heading">
                 <p className="eyebrow">Itinerary details</p>
                 <h2 id="selected-stop-title">Selected stop</h2>
+                <nav className="stop-details-tabs" aria-label="Selected stop sections">
+                  {(["details", "journal", "expenses"] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      className={stopDetailsTab === tab ? "active" : ""}
+                      onClick={() => setStopDetailsTab(tab)}
+                      aria-pressed={stopDetailsTab === tab}
+                    >
+                      <span aria-hidden="true">{tab === "details" ? "⌖" : tab === "journal" ? "✎" : "€"}</span>
+                      {tab === "details" ? "Details" : tab === "journal" ? "Journal" : "Expenses"}
+                    </button>
+                  ))}
+                </nav>
+              </div>
+
+              {stopDetailsTab === "details" && (
+              <div className="stop-details-tab-panel">
                 <div className="stop-editor">
                 <label>
                   <span>Stop name</span>
@@ -2127,34 +2150,60 @@ export default function Home() {
                     )}
                     {placeSearchError && <span className="place-search-error">{placeSearchError}</span>}
                     {selectedStop.place.trim() ? (
-                      <div className="maps-place-card" aria-label={`Google Maps location: ${selectedStop.place}`}>
-                        <span className="maps-place-pin" aria-hidden="true">●</span>
-                        <span className="maps-place-copy">
-                          <small>Google Maps location</small>
-                          <strong>{selectedStop.place}</strong>
-                        </span>
-                        <span className="maps-place-actions">
-                          <a href={selectedStop.googleMapsUrl || googleMapsSearchUrl(selectedStop.place)} target="_blank" rel="noopener noreferrer">Open map ↗</a>
-                          <a href={googleMapsDirectionsUrl(selectedStop.place, selectedStop.placeId)} target="_blank" rel="noopener noreferrer">Directions ↗</a>
-                        </span>
+                      <div className="stop-location-preview" aria-label={`Google Maps location: ${selectedStop.place}`}>
+                        <div className="maps-place-card">
+                          <span className="maps-place-pin" aria-hidden="true">●</span>
+                          <span className="maps-place-copy">
+                            <small>Address</small>
+                            <strong>{selectedStop.place}</strong>
+                          </span>
+                          <span className="maps-place-actions">
+                            <a href={selectedStop.googleMapsUrl || googleMapsSearchUrl(selectedStop.place)} target="_blank" rel="noopener noreferrer">Open map ↗</a>
+                            <a href={googleMapsDirectionsUrl(selectedStop.place, selectedStop.placeId)} target="_blank" rel="noopener noreferrer">Directions ↗</a>
+                          </span>
+                        </div>
+                        <iframe
+                          className="stop-mini-map"
+                          title={`Map of ${selectedStop.place}`}
+                          src={googleMapsEmbedUrl(selectedStop.place)}
+                          loading="lazy"
+                          referrerPolicy="no-referrer-when-downgrade"
+                        />
                       </div>
                     ) : (
                       <span className="maps-place-empty">Add a location to attach Google Maps</span>
                     )}
                   </div>
                 </div>
-                <label>
-                  <span>Notes</span>
-                  <textarea value={selectedStop.note} onChange={(event) => updateSelectedStop({ note: event.target.value })} placeholder="Add a note" readOnly={!currentMember} />
-                </label>
                 <div className="stop-management" aria-label="Stop actions">
                   <button className="danger-action" onClick={deleteSelectedStop} disabled={!currentMember}>Delete stop</button>
                 </div>
                 </div>
               </div>
-            </section>
+              )}
 
-            <section className="stop-expenses" aria-labelledby="stop-expenses-title">
+              {stopDetailsTab === "journal" && (
+                <div className="stop-details-tab-panel stop-journal-panel">
+                  <div>
+                    <p className="eyebrow">A little piece of the day</p>
+                    <h3>Journal thoughts</h3>
+                    <p>Write down the details you will want to remember later—the funny bits, favourite moments, or something someone said.</p>
+                  </div>
+                  <label>
+                    <span>Thoughts from {selectedStop.title}</span>
+                    <textarea
+                      value={selectedStop.note}
+                      onChange={(event) => updateSelectedStop({ note: event.target.value })}
+                      placeholder="What made this stop memorable?"
+                      readOnly={!currentMember}
+                    />
+                  </label>
+                  <small>{currentMember ? `Shared with the family as ${currentMember.name}` : "Open your private invitation link to write in the journal."}</small>
+                </div>
+              )}
+
+            {stopDetailsTab === "expenses" && (
+            <section className="stop-expenses stop-details-tab-panel" aria-labelledby="stop-expenses-title">
               <div className="stop-expenses-heading">
                 <div>
                   <p className="eyebrow">Shared spending</p>
@@ -2234,6 +2283,8 @@ export default function Home() {
                   ))}
                 </div>
               )}
+            </section>
+            )}
             </section>
 
             <section className="photo-panel" aria-labelledby="add-photos-title">
