@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MemoryLane from "./MemoryLane";
 import { sortItineraryChronologically } from "../lib/chronology";
 import { convertedAmount, getLatestExchangeRate } from "../lib/exchangeRates";
@@ -167,6 +167,22 @@ function savedTimeLabel(value: string): string {
 function timeInputValue(value: string): string {
   const match = /^(\d{1,2}):(\d{2})$/.exec(value);
   return match ? `${match[1].padStart(2, "0")}:${match[2]}` : "";
+}
+
+function minutesFromTime(value: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+function timelineGapHeight(currentTime: string, nextTime: string): number {
+  const current = minutesFromTime(currentTime);
+  const next = minutesFromTime(nextTime);
+  if (current === null || next === null || next <= current) return 8;
+  return Math.min(84, Math.max(8, Math.round((next - current) * 0.18)));
 }
 
 function googleMapsSearchUrl(place: string): string {
@@ -1798,7 +1814,6 @@ export default function Home() {
           <p className="shared-role">
             {currentMember?.name || "Choose profile"} · {isAdmin ? "Admin" : "Contributor"} · {tripSyncLabel}
           </p>
-          <p className="trip-story-line">Plan it together. Live every moment. Keep the stories forever.</p>
         </div>
         {isAdmin ? (
           <button className="avatar" aria-label="Open admin settings" onClick={() => setShowSettings(true)}>{profileInitials}</button>
@@ -1813,32 +1828,32 @@ export default function Home() {
           aria-current={activeTab === "itinerary" ? "page" : undefined}
           onClick={() => setActiveTab("itinerary")}
         >
-          <span>Itinerary</span>
-          <small>Plan the adventure</small>
+          <span className="tab-icon" aria-hidden="true">🗓️</span>
+          <small>Itinerary</small>
         </button>
         <button
           className={activeTab === "gallery" ? "active" : ""}
           aria-current={activeTab === "gallery" ? "page" : undefined}
           onClick={() => setActiveTab("gallery")}
         >
-          <span>Photo Gallery</span>
-          <small>Our snapshots</small>
+          <span className="tab-icon" aria-hidden="true">📸</span>
+          <small>Gallery</small>
         </button>
         <button
           className={activeTab === "expenses" ? "active" : ""}
           aria-current={activeTab === "expenses" ? "page" : undefined}
           onClick={() => setActiveTab("expenses")}
         >
-          <span>Expenses</span>
-          <small>The practical bit</small>
+          <span className="tab-icon" aria-hidden="true">🧾</span>
+          <small>Expenses</small>
         </button>
         <button
           className={activeTab === "memory" ? "active" : ""}
           aria-current={activeTab === "memory" ? "page" : undefined}
           onClick={() => setActiveTab("memory")}
         >
-          <span>Memory Lane</span>
-          <small>Relive the story</small>
+          <span className="tab-icon" aria-hidden="true">💛</span>
+          <small>Memory Lane</small>
         </button>
       </nav>
 
@@ -1877,9 +1892,9 @@ export default function Home() {
       <section className={`content-grid ${itineraryView === "map" ? "map-mode" : ""}`}>
         <div className="timeline-panel">
           <header className="day-overview">
-            <p className="chapter-kicker">Chapter {selectedDayNumber}</p>
+            <p className="day-kicker">Day {selectedDayNumber}</p>
             <FittedDayTitle>{selectedDay?.label ?? "Trip day"}</FittedDayTitle>
-            <p className="day-story-title">{selectedDay?.storyTitle || "A new chapter waiting to be written"}</p>
+            {selectedDay?.storyTitle && <p className="day-story-title">{selectedDay.storyTitle}</p>}
             <p className="day-date-line">Day {selectedDayNumber} · <time dateTime={selectedDay?.date}>{galleryDate(selectedDay?.date ?? "")}</time></p>
             <div className="day-view-toggle" aria-label="Itinerary display">
               <button className={itineraryView === "itinerary" ? "active" : ""} aria-pressed={itineraryView === "itinerary"} onClick={() => setItineraryView("itinerary")}>Itinerary View</button>
@@ -1892,23 +1907,32 @@ export default function Home() {
           </header>
 
           {itineraryView === "itinerary" ? <div className="timeline">
-            {selectedDay?.stops.map((stop) => {
+            {selectedDay?.stops.map((stop, index) => {
               const active = stop.id === selectedStop?.id;
               const count = queuedPhotos.filter((photo) => photo.stopId === stop.id).length;
+              const nextStop = selectedDay.stops[index + 1];
               return (
-                <button
-                  key={stop.id}
-                  className={`stop-card ${active ? "active" : ""}`}
-                  onClick={() => selectStop(stop.id)}
-                >
-                  <time>{stop.time}</time>
-                  <span className="timeline-marker" aria-hidden="true" />
-                  <span className="stop-copy">
-                    <strong>{stop.title}</strong>
-                    <small>{stop.place || "Location to be added"}</small>
-                  </span>
-                  {count > 0 && <span className="photo-count">{count}</span>}
-                </button>
+                <Fragment key={stop.id}>
+                  <button
+                    className={`stop-card ${active ? "active" : ""}`}
+                    onClick={() => selectStop(stop.id)}
+                  >
+                    <time>{stop.time}</time>
+                    <span className="timeline-marker" aria-hidden="true" />
+                    <span className="stop-copy">
+                      <strong>{stop.title}</strong>
+                      <small>{stop.place || "Location to be added"}</small>
+                    </span>
+                    {count > 0 && <span className="photo-count">{count}</span>}
+                  </button>
+                  {nextStop && (
+                    <span
+                      className="timeline-gap"
+                      style={{ height: `${timelineGapHeight(stop.time, nextStop.time)}px` }}
+                      aria-hidden="true"
+                    />
+                  )}
+                </Fragment>
               );
             })}
           </div> : selectedDay ? (
@@ -2274,9 +2298,9 @@ export default function Home() {
               <section className="gallery-day" key={day.id} aria-labelledby={`gallery-${day.id}`}>
                 <header className="gallery-day-heading">
                   <div>
-                    <p>Chapter {dayIndex + 1}</p>
+                    <p>Day {dayIndex + 1}</p>
                     <h2 id={`gallery-${day.id}`}>{day.label}</h2>
-                    <strong>{day.storyTitle || "A day worth remembering"}</strong>
+                    {day.storyTitle && <strong>{day.storyTitle}</strong>}
                     <time dateTime={day.date}>{galleryDate(day.date)}</time>
                   </div>
                   <button className="gallery-day-download" onClick={() => openDayDownload(day)} disabled={!sharedPhotos.some((photo) => photo.dayId === day.id)}>
@@ -2367,7 +2391,7 @@ export default function Home() {
         <section className="expenses-page" aria-labelledby="expenses-title">
           <header className="expenses-page-heading">
             <div>
-              <p className="eyebrow">The practical chapter</p>
+              <p className="eyebrow">The practical details</p>
               <h1 id="expenses-title">The Adventure So Far</h1>
               <p>Every ticket, treat and train ride—kept tidy while the story stays fun.</p>
             </div>
