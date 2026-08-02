@@ -182,8 +182,12 @@ function minutesFromTime(value: string): number | null {
 function timelineGapHeight(currentTime: string, nextTime: string): number {
   const current = minutesFromTime(currentTime);
   const next = minutesFromTime(nextTime);
-  if (current === null || next === null || next <= current) return 8;
-  return Math.min(84, Math.max(8, Math.round((next - current) * 0.18)));
+  if (current === null || next === null || next <= current) return 16;
+
+  // Treat the time until the next activity as the approximate time spent at
+  // this stop. Forty pixels per hour keeps the scale obvious without allowing
+  // a long afternoon break to overwhelm the whole itinerary.
+  return Math.min(180, Math.max(16, Math.round((next - current) * (2 / 3))));
 }
 
 function googleMapsSearchUrl(place: string): string {
