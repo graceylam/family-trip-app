@@ -1,0 +1,364 @@
+"use client";
+
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import QRCode from "qrcode";
+import {
+  attachLegacyViennaTrip,
+  createAccountTrip,
+  createFamilyAccount,
+  firebaseConfigured,
+  firebaseErrorMessage,
+  joinTripWithCode,
+  joinTripWithInvite,
+  observeAccountTrips,
+  observeFamilyAccount,
+  readTripInviteForAdmin,
+  resetFamilyPassword,
+  rotateTripInvite,
+  signInToFamilyAccount,
+  signOutOfFamilyAccount,
+  type AccountTrip,
+  type FamilyAccount,
+  type TripInvite,
+} from "../lib/firebaseAccounts";
+
+type AccountPortalProps = {
+  renderTrip: (account: FamilyAccount, trip: AccountTrip, onBack: () => void) => ReactNode;
+};
+
+type AccountMode = "sign-in" | "create";
+
+function dateLabel(value: string): string {
+  if (!value) return "Dates to be planned";
+  const date = new Date(`${value}T12:00:00`);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function invitationUrl(inviteId: string): string {
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.hash = "";
+  url.searchParams.set("join", inviteId);
+  return url.toString();
+}
+
+export default function AccountPortal({ renderTrip }: AccountPortalProps) {
+  const pendingInviteId = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("join")?.trim() || "";
+  }, []);
+  const [account, setAccount] = useState<FamilyAccount | null | undefined>(undefined);
+  const [trips, setTrips] = useState<AccountTrip[]>([]);
+  const [activeTrip, setActiveTrip] = useState<AccountTrip | null>(null);
+  const [accountMode, setAccountMode] = useState<AccountMode>("sign-in");
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [accountState, setAccountState] = useState<"idle" | "working">("idle");
+  const [accountError, setAccountError] = useState("");
+  const [accountMessage, setAccountMessage] = useState("");
+  const [showCreateTrip, setShowCreateTrip] = useState(false);
+  const [showJoinTrip, setShowJoinTrip] = useState(() => Boolean(pendingInviteId));
+  const [tripName, setTripName] = useState("");
+  const [groupName, setGroupName] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [joinGroupName, setJoinGroupName] = useState("");
+  const [joinCode, setJoinCode] = useState("");
+  const [tripActionState, setTripActionState] = useState<"idle" | "working">("idle");
+  const [tripActionError, setTripActionError] = useState("");
+  const [inviteTrip, setInviteTrip] = useState<AccountTrip | null>(null);
+  const [invite, setInvite] = useState<TripInvite | null>(null);
+  const [inviteQr, setInviteQr] = useState("");
+  const [copiedInvite, setCopiedInvite] = useState(false);
+  const inviteLink = useMemo(() => invite?.id && typeof window !== "undefined" ? invitationUrl(invite.id) : "", [invite]);
+
+  useEffect(() => observeFamilyAccount(setAccount), []);
+
+  useEffect(() => {
+    if (!account) return;
+    return observeAccountTrips(account, setTrips);
+  }, [account]);
+
+  useEffect(() => {
+    if (!inviteLink) return;
+    void QRCode.toDataURL(inviteLink, {
+      width: 360,
+      margin: 2,
+      color: { dark: "#17384a", light: "#fffaf1" },
+    }).then(setInviteQr).catch(() => setInviteQr(""));
+  }, [inviteLink]);
+
+  async function submitAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAccountState("working");
+    setAccountError("");
+    setAccountMessage("");
+    try {
+      if (accountMode === "create") await createFamilyAccount(displayName, email, password);
+      else await signInToFamilyAccount(email, password);
+    } catch (error) {
+      setAccountError(firebaseErrorMessage(error));
+    } finally {
+      setAccountState("idle");
+    }
+  }
+
+  async function sendReset() {
+    if (!email.trim()) {
+      setAccountError("Enter your email address first, then choose Forgot password.");
+      return;
+    }
+    setAccountState("working");
+    setAccountError("");
+    try {
+      await resetFamilyPassword(email);
+      setAccountMessage("A password reset email is on its way.");
+    } catch (error) {
+      setAccountError(firebaseErrorMessage(error));
+    } finally {
+      setAccountState("idle");
+    }
+  }
+
+  async function createTrip(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!account) return;
+    setTripActionState("working");
+    setTripActionError("");
+    try {
+      const created = await createAccountTrip(account, { name: tripName, groupName, startDate, endDate });
+      setShowCreateTrip(false);
+      setTripName("");
+      setGroupName("");
+      setStartDate("");
+      setEndDate("");
+      setInviteTrip(created.trip);
+      setInvite({
+        id: created.inviteId,
+        tripId: created.trip.id,
+        tripName: created.trip.name,
+        groupName: created.groupName,
+        inviteCode: created.inviteCode,
+      });
+    } catch (error) {
+      setTripActionError(firebaseErrorMessage(error));
+    } finally {
+      setTripActionState("idle");
+    }
+  }
+
+  async function joinTrip(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!account) return;
+    setTripActionState("working");
+    setTripActionError("");
+    try {
+      const joined = pendingInviteId
+        ? await joinTripWithInvite(account, pendingInviteId)
+        : await joinTripWithCode(account, joinGroupName, joinCode);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("join");
+      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+      setShowJoinTrip(false);
+      setJoinGroupName("");
+      setJoinCode("");
+      setActiveTrip(joined);
+    } catch (error) {
+      setTripActionError(firebaseErrorMessage(error));
+    } finally {
+      setTripActionState("idle");
+    }
+  }
+
+  async function connectVienna() {
+    if (!account) return;
+    setTripActionState("working");
+    setTripActionError("");
+    try {
+      const vienna = await attachLegacyViennaTrip(account);
+      setActiveTrip(vienna);
+    } catch (error) {
+      setTripActionError(firebaseErrorMessage(error));
+    } finally {
+      setTripActionState("idle");
+    }
+  }
+
+  async function openInvite(trip: AccountTrip) {
+    if (!account || trip.role !== "admin") return;
+    setTripActionError("");
+    setInviteTrip(trip);
+    try {
+      setInvite(await readTripInviteForAdmin(account, trip));
+    } catch (error) {
+      setTripActionError(firebaseErrorMessage(error));
+    }
+  }
+
+  async function replaceInvite() {
+    if (!account || !inviteTrip || !invite) return;
+    setTripActionState("working");
+    setTripActionError("");
+    try {
+      const next = await rotateTripInvite(account, inviteTrip, invite.groupName);
+      setInvite({ ...invite, id: next.inviteId, inviteCode: next.inviteCode });
+      setCopiedInvite(false);
+    } catch (error) {
+      setTripActionError(firebaseErrorMessage(error));
+    } finally {
+      setTripActionState("idle");
+    }
+  }
+
+  async function copyInvitation() {
+    if (!inviteLink) return;
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setCopiedInvite(true);
+    } catch {
+      setTripActionError("The invitation link could not be copied on this device.");
+    }
+  }
+
+  if (!firebaseConfigured) {
+    return (
+      <main className="account-shell">
+        <section className="account-card setup-card">
+          <p className="eyebrow">A safer family space is on its way</p>
+          <h1>Connecting family accounts</h1>
+          <p>The existing Vienna trip is still safe. Account setup needs to be completed before this screen is published.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (account === undefined) {
+    return <main className="account-shell"><section className="account-card setup-card"><p>Opening your adventures…</p></section></main>;
+  }
+
+  if (!account) {
+    return (
+      <main className="account-shell">
+        <section className="account-welcome">
+          <div className="account-welcome-copy">
+            <p className="eyebrow">Plan it together. Remember it forever.</p>
+            <h1>Your family adventures, all in one place.</h1>
+            <p>Sign in on your phone, iPad or laptop and every trip you belong to will be waiting for you.</p>
+          </div>
+          <section className="account-card auth-card" aria-labelledby="account-title">
+            <div className="auth-switch" role="tablist" aria-label="Account options">
+              <button className={accountMode === "sign-in" ? "active" : ""} onClick={() => { setAccountMode("sign-in"); setAccountError(""); }}>Sign in</button>
+              <button className={accountMode === "create" ? "active" : ""} onClick={() => { setAccountMode("create"); setAccountError(""); }}>Create account</button>
+            </div>
+            <p className="eyebrow">{pendingInviteId ? "Your invitation is ready" : "Welcome back"}</p>
+            <h2 id="account-title">{accountMode === "create" ? "Make your travel account" : "Open your adventures"}</h2>
+            <form className="account-form" onSubmit={submitAccount}>
+              {accountMode === "create" && <label><span>Your name</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} autoComplete="name" required /></label>}
+              <label><span>Email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /></label>
+              <label><span>Password</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={accountMode === "create" ? "new-password" : "current-password"} minLength={6} required /></label>
+              {accountError && <p className="account-alert" role="alert">{accountError}</p>}
+              {accountMessage && <p className="account-success" role="status">{accountMessage}</p>}
+              <button className="primary-button" disabled={accountState === "working"}>{accountState === "working" ? "One moment…" : accountMode === "create" ? "Create my account" : "Sign in"}</button>
+              {accountMode === "sign-in" && <button type="button" className="text-button" onClick={() => void sendReset()} disabled={accountState === "working"}>Forgot password?</button>}
+            </form>
+          </section>
+        </section>
+      </main>
+    );
+  }
+
+  if (activeTrip) return <>{renderTrip(account, activeTrip, () => setActiveTrip(null))}</>;
+
+  return (
+    <main className="account-shell trips-shell">
+      <header className="trips-header">
+        <div><p className="eyebrow">Welcome back, {account.displayName}</p><h1>My Adventures</h1><p>Where are we going—and which story are we opening again?</p></div>
+        <div className="account-menu"><span>{account.displayName.slice(0, 1).toUpperCase()}</span><button onClick={() => void signOutOfFamilyAccount()}>Sign out</button></div>
+      </header>
+
+      <section className="trip-dashboard-actions" aria-label="Trip actions">
+        <button className="create-trip-card" onClick={() => { setTripActionError(""); setShowCreateTrip(true); }}><span aria-hidden="true">＋</span><strong>Create New Trip</strong><small>You’ll be the trip admin</small></button>
+        <button className="join-trip-card" onClick={() => { setTripActionError(""); setShowJoinTrip(true); }}><span aria-hidden="true">⌁</span><strong>Join a Trip</strong><small>Use a QR link or private code</small></button>
+      </section>
+
+      {tripActionError && <p className="account-alert dashboard-alert" role="alert">{tripActionError}</p>}
+
+      <section className="trip-library" aria-labelledby="trip-library-title">
+        <div className="trip-library-heading"><p className="eyebrow">Your travel shelf</p><h2 id="trip-library-title">Trips you belong to</h2></div>
+        {trips.length === 0 ? (
+          <div className="empty-trip-library">
+            <span aria-hidden="true">🧳</span><h3>Your first adventure belongs here</h3><p>Create a trip, or connect the Vienna trip you already built.</p>
+            <button className="secondary-button" onClick={() => void connectVienna()} disabled={tripActionState === "working"}>{tripActionState === "working" ? "Connecting…" : "Connect my 2026 Vienna Trip"}</button>
+          </div>
+        ) : (
+          <div className="trip-card-grid">
+            {trips.map((trip) => (
+              <article className="account-trip-card" key={trip.id}>
+                <button className="trip-card-open" onClick={() => setActiveTrip(trip)}>
+                  <span className="trip-role">{trip.role === "admin" ? "Admin" : "Contributor"}</span>
+                  <h3>{trip.name}</h3>
+                  <p>{dateLabel(trip.startDate)}{trip.endDate && trip.endDate !== trip.startDate ? ` — ${dateLabel(trip.endDate)}` : ""}</p>
+                  <strong>Open trip <span aria-hidden="true">→</span></strong>
+                </button>
+                {trip.role === "admin" && <button className="trip-card-invite" onClick={() => void openInvite(trip)}>Invite people</button>}
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {showCreateTrip && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowCreateTrip(false)}>
+          <section className="modal account-modal" role="dialog" aria-modal="true" aria-labelledby="create-trip-title" onMouseDown={(event) => event.stopPropagation()}>
+            <p className="eyebrow">A new adventure</p><h2 id="create-trip-title">Create New Trip</h2>
+            <form className="account-form" onSubmit={createTrip}>
+              <label><span>Trip name</span><input value={tripName} onChange={(event) => setTripName(event.target.value)} placeholder="e.g. 2027 Japan Trip" required /></label>
+              <label><span>Private group name</span><input value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="Something only your group knows" required /></label>
+              <div className="account-date-row">
+                <label><span>Start date</span><input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} required /></label>
+                <label><span>End date</span><input type="date" value={endDate} min={startDate} onChange={(event) => setEndDate(event.target.value)} required /></label>
+              </div>
+              {tripActionError && <p className="account-alert" role="alert">{tripActionError}</p>}
+              <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowCreateTrip(false)}>Cancel</button><button className="primary-button" disabled={tripActionState === "working"}>{tripActionState === "working" ? "Creating…" : "Create trip"}</button></div>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {showJoinTrip && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowJoinTrip(false)}>
+          <section className="modal account-modal" role="dialog" aria-modal="true" aria-labelledby="join-trip-title" onMouseDown={(event) => event.stopPropagation()}>
+            <p className="eyebrow">Join the adventure</p><h2 id="join-trip-title">{pendingInviteId ? "Private invitation found" : "Enter the private trip details"}</h2>
+            <form className="account-form" onSubmit={joinTrip}>
+              {pendingInviteId ? <p className="invite-found">You’re signed in and ready to join. The trip will be added to My Adventures.</p> : <><label><span>Private group name</span><input value={joinGroupName} onChange={(event) => setJoinGroupName(event.target.value)} required /></label><label><span>Private invite code</span><input className="invite-code-input" value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase())} maxLength={8} required /></label></>}
+              {tripActionError && <p className="account-alert" role="alert">{tripActionError}</p>}
+              <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowJoinTrip(false)}>Cancel</button><button className="primary-button" disabled={tripActionState === "working"}>{tripActionState === "working" ? "Joining…" : "Join trip"}</button></div>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {inviteTrip && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => { setInviteTrip(null); setInvite(null); }}>
+          <section className="modal invite-modal" role="dialog" aria-modal="true" aria-labelledby="invite-title" onMouseDown={(event) => event.stopPropagation()}>
+            <p className="eyebrow">Bring everyone along</p><h2 id="invite-title">Invite people to {inviteTrip.name}</h2>
+            {invite ? <>
+              <div className="invite-qr">{inviteQr ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={inviteQr} alt={`QR invitation for ${inviteTrip.name}`} />
+              ) : <span>Making QR code…</span>}</div>
+              <p className="invite-instruction">They can scan this code, or open the private link while creating or signing into their own account.</p>
+              <button className="primary-button invite-copy-button" onClick={() => void copyInvitation()}>{copiedInvite ? "Invitation copied" : "Copy private invitation link"}</button>
+              <div className="manual-invite-details"><p><span>Private group name</span><strong>{invite.groupName}</strong></p><p><span>Private invite code</span><strong className="invite-code">{invite.inviteCode || "Generate a new code"}</strong></p></div>
+              <p className="invite-security-note">Anyone with either invitation method can join. Replace the code if it is shared outside your group.</p>
+              <div className="modal-actions"><button className="text-button" onClick={() => void replaceInvite()} disabled={tripActionState === "working"}>{tripActionState === "working" ? "Replacing…" : "Replace invite code"}</button><button className="secondary-button" onClick={() => { setInviteTrip(null); setInvite(null); }}>Done</button></div>
+            </> : <p>Opening the private invitation…</p>}
+          </section>
+        </div>
+      )}
+    </main>
+  );
+}

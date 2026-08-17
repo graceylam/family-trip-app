@@ -1,7 +1,9 @@
 "use client";
 
-import { ChangeEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import AccountPortal from "./AccountPortal";
 import MemoryLane from "./MemoryLane";
+import type { AccountTrip, FamilyAccount } from "../lib/firebaseAccounts";
 import { sortItineraryChronologically } from "../lib/chronology";
 import { convertedAmount, getLatestExchangeRate } from "../lib/exchangeRates";
 import {
@@ -97,7 +99,7 @@ const memberIdKey = "family-trip-member-id-v1";
 const tripAccessKeyStorageKey = "family-trip-access-key-v1";
 const pendingTripSaveKey = "family-trip-pending-save-v1";
 const lastTripSavedAtKey = "family-trip-last-saved-at-v1";
-const sharedTripId = "vienna-2026-family-trip";
+const legacySharedTripId = "vienna-2026-family-trip";
 const initialTripName = "2026 Vienna Trip";
 const expenseCategories = ["Food & Drink", "Transport", "Accommodation", "Tickets & Activities", "Shopping", "Other"];
 const currencyOptions = ["EUR", "AUD", "USD", "GBP", "CZK", "HUF", "CHF"];
@@ -122,9 +124,14 @@ function normalizeSharedTripChronology(trip: SharedTripState): SharedTripState {
   return { ...trip, days: sortItineraryChronologically(trip.days) };
 }
 
-function readPendingTripSave(): PendingTripSave | null {
+function scopedStorageKey(key: string, tripId: string): string {
+  return `${key}:${tripId}`;
+}
+
+function readPendingTripSave(tripId: string): PendingTripSave | null {
+  const storageKey = scopedStorageKey(pendingTripSaveKey, tripId);
   try {
-    const raw = window.localStorage.getItem(pendingTripSaveKey);
+    const raw = window.localStorage.getItem(storageKey);
     if (!raw) return null;
     const pending = JSON.parse(raw) as Partial<PendingTripSave>;
     if (
@@ -132,10 +139,10 @@ function readPendingTripSave(): PendingTripSave | null {
       !pending.fingerprint ||
       !pending.draft ||
       !pending.baseTrip ||
-      pending.draft.tripId !== sharedTripId ||
-      pending.baseTrip.tripId !== sharedTripId
+      pending.draft.tripId !== tripId ||
+      pending.baseTrip.tripId !== tripId
     ) {
-      window.localStorage.removeItem(pendingTripSaveKey);
+      window.localStorage.removeItem(storageKey);
       return null;
     }
     const completePending = pending as PendingTripSave;
@@ -146,17 +153,17 @@ function readPendingTripSave(): PendingTripSave | null {
       fingerprint: sharedTripFingerprint(draft),
     };
   } catch {
-    window.localStorage.removeItem(pendingTripSaveKey);
+    window.localStorage.removeItem(storageKey);
     return null;
   }
 }
 
-function writePendingTripSave(pending: PendingTripSave): void {
-  window.localStorage.setItem(pendingTripSaveKey, JSON.stringify(pending));
+function writePendingTripSave(tripId: string, pending: PendingTripSave): void {
+  window.localStorage.setItem(scopedStorageKey(pendingTripSaveKey, tripId), JSON.stringify(pending));
 }
 
-function clearPendingTripSave(): void {
-  window.localStorage.removeItem(pendingTripSaveKey);
+function clearPendingTripSave(tripId: string): void {
+  window.localStorage.removeItem(scopedStorageKey(pendingTripSaveKey, tripId));
 }
 
 function savedTimeLabel(value: string): string {
@@ -182,12 +189,12 @@ function minutesFromTime(value: string): number | null {
 function timelineGapHeight(currentTime: string, nextTime: string): number {
   const current = minutesFromTime(currentTime);
   const next = minutesFromTime(nextTime);
-  if (current === null || next === null || next <= current) return 16;
+  if (current === null || next === null || next <= current) return 10;
 
   // Treat the time until the next activity as the approximate time spent at
-  // this stop. Forty pixels per hour keeps the scale obvious without allowing
-  // a long afternoon break to overwhelm the whole itinerary.
-  return Math.min(180, Math.max(16, Math.round((next - current) * (2 / 3))));
+  // this stop. Twenty pixels per hour preserves the visual rhythm without
+  // making a day with long breaks feel excessively stretched.
+  return Math.min(84, Math.max(10, Math.round((next - current) / 3)));
 }
 
 function googleMapsSearchUrl(place: string): string {
@@ -358,8 +365,24 @@ function groupPhotosByPerson(photos: SharedPhoto[]): Array<{ id: string; name: s
   return Array.from(groups.values());
 }
 
-export default function Home() {
-  const [tripName, setTripName] = useState(initialTripName);
+type TripWorkspaceProps = {
+  account: FamilyAccount;
+  accountTrip: AccountTrip;
+  onBackToTrips: () => void;
+};
+
+function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspaceProps) {
+  const sharedTripId = accountTrip.legacyDriveTripId || accountTrip.id;
+  const workspaceInitialName = accountTrip.name || initialTripName;
+  const workspaceInitialDays = useMemo<TripDay[]>(() => accountTrip.legacyDriveTripId
+    ? initialDays
+    : [{ id: `day-${crypto.randomUUID()}`, date: accountTrip.startDate, label: "First Day", stops: [] }],
+  [accountTrip.legacyDriveTripId, accountTrip.startDate]);
+  const workspaceInitialMembers = useMemo<TripMember[]>(() => accountTrip.legacyDriveTripId
+    ? initialMembers
+    : [{ id: account.uid, name: accountTrip.memberName || account.displayName }],
+  [account.displayName, account.uid, accountTrip.legacyDriveTripId, accountTrip.memberName]);
+  const [tripName, setTripName] = useState(workspaceInitialName);
   const [tripCoverPhotoId, setTripCoverPhotoId] = useState("");
   const [tripCoverUrl, setTripCoverUrl] = useState("");
   const [coverUploadState, setCoverUploadState] = useState<"idle" | "uploading" | "error">("idle");
@@ -368,7 +391,7 @@ export default function Home() {
   const [previousTripId, setPreviousTripId] = useState("");
   const [adminSecret, setAdminSecret] = useState("");
   const [tripAccessKey, setTripAccessKey] = useState("");
-  const [members, setMembers] = useState<TripMember[]>(initialMembers);
+  const [members, setMembers] = useState<TripMember[]>(workspaceInitialMembers);
   const [currentMemberId, setCurrentMemberId] = useState("");
   const [tripRevision, setTripRevision] = useState(1);
   const [sharedStateReady, setSharedStateReady] = useState(false);
@@ -377,9 +400,9 @@ export default function Home() {
   const [lastTripSavedAt, setLastTripSavedAt] = useState("");
   const [googleState, setGoogleState] = useState<"disconnected" | "connecting" | "connected" | "uploading">("disconnected");
   const [googleError, setGoogleError] = useState<string | null>(null);
-  const [days, setDays] = useState<TripDay[]>(initialDays);
-  const [selectedDayId, setSelectedDayId] = useState(initialDays[0].id);
-  const [selectedStopId, setSelectedStopId] = useState(initialDays[0].stops[0].id);
+  const [days, setDays] = useState<TripDay[]>(workspaceInitialDays);
+  const [selectedDayId, setSelectedDayId] = useState(workspaceInitialDays[0]?.id || "");
+  const [selectedStopId, setSelectedStopId] = useState(workspaceInitialDays[0]?.stops[0]?.id || "");
   const [queuedPhotos, setQueuedPhotos] = useState<QueuedPhotoView[]>([]);
   const [queueState, setQueueState] = useState<"loading" | "ready" | "saving" | "unavailable">("loading");
   const [queueError, setQueueError] = useState<string | null>(null);
@@ -396,6 +419,8 @@ export default function Home() {
   const [bulkDownloadState, setBulkDownloadState] = useState<"idle" | "downloading">("idle");
   const [bulkDownloadError, setBulkDownloadError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [invitationLink, setInvitationLink] = useState("");
+  const [invitationError, setInvitationError] = useState("");
   const [newStopName, setNewStopName] = useState("");
   const [newStopTime, setNewStopTime] = useState("12:00");
   const [newDayName, setNewDayName] = useState("");
@@ -439,16 +464,16 @@ export default function Home() {
   const pendingTripSaveRef = useRef<PendingTripSave | null>(null);
   const tripSaveInFlightRef = useRef(false);
   const latestTripDraftRef = useRef({
-    tripName: initialTripName,
+    tripName: workspaceInitialName,
     coverPhotoId: "",
-    days: initialDays,
-    members: initialMembers,
+    days: workspaceInitialDays,
+    members: workspaceInitialMembers,
     revision: 1,
   });
   const placeSearchTimerRef = useRef<number | null>(null);
   const placeSearchRequestRef = useRef(0);
   const placeSessionTokenRef = useRef("");
-  const isAdmin = Boolean(adminSecret);
+  const isAdmin = accountTrip.role === "admin" || Boolean(adminSecret);
   const currentMember = useMemo(
     () => members.find((member) => member.id === currentMemberId),
     [currentMemberId, members],
@@ -504,7 +529,7 @@ export default function Home() {
         lastSyncedTripRef.current = saved;
         lastSavedTripRef.current = savedFingerprint;
         setLastTripSavedAt(saved.updatedAt);
-        window.localStorage.setItem(lastTripSavedAtKey, saved.updatedAt);
+        window.localStorage.setItem(scopedStorageKey(lastTripSavedAtKey, sharedTripId), saved.updatedAt);
         setGoogleState((current) => current === "uploading" ? current : "connected");
 
         const latestPending = pendingTripSaveRef.current;
@@ -515,7 +540,7 @@ export default function Home() {
 
         if (latestWasAcknowledged) {
           pendingTripSaveRef.current = null;
-          clearPendingTripSave();
+          clearPendingTripSave(sharedTripId);
           setHasPendingTripSave(false);
           setTripName(chronologicalSaved.tripName);
           setTripCoverPhotoId(chronologicalSaved.coverPhotoId || "");
@@ -538,7 +563,7 @@ export default function Home() {
     } finally {
       tripSaveInFlightRef.current = false;
     }
-  }, [adminSecret, currentMember, isOffline]);
+  }, [adminSecret, currentMember, isOffline, sharedTripId]);
 
   const refreshSharedGallery = useCallback(async () => {
     if (!navigator.onLine) {
@@ -552,7 +577,7 @@ export default function Home() {
     setGalleryError(null);
 
     try {
-      const photos = await getSharedPhotos(sharedTripId, tripName.trim() || initialTripName);
+      const photos = await getSharedPhotos(sharedTripId, tripName.trim() || workspaceInitialName);
       if (galleryRequestRef.current !== requestId) return;
       setSharedPhotos(photos);
 
@@ -601,7 +626,7 @@ export default function Home() {
       setGalleryState("error");
       setGalleryError(error instanceof Error ? error.message : "The shared photo gallery could not be loaded.");
     }
-  }, [tripName]);
+  }, [sharedTripId, tripName, workspaceInitialName]);
 
   const refreshSharedItinerary = useCallback(async () => {
     if (!navigator.onLine) {
@@ -614,13 +639,13 @@ export default function Home() {
     try {
       const trip = await getSharedTrip(
         sharedTripId,
-        { tripName: initialTripName, days: initialDays, members: initialMembers },
+        { tripName: workspaceInitialName, days: workspaceInitialDays, members: workspaceInitialMembers },
       );
       const chronologicalTrip = normalizeSharedTripChronology(trip);
       lastSyncedTripRef.current = trip;
       lastSavedTripRef.current = sharedTripFingerprint(trip);
       setLastTripSavedAt(trip.updatedAt);
-      window.localStorage.setItem(lastTripSavedAtKey, trip.updatedAt);
+      window.localStorage.setItem(scopedStorageKey(lastTripSavedAtKey, sharedTripId), trip.updatedAt);
 
       const pending = pendingTripSaveRef.current;
       if (pending && pending.fingerprint !== lastSavedTripRef.current) {
@@ -629,13 +654,18 @@ export default function Home() {
       } else {
         if (pending) {
           pendingTripSaveRef.current = null;
-          clearPendingTripSave();
+          clearPendingTripSave(sharedTripId);
           setHasPendingTripSave(false);
         }
         setTripName(chronologicalTrip.tripName);
         setTripCoverPhotoId(chronologicalTrip.coverPhotoId || "");
         setDays(chronologicalTrip.days);
         setMembers(chronologicalTrip.members);
+        setCurrentMemberId((current) => {
+          if (chronologicalTrip.members.some((member) => member.id === current)) return current;
+          return chronologicalTrip.members.find((member) => member.name.toLocaleLowerCase("en-AU") === accountTrip.memberName.toLocaleLowerCase("en-AU"))?.id
+            || (accountTrip.legacyDriveTripId ? current : account.uid);
+        });
         setSelectedDayId((current) => chronologicalTrip.days.some((day) => day.id === current) ? current : chronologicalTrip.days[0]?.id ?? "");
         setSelectedStopId((current) => chronologicalTrip.days.some((day) => day.stops.some((stop) => stop.id === current))
           ? current
@@ -654,25 +684,34 @@ export default function Home() {
       setGoogleError(error instanceof Error ? error.message : "The shared itinerary could not be loaded.");
       return false;
     }
-  }, []);
+  }, [account.uid, accountTrip.legacyDriveTripId, accountTrip.memberName, sharedTripId, workspaceInitialDays, workspaceInitialMembers, workspaceInitialName]);
 
   useEffect(() => {
-    let localDays = initialDays;
-    const saved = window.localStorage.getItem(itineraryKey);
+    if (typeof window !== "undefined" && "Capacitor" in window) {
+      document.documentElement.classList.add("native-app");
+    }
+
+    let localDays = workspaceInitialDays;
+    const itineraryStorageKey = scopedStorageKey(itineraryKey, sharedTripId);
+    const tripNameStorageKey = scopedStorageKey(tripNameKey, sharedTripId);
+    const saved = window.localStorage.getItem(itineraryStorageKey)
+      || (sharedTripId === legacySharedTripId ? window.localStorage.getItem(itineraryKey) : null);
     if (saved) {
       try {
         localDays = JSON.parse(saved) as TripDay[];
       } catch {
-        window.localStorage.removeItem(itineraryKey);
+        window.localStorage.removeItem(itineraryStorageKey);
       }
     }
-    const localTripName = window.localStorage.getItem(tripNameKey) || initialTripName;
-    const pending = readPendingTripSave();
+    const localTripName = window.localStorage.getItem(tripNameStorageKey)
+      || (sharedTripId === legacySharedTripId ? window.localStorage.getItem(tripNameKey) : null)
+      || workspaceInitialName;
+    const pending = readPendingTripSave(sharedTripId);
     const localTrip = normalizeSharedTripChronology(pending?.draft ?? {
       tripId: sharedTripId,
       tripName: localTripName,
       days: localDays,
-      members: initialMembers,
+      members: workspaceInitialMembers,
       revision: 1,
       updatedAt: new Date().toISOString(),
     });
@@ -689,34 +728,42 @@ export default function Home() {
     setDays(localTrip.days);
     setMembers(localTrip.members);
     setTripRevision(localTrip.revision);
-    setLastTripSavedAt(window.localStorage.getItem(lastTripSavedAtKey) || "");
+    setLastTripSavedAt(window.localStorage.getItem(scopedStorageKey(lastTripSavedAtKey, sharedTripId))
+      || (sharedTripId === legacySharedTripId ? window.localStorage.getItem(lastTripSavedAtKey) : null)
+      || "");
 
-    const savedTripId = window.localStorage.getItem(tripIdKey) || "";
+    const savedTripId = window.localStorage.getItem(scopedStorageKey(tripIdKey, sharedTripId)) || "";
     if (savedTripId && savedTripId !== sharedTripId) setPreviousTripId(savedTripId);
-    window.localStorage.setItem(tripIdKey, sharedTripId);
+    window.localStorage.setItem(scopedStorageKey(tripIdKey, sharedTripId), sharedTripId);
 
     const query = new URLSearchParams(window.location.search);
     const queryAdminSecret = query.get("admin")?.trim() || "";
     const queryMemberId = query.get("member")?.trim() || "";
     const queryTripAccessKey = query.get("key")?.trim() || "";
-    const storedAdminSecret = window.localStorage.getItem(adminKey) || "";
-    const storedMemberId = window.localStorage.getItem(memberIdKey) || "";
-    const storedTripAccessKey = window.localStorage.getItem(tripAccessKeyStorageKey) || "";
+    const storedAdminSecret = window.localStorage.getItem(scopedStorageKey(adminKey, sharedTripId))
+      || (sharedTripId === legacySharedTripId ? window.localStorage.getItem(adminKey) : null)
+      || "";
+    const storedMemberId = window.localStorage.getItem(scopedStorageKey(memberIdKey, sharedTripId))
+      || (sharedTripId === legacySharedTripId ? window.localStorage.getItem(memberIdKey) : null)
+      || "";
+    const storedTripAccessKey = window.localStorage.getItem(scopedStorageKey(tripAccessKeyStorageKey, sharedTripId))
+      || (sharedTripId === legacySharedTripId ? window.localStorage.getItem(tripAccessKeyStorageKey) : null)
+      || "";
     const resolvedAdminSecret = queryAdminSecret || storedAdminSecret;
     const resolvedMemberId = queryAdminSecret
       ? queryMemberId || "grace"
-      : storedMemberId || queryMemberId || (resolvedAdminSecret ? "grace" : "");
+      : storedMemberId || queryMemberId || (resolvedAdminSecret ? "grace" : accountTrip.legacyDriveTripId ? "" : account.uid);
     const resolvedTripAccessKey = queryTripAccessKey || storedTripAccessKey;
     if (queryAdminSecret) {
-      window.localStorage.setItem(adminKey, queryAdminSecret);
+      window.localStorage.setItem(scopedStorageKey(adminKey, sharedTripId), queryAdminSecret);
     }
     if (resolvedMemberId) {
-      window.localStorage.setItem(memberIdKey, resolvedMemberId);
+      window.localStorage.setItem(scopedStorageKey(memberIdKey, sharedTripId), resolvedMemberId);
     }
     if (queryTripAccessKey) {
-      window.localStorage.setItem(tripAccessKeyStorageKey, queryTripAccessKey);
+      window.localStorage.setItem(scopedStorageKey(tripAccessKeyStorageKey, sharedTripId), queryTripAccessKey);
     }
-    configureGoogleDriveGateway(resolvedTripAccessKey);
+    configureGoogleDriveGateway(resolvedTripAccessKey, accountTrip.id);
     if (queryAdminSecret || queryMemberId || queryTripAccessKey) {
       window.history.replaceState({}, "", `${window.location.pathname}${window.location.hash}`);
     }
@@ -743,7 +790,7 @@ export default function Home() {
         queuedAt: new Date().toISOString(),
         draft: {
           tripId: sharedTripId,
-          tripName: latest.tripName.trim() || initialTripName,
+          tripName: latest.tripName.trim() || workspaceInitialName,
           coverPhotoId: latest.coverPhotoId,
           days: chronologicalDays,
           members: latest.members,
@@ -753,7 +800,7 @@ export default function Home() {
         baseTrip: existing?.baseTrip ?? lastSyncedTripRef.current,
       };
       pendingTripSaveRef.current = pendingBeforeExit;
-      writePendingTripSave(pendingBeforeExit);
+      writePendingTripSave(sharedTripId, pendingBeforeExit);
     };
     window.addEventListener("pagehide", preservePendingOnExit);
 
@@ -792,7 +839,30 @@ export default function Home() {
       previewUrls.forEach((url) => URL.revokeObjectURL(url));
       previewUrls.clear();
     };
-  }, [refreshSharedItinerary]);
+  }, [account.uid, accountTrip.id, accountTrip.legacyDriveTripId, refreshSharedItinerary, sharedTripId, workspaceInitialDays, workspaceInitialMembers, workspaceInitialName]);
+
+  function connectPrivateInvitation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setInvitationError("");
+
+    try {
+      const invitation = new URL(invitationLink.trim());
+      const invitedAdminSecret = invitation.searchParams.get("admin")?.trim() || "";
+      const invitedMemberId = invitation.searchParams.get("member")?.trim() || (invitedAdminSecret ? "grace" : "");
+      const invitedAccessKey = invitation.searchParams.get("key")?.trim() || "";
+
+      if (!invitedMemberId || !invitedAccessKey) {
+        throw new Error("This does not look like a complete Family Trip invitation link.");
+      }
+
+      if (invitedAdminSecret) window.localStorage.setItem(scopedStorageKey(adminKey, sharedTripId), invitedAdminSecret);
+      window.localStorage.setItem(scopedStorageKey(memberIdKey, sharedTripId), invitedMemberId);
+      window.localStorage.setItem(scopedStorageKey(tripAccessKeyStorageKey, sharedTripId), invitedAccessKey);
+      window.location.reload();
+    } catch (error) {
+      setInvitationError(error instanceof Error ? error.message : "That invitation link could not be opened.");
+    }
+  }
 
   useEffect(() => () => {
     galleryRequestRef.current += 1;
@@ -821,7 +891,7 @@ export default function Home() {
       if (!cancelled) setCoverUploadError("The saved cover could not be opened. Grace can replace it in Settings.");
     });
     return () => { cancelled = true; };
-  }, [tripAccessKey, tripCoverPhotoId]);
+  }, [sharedTripId, tripAccessKey, tripCoverPhotoId]);
 
   useEffect(() => {
     if ((activeTab !== "gallery" && activeTab !== "memory") || !hasLoadedLocalState || !tripAccessKey) return;
@@ -845,18 +915,18 @@ export default function Home() {
 
   useEffect(() => {
     if (!hasLoadedLocalState) return;
-    window.localStorage.setItem(itineraryKey, JSON.stringify(days));
-  }, [days, hasLoadedLocalState]);
+    window.localStorage.setItem(scopedStorageKey(itineraryKey, sharedTripId), JSON.stringify(days));
+  }, [days, hasLoadedLocalState, sharedTripId]);
 
   useEffect(() => {
     if (!hasLoadedLocalState) return;
-    window.localStorage.setItem(tripNameKey, tripName);
-  }, [tripName, hasLoadedLocalState]);
+    window.localStorage.setItem(scopedStorageKey(tripNameKey, sharedTripId), tripName);
+  }, [tripName, hasLoadedLocalState, sharedTripId]);
 
   useEffect(() => {
     if (!hasLoadedLocalState || !currentMemberId) return;
-    window.localStorage.setItem(memberIdKey, currentMemberId);
-  }, [currentMemberId, hasLoadedLocalState]);
+    window.localStorage.setItem(scopedStorageKey(memberIdKey, sharedTripId), currentMemberId);
+  }, [currentMemberId, hasLoadedLocalState, sharedTripId]);
 
   useEffect(() => {
     if (!hasLoadedLocalState) return;
@@ -892,7 +962,7 @@ export default function Home() {
     if (!existingPending || existingPending.fingerprint !== fingerprint) {
       const draft: SharedTripState = {
         tripId: sharedTripId,
-        tripName: tripName.trim() || initialTripName,
+        tripName: tripName.trim() || workspaceInitialName,
         coverPhotoId: tripCoverPhotoId,
         days: sortItineraryChronologically(days),
         members,
@@ -910,7 +980,7 @@ export default function Home() {
         baseTrip: existingPending?.baseTrip ?? lastSyncedTripRef.current,
       };
       pendingTripSaveRef.current = pending;
-      writePendingTripSave(pending);
+      writePendingTripSave(sharedTripId, pending);
     }
 
     setHasPendingTripSave(true);
@@ -922,7 +992,7 @@ export default function Home() {
     }, 900);
 
     return () => window.clearTimeout(timeoutId);
-  }, [currentMember, days, hasLoadedLocalState, isOffline, members, processPendingTripSave, sharedStateReady, tripCoverPhotoId, tripName, tripRevision]);
+  }, [currentMember, days, hasLoadedLocalState, isOffline, members, processPendingTripSave, sharedStateReady, sharedTripId, tripCoverPhotoId, tripName, tripRevision, workspaceInitialName]);
 
   const selectedDay = useMemo(
     () => days.find((day) => day.id === selectedDayId) ?? days[0],
@@ -1168,7 +1238,7 @@ export default function Home() {
     try {
       const fileId = await uploadTripCoverToDrive(
         sharedTripId,
-        tripName.trim() || initialTripName,
+        tripName.trim() || workspaceInitialName,
         file,
         adminSecret,
         tripCoverPhotoId || undefined,
@@ -1887,6 +1957,7 @@ export default function Home() {
         style={tripCoverUrl ? { backgroundImage: `linear-gradient(90deg, rgba(255,250,241,.96) 0%, rgba(255,250,241,.82) 45%, rgba(255,250,241,.08) 78%), url(${tripCoverUrl})` } : undefined}
       >
         <div className="hero-copy">
+          <button className="back-to-trips" onClick={onBackToTrips} aria-label="Back to My Adventures">← My Adventures</button>
           <p className="eyebrow">Our next adventure</p>
           <input
             className="trip-title-input"
@@ -2724,7 +2795,23 @@ export default function Home() {
           <section className="modal" role="dialog" aria-modal="true" aria-labelledby="profile-title">
             <p className="eyebrow">Welcome to the trip</p>
             <h2 id="profile-title">Private invitation needed</h2>
-            <p className="modal-copy">Open the private link Grace prepared for you. It connects this browser to your own locked family profile.</p>
+            <p className="modal-copy">Paste the private link Grace prepared for you. You only need to do this once on this device.</p>
+            <form className="invitation-link-form" onSubmit={connectPrivateInvitation}>
+              <label>
+                Private invitation link
+                <input
+                  type="url"
+                  value={invitationLink}
+                  onChange={(event) => setInvitationLink(event.target.value)}
+                  placeholder="https://graceylam.github.io/…"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  required
+                />
+              </label>
+              {invitationError && <p className="gallery-alert" role="alert">{invitationError}</p>}
+              <button className="primary-button" type="submit">Connect this device</button>
+            </form>
           </section>
         </div>
       )}
@@ -2826,5 +2913,15 @@ export default function Home() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function Home() {
+  return (
+    <AccountPortal
+      renderTrip={(account, trip, onBack) => (
+        <TripWorkspace key={trip.id} account={account} accountTrip={trip} onBackToTrips={onBack} />
+      )}
+    />
   );
 }

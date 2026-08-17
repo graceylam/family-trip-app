@@ -1,11 +1,14 @@
 import type { StoredQueuedPhoto } from "./photoQueue";
+import { getFamilyAccountToken } from "./firebaseAccounts";
 
 const gatewayUrl = "https://script.google.com/macros/s/AKfycbyJPxWveYz8usViasYVNS5DddxuvzfZ5ETvm2yAxmxdiUMYejsk0gFcMDbeQrcpSJXi/exec";
 let sharedSecret = "";
+let firebaseTripId = "";
 const requestTimeoutMs = 150_000;
 
-export function configureGoogleDriveGateway(secret: string): void {
+export function configureGoogleDriveGateway(secret: string, tripId = ""): void {
   sharedSecret = secret.trim();
+  firebaseTripId = tripId.trim();
 }
 
 type GatewayResponse = {
@@ -160,12 +163,18 @@ function isGoogleGatewayOrigin(origin: string): boolean {
   }
 }
 
-function gatewayRequest(payload: GatewayPayload): Promise<GatewayResponse> {
+async function gatewayRequest(payload: GatewayPayload): Promise<GatewayResponse> {
   if (typeof document === "undefined") {
     return Promise.reject(new GoogleDriveError("The Drive service is only available in the app."));
   }
-  if (!sharedSecret) {
-    return Promise.reject(new GoogleDriveError("Open the private family invitation link to connect this device.", false));
+  let firebaseToken = "";
+  try {
+    firebaseToken = await getFamilyAccountToken();
+  } catch {
+    // The legacy family link remains available during the account migration.
+  }
+  if (!sharedSecret && (!firebaseToken || !firebaseTripId)) {
+    throw new GoogleDriveError("Sign in and open one of your trips to connect Google Drive.", false);
   }
 
   return new Promise((resolve, reject) => {
@@ -190,6 +199,8 @@ function gatewayRequest(payload: GatewayPayload): Promise<GatewayResponse> {
       ...payload,
       requestId,
       secret: sharedSecret,
+      firebaseToken,
+      firebaseTripId,
     });
     form.appendChild(input);
 
