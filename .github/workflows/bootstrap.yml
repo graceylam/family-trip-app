@@ -35,12 +35,16 @@ jobs:
             git commit -m "Publish Family Trip app source"
             git push
           fi
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run build:pages
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build:pages
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
         with:
