@@ -75,7 +75,33 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
   const [copiedInvite, setCopiedInvite] = useState(false);
   const inviteLink = useMemo(() => invite?.id && typeof window !== "undefined" ? invitationUrl(invite.id) : "", [invite]);
 
-  useEffect(() => observeFamilyAccount(setAccount), []);
+  useEffect(() => {
+    let observed = false;
+    const openingTimeout = window.setTimeout(() => {
+      if (observed) return;
+      setAccount(null);
+      setAccountError("Account connection is taking longer than expected. You can still sign in or create an account.");
+    }, 5_000);
+
+    try {
+      const unsubscribe = observeFamilyAccount((nextAccount) => {
+        observed = true;
+        window.clearTimeout(openingTimeout);
+        setAccount(nextAccount);
+      });
+      return () => {
+        window.clearTimeout(openingTimeout);
+        unsubscribe();
+      };
+    } catch (error) {
+      window.clearTimeout(openingTimeout);
+      const failureTimeout = window.setTimeout(() => {
+        setAccount(null);
+        setAccountError(firebaseErrorMessage(error));
+      }, 0);
+      return () => window.clearTimeout(failureTimeout);
+    }
+  }, []);
 
   useEffect(() => {
     if (!account) return;

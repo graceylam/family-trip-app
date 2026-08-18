@@ -2,10 +2,9 @@ import { initializeApp, type FirebaseApp } from "firebase/app";
 import {
   browserLocalPersistence,
   createUserWithEmailAndPassword,
-  getAuth,
+  initializeAuth,
   onAuthStateChanged,
   sendPasswordResetEmail,
-  setPersistence,
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
@@ -62,9 +61,8 @@ function services(): { auth: Auth; db: Firestore } {
   }
   if (!firebaseApp) {
     firebaseApp = initializeApp(firebaseConfig);
-    firebaseAuth = getAuth(firebaseApp);
+    firebaseAuth = initializeAuth(firebaseApp, { persistence: browserLocalPersistence });
     firestore = getFirestore(firebaseApp);
-    void setPersistence(firebaseAuth, browserLocalPersistence);
   }
   return { auth: firebaseAuth!, db: firestore! };
 }
