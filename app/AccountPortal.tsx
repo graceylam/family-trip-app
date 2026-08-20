@@ -27,6 +27,7 @@ type AccountPortalProps = {
 };
 
 type AccountMode = "sign-in" | "create";
+const legacyViennaTripId = "vienna-2026-family-trip";
 
 function dateLabel(value: string): string {
   if (!value) return "Dates to be planned";
@@ -308,6 +309,11 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
       <section className="trip-dashboard-actions" aria-label="Trip actions">
         <button className="create-trip-card" onClick={() => { setTripActionError(""); setShowCreateTrip(true); }}><span aria-hidden="true">＋</span><strong>Create New Trip</strong><small>You’ll be the trip admin</small></button>
         <button className="join-trip-card" onClick={() => { setTripActionError(""); setShowJoinTrip(true); }}><span aria-hidden="true">⌁</span><strong>Join a Trip</strong><small>Use a QR link or private code</small></button>
+        {!trips.some((trip) => trip.id === legacyViennaTripId) && (
+          <button className="join-trip-card" onClick={() => void connectVienna()} disabled={tripActionState === "working"}>
+            <span aria-hidden="true">✈︎</span><strong>Connect Vienna Trip</strong><small>Bring in the trip you already built</small>
+          </button>
+        )}
       </section>
 
       {tripActionError && <p className="account-alert dashboard-alert" role="alert">{tripActionError}</p>}
