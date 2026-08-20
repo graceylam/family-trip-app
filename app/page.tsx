@@ -4,6 +4,12 @@ import { ChangeEvent, FormEvent, Fragment, useCallback, useEffect, useMemo, useR
 import AccountPortal from "./AccountPortal";
 import MemoryLane from "./MemoryLane";
 import type { AccountTrip, FamilyAccount } from "../lib/firebaseAccounts";
+import {
+  getFirebaseTripState,
+  initializeFirebaseTripState,
+  observeFirebaseTripState,
+  saveFirebaseTripState,
+} from "../lib/firebaseTripState";
 import { sortItineraryChronologically } from "../lib/chronology";
 import { convertedAmount, getLatestExchangeRate } from "../lib/exchangeRates";
 import {
@@ -32,7 +38,6 @@ import {
   organizeDriveFile,
   type PlaceSuggestion,
   type PlacesUsage,
-  saveSharedTrip,
   searchPlaces,
   type SharedPhoto,
   type SharedTripState,
@@ -400,6 +405,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [lastTripSavedAt, setLastTripSavedAt] = useState("");
   const [googleState, setGoogleState] = useState<"disconnected" | "connecting" | "connected" | "uploading">("disconnected");
   const [googleError, setGoogleError] = useState<string | null>(null);
+  const [tripSyncError, setTripSyncError] = useState<string | null>(null);
   const [days, setDays] = useState<TripDay[]>(workspaceInitialDays);
   const [selectedDayId, setSelectedDayId] = useState(workspaceInitialDays[0]?.id || "");
   const [selectedStopId, setSelectedStopId] = useState(workspaceInitialDays[0]?.stops[0]?.id || "");
@@ -493,17 +499,18 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       while (pendingTripSaveRef.current && navigator.onLine) {
         const sending = pendingTripSaveRef.current;
         setTripSyncState("saving");
-        setGoogleError(null);
+        setTripSyncError(null);
 
         let saved: SharedTripState | null = null;
         let finalError: unknown = null;
         for (let attempt = 1; attempt <= 3; attempt += 1) {
           try {
-            saved = await saveSharedTrip(
+            saved = await saveFirebaseTripState(
+              account,
+              accountTrip,
               sending.draft,
               currentMember,
               sending.baseTrip,
-              adminSecret || undefined,
             );
             break;
           } catch (error) {
@@ -516,7 +523,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
         if (!saved) {
           setTripSyncState(navigator.onLine ? "error" : "offline");
-          setGoogleError(
+          setTripSyncError(
             finalError instanceof Error
               ? `${finalError.message} Your changes are still safe on this device.`
               : "The itinerary could not be saved after three attempts. Your changes are still safe on this device.",
@@ -524,13 +531,12 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           return;
         }
 
-        const savedFingerprint = sharedTripFingerprint(saved);
         const chronologicalSaved = normalizeSharedTripChronology(saved);
-        lastSyncedTripRef.current = saved;
+        const savedFingerprint = sharedTripFingerprint(chronologicalSaved);
+        lastSyncedTripRef.current = chronologicalSaved;
         lastSavedTripRef.current = savedFingerprint;
         setLastTripSavedAt(saved.updatedAt);
         window.localStorage.setItem(scopedStorageKey(lastTripSavedAtKey, sharedTripId), saved.updatedAt);
-        setGoogleState((current) => current === "uploading" ? current : "connected");
 
         const latestPending = pendingTripSaveRef.current;
         const latestWasAcknowledged =
@@ -552,7 +558,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
             ? current
             : chronologicalSaved.days[0]?.stops[0]?.id ?? "");
           setTripSyncState("synced");
-          setGoogleError(null);
+          setTripSyncError(null);
           return;
         }
 
@@ -563,7 +569,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     } finally {
       tripSaveInFlightRef.current = false;
     }
-  }, [adminSecret, currentMember, isOffline, sharedTripId]);
+  }, [account, accountTrip, currentMember, isOffline, sharedTripId]);
 
   const refreshSharedGallery = useCallback(async () => {
     if (!navigator.onLine) {
@@ -637,13 +643,27 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
     setTripSyncState("loading");
     try {
-      const trip = await getSharedTrip(
-        sharedTripId,
-        { tripName: workspaceInitialName, days: workspaceInitialDays, members: workspaceInitialMembers },
-      );
+      let trip = await getFirebaseTripState(accountTrip.id);
+      if (!trip) {
+        const seed = accountTrip.legacyDriveTripId
+          ? await getSharedTrip(
+              sharedTripId,
+              { tripName: workspaceInitialName, days: workspaceInitialDays, members: workspaceInitialMembers },
+            )
+          : {
+              tripId: accountTrip.id,
+              tripName: workspaceInitialName,
+              coverPhotoId: "",
+              days: workspaceInitialDays,
+              members: workspaceInitialMembers,
+              revision: 1,
+              updatedAt: new Date().toISOString(),
+            };
+        trip = await initializeFirebaseTripState(account, accountTrip, { ...seed, tripId: accountTrip.id });
+      }
       const chronologicalTrip = normalizeSharedTripChronology(trip);
-      lastSyncedTripRef.current = trip;
-      lastSavedTripRef.current = sharedTripFingerprint(trip);
+      lastSyncedTripRef.current = chronologicalTrip;
+      lastSavedTripRef.current = sharedTripFingerprint(chronologicalTrip);
       setLastTripSavedAt(trip.updatedAt);
       window.localStorage.setItem(scopedStorageKey(lastTripSavedAtKey, sharedTripId), trip.updatedAt);
 
@@ -674,17 +694,15 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
         setTripSyncState("synced");
       }
       setSharedStateReady(true);
-      setGoogleState((current) => current === "uploading" ? current : "connected");
-      setGoogleError(null);
+      setTripSyncError(null);
       return true;
     } catch (error) {
       setSharedStateReady(true);
       setTripSyncState("error");
-      setGoogleState("disconnected");
-      setGoogleError(error instanceof Error ? error.message : "The shared itinerary could not be loaded.");
+      setTripSyncError(error instanceof Error ? error.message : "The shared itinerary could not be loaded.");
       return false;
     }
-  }, [account.uid, accountTrip.legacyDriveTripId, accountTrip.memberName, sharedTripId, workspaceInitialDays, workspaceInitialMembers, workspaceInitialName]);
+  }, [account, accountTrip, sharedTripId, workspaceInitialDays, workspaceInitialMembers, workspaceInitialName]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && "Capacitor" in window) {
@@ -804,7 +822,15 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     };
     window.addEventListener("pagehide", preservePendingOnExit);
 
-    if (navigator.onLine) setGoogleState("connecting");
+    if (navigator.onLine) {
+      setGoogleState("connecting");
+      void checkGoogleDriveGateway()
+        .then(() => setGoogleState("connected"))
+        .catch((error: unknown) => {
+          setGoogleState("disconnected");
+          setGoogleError(error instanceof Error ? error.message : "The photo service could not be connected.");
+        });
+    }
     void refreshSharedItinerary();
 
     if ("serviceWorker" in navigator) {
@@ -872,6 +898,56 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   }, []);
 
   useEffect(() => {
+    if (!hasLoadedLocalState) return;
+    return observeFirebaseTripState(
+      accountTrip.id,
+      (remoteTrip, pendingLocalWrites) => {
+        if (!remoteTrip) return;
+        const chronologicalTrip = normalizeSharedTripChronology(remoteTrip);
+        const remoteFingerprint = sharedTripFingerprint(chronologicalTrip);
+        const pending = pendingTripSaveRef.current;
+        if (pending && pending.fingerprint !== remoteFingerprint) {
+          setHasPendingTripSave(true);
+          setTripSyncState(isOffline ? "offline" : "unsaved");
+          return;
+        }
+
+        if (pending) {
+          pendingTripSaveRef.current = null;
+          clearPendingTripSave(sharedTripId);
+          setHasPendingTripSave(false);
+        }
+        lastSyncedTripRef.current = chronologicalTrip;
+        lastSavedTripRef.current = remoteFingerprint;
+        setTripName(chronologicalTrip.tripName);
+        setTripCoverPhotoId(chronologicalTrip.coverPhotoId || "");
+        setDays(chronologicalTrip.days);
+        setMembers(chronologicalTrip.members);
+        setTripRevision(chronologicalTrip.revision);
+        setLastTripSavedAt(chronologicalTrip.updatedAt);
+        window.localStorage.setItem(scopedStorageKey(lastTripSavedAtKey, sharedTripId), chronologicalTrip.updatedAt);
+        setCurrentMemberId((current) => {
+          if (chronologicalTrip.members.some((member) => member.id === current)) return current;
+          return chronologicalTrip.members.find((member) => member.name.toLocaleLowerCase("en-AU") === accountTrip.memberName.toLocaleLowerCase("en-AU"))?.id
+            || account.uid;
+        });
+        setSelectedDayId((current) => chronologicalTrip.days.some((day) => day.id === current) ? current : chronologicalTrip.days[0]?.id ?? "");
+        setSelectedStopId((current) => chronologicalTrip.days.some((day) => day.stops.some((stop) => stop.id === current))
+          ? current
+          : chronologicalTrip.days[0]?.stops[0]?.id ?? "");
+        setSharedStateReady(true);
+        setTripSyncState(pendingLocalWrites ? "saving" : "synced");
+        setTripSyncError(null);
+      },
+      (error) => {
+        setSharedStateReady(true);
+        setTripSyncState(pendingTripSaveRef.current ? "unsaved" : "error");
+        setTripSyncError(`${error.message} ${pendingTripSaveRef.current ? "Your changes remain safe on this device." : ""}`.trim());
+      },
+    );
+  }, [account.uid, accountTrip.id, accountTrip.memberName, hasLoadedLocalState, isOffline, sharedTripId]);
+
+  useEffect(() => {
     let cancelled = false;
     if (!tripCoverPhotoId || !tripAccessKey || !navigator.onLine) {
       if (!tripCoverPhotoId && tripCoverUrlRef.current) {
@@ -927,28 +1003,6 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     if (!hasLoadedLocalState || !currentMemberId) return;
     window.localStorage.setItem(scopedStorageKey(memberIdKey, sharedTripId), currentMemberId);
   }, [currentMemberId, hasLoadedLocalState, sharedTripId]);
-
-  useEffect(() => {
-    if (!hasLoadedLocalState) return;
-
-    const refreshWhenActive = () => {
-      if (pendingTripSaveRef.current) return;
-      if (document.visibilityState === "visible" && navigator.onLine) {
-        void refreshSharedItinerary();
-      }
-    };
-    const intervalId = window.setInterval(refreshWhenActive, 15_000);
-    window.addEventListener("focus", refreshWhenActive);
-    window.addEventListener("online", refreshWhenActive);
-    document.addEventListener("visibilitychange", refreshWhenActive);
-
-    return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener("focus", refreshWhenActive);
-      window.removeEventListener("online", refreshWhenActive);
-      document.removeEventListener("visibilitychange", refreshWhenActive);
-    };
-  }, [currentMember, days, hasLoadedLocalState, members, refreshSharedItinerary, tripCoverPhotoId, tripName]);
 
   useEffect(() => {
     if (!hasLoadedLocalState || !sharedStateReady || !currentMember || !lastSyncedTripRef.current) return;
@@ -1684,10 +1738,10 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     setGoogleState("connecting");
     setGoogleError(null);
     try {
-      if (await refreshSharedItinerary()) {
-        setGoogleState("connected");
-        setShowSettings(false);
-      }
+      await checkGoogleDriveGateway();
+      await refreshSharedItinerary();
+      setGoogleState("connected");
+      setShowSettings(false);
     } catch (error) {
       setGoogleState("disconnected");
       setGoogleError(error instanceof Error ? error.message : "Google Drive could not be connected.");
@@ -2022,10 +2076,12 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
         </button>
       </nav>
 
-      {googleError && hasPendingTripSave && tripSyncState === "error" && (
+      {tripSyncError && tripSyncState === "error" && (
         <aside className="sync-error" role="alert">
-          <span>{googleError}</span>
-          <button className="sync-button" onClick={() => void processPendingTripSave()}>Retry itinerary save</button>
+          <span>{tripSyncError}</span>
+          <button className="sync-button" onClick={() => void (hasPendingTripSave ? processPendingTripSave() : refreshSharedItinerary())}>
+            {hasPendingTripSave ? "Retry itinerary save" : "Retry itinerary connection"}
+          </button>
         </aside>
       )}
 

@@ -15,8 +15,10 @@ import {
   collection,
   doc,
   getDoc,
-  getFirestore,
+  initializeFirestore,
   onSnapshot,
+  persistentLocalCache,
+  persistentMultipleTabManager,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -62,9 +64,16 @@ function services(): { auth: Auth; db: Firestore } {
   if (!firebaseApp) {
     firebaseApp = initializeApp(firebaseConfig);
     firebaseAuth = initializeAuth(firebaseApp, { persistence: browserLocalPersistence });
-    firestore = getFirestore(firebaseApp);
+    firestore = initializeFirestore(firebaseApp, {
+      ignoreUndefinedProperties: true,
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    });
   }
   return { auth: firebaseAuth!, db: firestore! };
+}
+
+export function getFamilyFirestore(): Firestore {
+  return services().db;
 }
 
 export type FamilyAccount = {
@@ -249,6 +258,19 @@ export async function createAccountTrip(
     email: account.email,
     role: "admin",
     joinedAt: serverTimestamp(),
+  });
+  const firstDayId = crypto.randomUUID();
+  batch.set(doc(db, "trips", tripId, "state", "itinerary"), {
+    schemaVersion: 1,
+    tripId,
+    tripName: trip.name,
+    coverPhotoId: "",
+    days: [{ id: `day-${firstDayId}`, date: details.startDate, label: "First Day", stops: [] }],
+    members: [{ id: account.uid, name: account.displayName }],
+    revision: 1,
+    updatedAt: new Date().toISOString(),
+    updatedByUid: account.uid,
+    updatedByName: account.displayName,
   });
   batch.set(doc(db, "users", account.uid, "trips", tripId), {
     ...referenceData,
