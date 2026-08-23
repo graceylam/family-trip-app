@@ -195,6 +195,10 @@ button { cursor: pointer; }
 .stop-editor textarea { min-height: 76px; resize: vertical; font: inherit; line-height: 1.4; }
 .stop-editor-row { display: grid; grid-template-columns: 125px 1fr; gap: 10px; }
 .location-field { display: grid; gap: 6px; }
+.location-confirm-button { justify-self: start; padding: 7px 10px; border: 1px solid #b9cec0; border-radius: 8px; color: var(--forest); background: #f3f8f3; font-size: .66rem; font-weight: 850; }
+.location-confirm-button:hover { background: #e7f1e9; }
+.stop-editor .location-confirm-button { border-color: rgba(255,255,255,.3); color: white; background: rgba(255,255,255,.12); }
+.stop-editor .location-confirm-button:hover { background: rgba(255,255,255,.2); }
 .place-search-status, .place-search-error { font-size: .67rem; font-weight: 700; }
 .place-search-status { color: #cfe1d5; }
 .place-search-error { padding: 7px 8px; border-radius: 7px; color: #ffd8d0; background: rgba(128,32,22,.28); line-height: 1.35; }

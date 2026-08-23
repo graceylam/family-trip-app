@@ -439,6 +439,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [placeSuggestions, setPlaceSuggestions] = useState<PlaceSuggestion[]>([]);
   const [placeSearchState, setPlaceSearchState] = useState<"idle" | "searching" | "choosing">("idle");
   const [placeSearchError, setPlaceSearchError] = useState<string | null>(null);
+  const [placeSearchTarget, setPlaceSearchTarget] = useState<{ dayId: string; stopId: string } | null>(null);
+  const [placeSearchDraft, setPlaceSearchDraft] = useState("");
   const [placesUsage, setPlacesUsage] = useState<PlacesUsage | null>(null);
   const [activeTab, setActiveTab] = useState<"itinerary" | "gallery" | "expenses" | "memory">("itinerary");
   const [itineraryView, setItineraryView] = useState<"itinerary" | "map">("itinerary");
@@ -564,6 +566,15 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
         // A newer edit arrived while this request was running. Keep it on screen
         // and in local storage, then send it only after the earlier save completes.
+        // The newer draft was made on top of the draft that just saved, so use
+        // that submitted draft as its three-way merge base. Keeping the older
+        // base would make two sequential edits by Grace look concurrent.
+        const rebasedPending = {
+          ...latestPending,
+          baseTrip: sending.draft,
+        };
+        pendingTripSaveRef.current = rebasedPending;
+        writePendingTripSave(sharedTripId, rebasedPending);
         setTripSyncState("unsaved");
       }
     } finally {
@@ -1149,6 +1160,28 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     placeSessionTokenRef.current = "";
     placeSearchRequestRef.current += 1;
     if (placeSearchTimerRef.current !== null) window.clearTimeout(placeSearchTimerRef.current);
+    setPlaceSearchTarget(null);
+    setPlaceSearchDraft("");
+  }
+
+  function beginPlaceSearch(dayId: string, stopId: string, savedPlace: string) {
+    const sameTarget = placeSearchTarget?.dayId === dayId && placeSearchTarget.stopId === stopId;
+    if (sameTarget) return;
+    clearPlaceSearch();
+    setPlaceSearchTarget({ dayId, stopId });
+    setPlaceSearchDraft(savedPlace);
+  }
+
+  function locationInputValue(dayId: string, stopId: string, savedPlace: string) {
+    return placeSearchTarget?.dayId === dayId && placeSearchTarget.stopId === stopId
+      ? placeSearchDraft
+      : savedPlace;
+  }
+
+  function hasLocationDraftChange(dayId: string, stopId: string, savedPlace: string) {
+    return placeSearchTarget?.dayId === dayId
+      && placeSearchTarget.stopId === stopId
+      && placeSearchDraft.trim() !== savedPlace.trim();
   }
 
   function selectStop(stopId: string) {
@@ -1532,22 +1565,18 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   }
 
   function focusMemoryLocation(dayId: string, stopId: string) {
-    clearPlaceSearch();
+    const stop = days.find((day) => day.id === dayId)?.stops.find((candidate) => candidate.id === stopId);
     setSelectedDayId(dayId);
     setSelectedStopId(stopId);
+    beginPlaceSearch(dayId, stopId, stop?.place ?? "");
   }
 
   function handleLocationChangeForStop(stopId: string, value: string, dayId = selectedDay?.id) {
-    if (!currentMember) return;
+    if (!currentMember || !dayId) return;
     if (dayId) setSelectedDayId(dayId);
     setSelectedStopId(stopId);
-    if (dayId) updateStopInDay(dayId, stopId, {
-      place: value,
-      placeId: undefined,
-      latitude: undefined,
-      longitude: undefined,
-      googleMapsUrl: undefined,
-    });
+    setPlaceSearchTarget({ dayId, stopId });
+    setPlaceSearchDraft(value);
     setPlaceSuggestions([]);
     setPlaceSearchError(null);
     placeSearchRequestRef.current += 1;
@@ -1574,16 +1603,19 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           setPlaceSearchState("idle");
           setPlaceSearchError(error instanceof Error ? error.message : "Google suggestions are unavailable. You can keep typing the location manually.");
         });
-    }, 500);
+    }, 325);
   }
 
   async function choosePlace(suggestion: PlaceSuggestion) {
-    if (!currentMember) return;
+    if (!currentMember || !placeSearchTarget) return;
+    const target = placeSearchTarget;
+    const requestNumber = ++placeSearchRequestRef.current;
     setPlaceSearchState("choosing");
     setPlaceSearchError(null);
     try {
       const { place, usage } = await getPlaceDetails(suggestion.placeId, placeSessionTokenRef.current);
-      updateSelectedStop({
+      if (placeSearchRequestRef.current !== requestNumber) return;
+      updateStopInDay(target.dayId, target.stopId, {
         place: place.address || place.name || suggestion.text,
         placeId: place.placeId,
         latitude: place.latitude ?? undefined,
@@ -1591,13 +1623,25 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
         googleMapsUrl: place.googleMapsUrl || undefined,
       });
       setPlacesUsage(usage);
-      setPlaceSuggestions([]);
-      placeSessionTokenRef.current = "";
+      clearPlaceSearch();
     } catch (error) {
+      if (placeSearchRequestRef.current !== requestNumber) return;
       setPlaceSearchError(error instanceof Error ? error.message : "That Google location could not be saved. You can keep the location as typed.");
     } finally {
-      setPlaceSearchState("idle");
+      if (placeSearchRequestRef.current === requestNumber) setPlaceSearchState("idle");
     }
+  }
+
+  function confirmTypedLocation(dayId: string, stopId: string) {
+    if (!currentMember || placeSearchTarget?.dayId !== dayId || placeSearchTarget.stopId !== stopId) return;
+    updateStopInDay(dayId, stopId, {
+      place: placeSearchDraft.trim(),
+      placeId: undefined,
+      latitude: undefined,
+      longitude: undefined,
+      googleMapsUrl: undefined,
+    });
+    clearPlaceSearch();
   }
 
   function openEditDayDetails() {
@@ -2183,9 +2227,12 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                           <div className="map-missing-location-field">
                             <input
                               type="search"
-                              value={stop.place}
-                              onFocus={() => selectStop(stop.id)}
-                              onChange={(event) => handleLocationChangeForStop(stop.id, event.target.value)}
+                              value={locationInputValue(selectedDay.id, stop.id, stop.place)}
+                              onFocus={() => {
+                                setSelectedStopId(stop.id);
+                                beginPlaceSearch(selectedDay.id, stop.id, stop.place);
+                              }}
+                              onChange={(event) => handleLocationChangeForStop(stop.id, event.target.value, selectedDay.id)}
                               placeholder="Add Google location"
                               aria-label={`Location for Stop ${index + 1}: ${stop.title}`}
                               autoComplete="off"
@@ -2199,6 +2246,11 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                                 ))}
                                 <small>Powered by Google</small>
                               </div>
+                            )}
+                            {hasLocationDraftChange(selectedDay.id, stop.id, stop.place) && (
+                              <button className="location-confirm-button" type="button" onClick={() => confirmTypedLocation(selectedDay.id, stop.id)}>
+                                {placeSearchDraft.trim() ? "Use typed location" : "Clear saved location"}
+                              </button>
                             )}
                             {isSelectedMapStop && placeSearchError && <small className="error">{placeSearchError}</small>}
                           </div>
@@ -2233,7 +2285,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                       <span>Location</span>
                       <input
                         type="search"
-                        value={selectedStop.place}
+                        value={locationInputValue(selectedDay.id, selectedStop.id, selectedStop.place)}
+                        onFocus={() => beginPlaceSearch(selectedDay.id, selectedStop.id, selectedStop.place)}
                         onChange={(event) => handleLocationChange(event.target.value)}
                         placeholder="Search Google Maps or type a location"
                         readOnly={!currentMember}
@@ -2255,6 +2308,11 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                         ))}
                         <small>Powered by Google</small>
                       </div>
+                    )}
+                    {hasLocationDraftChange(selectedDay.id, selectedStop.id, selectedStop.place) && (
+                      <button className="location-confirm-button" type="button" onClick={() => confirmTypedLocation(selectedDay.id, selectedStop.id)}>
+                        {placeSearchDraft.trim() ? "Use typed location" : "Clear saved location"}
+                      </button>
                     )}
                     {placeSearchError && <span className="place-search-error">{placeSearchError}</span>}
                     {selectedStop.place.trim() ? (
@@ -2628,7 +2686,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           sharedPhotoUrls={sharedPhotoUrls}
           galleryState={galleryState}
           galleryError={galleryError}
-          selectedLocationStopId={selectedStopId}
+          selectedLocationStopId={placeSearchTarget?.stopId ?? ""}
+          locationDraftValue={placeSearchTarget ? placeSearchDraft : null}
           placeSuggestions={placeSuggestions}
           placeSearchState={placeSearchState}
           placeSearchError={placeSearchError}
@@ -2637,6 +2696,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           onUpdateDayStory={updateDayStory}
           onFocusLocation={focusMemoryLocation}
           onLocationChange={(dayId, stopId, value) => handleLocationChangeForStop(stopId, value, dayId)}
+          onUseTypedLocation={confirmTypedLocation}
           onChoosePlace={(suggestion) => void choosePlace(suggestion)}
         />
       ) : (

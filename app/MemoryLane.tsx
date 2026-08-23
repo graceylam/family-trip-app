@@ -18,6 +18,7 @@ type MemoryLaneProps = {
   galleryState: "idle" | "loading" | "ready" | "offline" | "error";
   galleryError: string | null;
   selectedLocationStopId: string;
+  locationDraftValue: string | null;
   placeSuggestions: PlaceSuggestion[];
   placeSearchState: "idle" | "searching" | "choosing";
   placeSearchError: string | null;
@@ -26,6 +27,7 @@ type MemoryLaneProps = {
   onUpdateDayStory: (dayId: string, changes: Partial<Pick<TripDay, "storyTitle" | "coverPhotoId">>) => void;
   onFocusLocation: (dayId: string, stopId: string) => void;
   onLocationChange: (dayId: string, stopId: string, value: string) => void;
+  onUseTypedLocation: (dayId: string, stopId: string) => void;
   onChoosePlace: (suggestion: PlaceSuggestion) => void;
 };
 
@@ -389,6 +391,7 @@ export default function MemoryLane({
   galleryState,
   galleryError,
   selectedLocationStopId,
+  locationDraftValue,
   placeSuggestions,
   placeSearchState,
   placeSearchError,
@@ -397,6 +400,7 @@ export default function MemoryLane({
   onUpdateDayStory,
   onFocusLocation,
   onLocationChange,
+  onUseTypedLocation,
   onChoosePlace,
 }: MemoryLaneProps) {
   const [selectedDayId, setSelectedDayId] = useState(days[0]?.id ?? "");
@@ -685,7 +689,7 @@ export default function MemoryLane({
                     <strong>This stop needs a map location</strong>
                     <input
                       type="search"
-                      value={stop.place}
+                      value={isLocationTarget && locationDraftValue !== null ? locationDraftValue : stop.place}
                       onFocus={() => onFocusLocation(selectedDay.id, stop.id)}
                       onChange={(event) => onLocationChange(selectedDay.id, stop.id, event.target.value)}
                       placeholder="Search Google location"
@@ -707,6 +711,11 @@ export default function MemoryLane({
                         ))}
                         <small>Powered by Google</small>
                       </div>
+                    )}
+                    {isLocationTarget && locationDraftValue !== null && locationDraftValue.trim() !== stop.place.trim() && (
+                      <button className="location-confirm-button" type="button" onClick={() => onUseTypedLocation(selectedDay.id, stop.id)}>
+                        {locationDraftValue.trim() ? "Use typed location" : "Clear saved location"}
+                      </button>
                     )}
                     {isLocationTarget && placeSearchError && <small className="error">{placeSearchError}</small>}
                   </div>

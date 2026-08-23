@@ -78,11 +78,26 @@ function mergeExpenses(current: TripExpense[], submitted: TripExpense[], base: T
   return result.filter((expense) => !removable.has(expense.id));
 }
 
-function stopMetadata(stop: TripStop): Omit<TripStop, "expenses" | "memory"> {
-  const metadata = clone(stop);
-  delete metadata.expenses;
-  delete metadata.memory;
-  return metadata;
+function valuesConflict<T>(current: T, submitted: T, base: T): boolean {
+  return json(submitted) !== json(base)
+    && json(current) !== json(base)
+    && json(submitted) !== json(current);
+}
+
+function mergeStructuredValue<T>(current: T, submitted: T, base: T): T {
+  if (json(submitted) === json(base)) return current;
+  if (json(current) === json(base) || json(current) === json(submitted)) return submitted;
+  return current;
+}
+
+function stopLocation(stop: TripStop) {
+  return {
+    place: stop.place,
+    placeId: stop.placeId,
+    latitude: stop.latitude,
+    longitude: stop.longitude,
+    googleMapsUrl: stop.googleMapsUrl,
+  };
 }
 
 function mergeStops(current: TripStop[], submitted: TripStop[], base: TripStop[], contributorName: string): TripStop[] {
@@ -100,20 +115,28 @@ function mergeStops(current: TripStop[], submitted: TripStop[], base: TripStop[]
       if (json(currentStop) !== json(submittedStop)) result.push(versionStop(submittedStop, contributorName));
       return;
     }
-    const submittedMetadata = stopMetadata(submittedStop);
-    const currentMetadata = stopMetadata(currentStop);
-    const baseMetadata = stopMetadata(baseStop);
-    if (json(submittedMetadata) !== json(baseMetadata) && json(currentMetadata) !== json(baseMetadata) && json(submittedMetadata) !== json(currentMetadata)) {
+    const submittedLocation = stopLocation(submittedStop);
+    const currentLocation = stopLocation(currentStop);
+    const baseLocation = stopLocation(baseStop);
+    const hasSameFieldConflict = valuesConflict(currentStop.time, submittedStop.time, baseStop.time)
+      || valuesConflict(currentStop.title, submittedStop.title, baseStop.title)
+      || valuesConflict(currentStop.note, submittedStop.note, baseStop.note)
+      || valuesConflict(currentLocation, submittedLocation, baseLocation);
+    if (hasSameFieldConflict) {
       result.push(versionStop(submittedStop, contributorName));
       return;
     }
-    const mergedMetadata = json(submittedMetadata) === json(baseMetadata)
-      ? currentMetadata
-      : json(currentMetadata) === json(baseMetadata) || json(currentMetadata) === json(submittedMetadata)
-        ? submittedMetadata
-        : currentMetadata;
+    const mergedLocation = mergeStructuredValue(currentLocation, submittedLocation, baseLocation);
     result[currentIndex] = {
-      ...clone(mergedMetadata),
+      id: currentStop.id,
+      time: mergeValue(currentStop.time, submittedStop.time, baseStop.time),
+      title: mergeValue(currentStop.title, submittedStop.title, baseStop.title),
+      place: mergedLocation.place,
+      note: mergeValue(currentStop.note, submittedStop.note, baseStop.note),
+      placeId: mergedLocation.placeId,
+      latitude: mergedLocation.latitude,
+      longitude: mergedLocation.longitude,
+      googleMapsUrl: mergedLocation.googleMapsUrl,
       expenses: mergeExpenses(currentStop.expenses ?? [], submittedStop.expenses ?? [], baseStop.expenses ?? [], contributorName),
       memory: mergeMemory(currentStop.memory, submittedStop.memory, baseStop.memory),
     };
