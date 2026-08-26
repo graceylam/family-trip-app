@@ -44,6 +44,18 @@ service cloud.firestore {
         request.resource.data.updatedByUid == request.auth.uid;
     }
 
+    function validSavedPlacesState(tripId) {
+      return request.resource.data.keys().hasOnly([
+          "schemaVersion", "tripId", "places", "revision", "updatedAt", "updatedByUid"
+        ]) &&
+        request.resource.data.schemaVersion == 1 &&
+        request.resource.data.tripId == tripId &&
+        request.resource.data.places is list &&
+        request.resource.data.revision is int &&
+        request.resource.data.revision >= 1 &&
+        request.resource.data.updatedByUid == request.auth.uid;
+    }
+
     match /users/{userId} {
       allow create, read, update: if signedIn() && request.auth.uid == userId;
       allow delete: if false;
@@ -75,14 +87,17 @@ service cloud.firestore {
 
       match /state/{documentId} {
         allow read: if isTripMember(tripId);
-        allow create: if documentId == "itinerary" && isTripAdminAfter(tripId) && validItineraryState(tripId);
-        allow update: if documentId == "itinerary" && isTripMember(tripId) && validItineraryState(tripId) &&
-          request.resource.data.revision == resource.data.revision + 1 &&
-          (isTripAdmin(tripId) || (
-            request.resource.data.tripName == resource.data.tripName &&
-            request.resource.data.coverPhotoId == resource.data.coverPhotoId &&
-            request.resource.data.members == resource.data.members
-          ));
+        allow create: if (documentId == "itinerary" && isTripAdminAfter(tripId) && validItineraryState(tripId)) ||
+          (documentId == "saved-places" && isTripMember(tripId) && validSavedPlacesState(tripId));
+        allow update: if (documentId == "itinerary" && isTripMember(tripId) && validItineraryState(tripId) &&
+            request.resource.data.revision == resource.data.revision + 1 &&
+            (isTripAdmin(tripId) || (
+              request.resource.data.tripName == resource.data.tripName &&
+              request.resource.data.coverPhotoId == resource.data.coverPhotoId &&
+              request.resource.data.members == resource.data.members
+            ))) ||
+          (documentId == "saved-places" && isTripMember(tripId) && validSavedPlacesState(tripId) &&
+            request.resource.data.revision == resource.data.revision + 1);
         allow delete: if isTripAdmin(tripId);
       }
 

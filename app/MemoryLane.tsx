@@ -110,6 +110,18 @@ function stopPhotos(photos: SharedPhoto[], dayId: string, stopId: string): Share
   return photos.filter((photo) => photo.dayId === dayId && photo.stopId === stopId);
 }
 
+function distanceInKm(a: TripStop, b: TripStop): number {
+  if (![a.latitude, a.longitude, b.latitude, b.longitude].every(Number.isFinite)) return 0;
+  const radians = (degrees: number) => degrees * Math.PI / 180;
+  const latitudeDelta = radians((b.latitude as number) - (a.latitude as number));
+  const longitudeDelta = radians((b.longitude as number) - (a.longitude as number));
+  const startLatitude = radians(a.latitude as number);
+  const endLatitude = radians(b.latitude as number);
+  const haversine = Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(startLatitude) * Math.cos(endLatitude) * Math.sin(longitudeDelta / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
 function MemoryMap({
   day,
   photos,
@@ -442,6 +454,58 @@ export default function MemoryLane({
   const selectedCoverPhoto = dayPhotos.find((photo) => photo.fileId === selectedDay?.coverPhotoId)
     ?? availableDayPhotos[0];
   const selectedCoverUrl = selectedCoverPhoto ? sharedPhotoUrls[selectedCoverPhoto.fileId] : "";
+  const tripStatistics = useMemo(() => {
+    const allStops = days.flatMap((day) => day.stops);
+    const contributors = new Set([
+      ...sharedPhotos.map((photo) => photo.memberId || photo.memberName),
+      ...allStops.map((stop) => stop.memory?.updatedByMemberId).filter(Boolean),
+    ]);
+    const distance = days.reduce((tripTotal, day) => tripTotal + day.stops.reduce((dayTotal, stop, index) => (
+      index === 0 ? dayTotal : dayTotal + distanceInKm(day.stops[index - 1], stop)
+    ), 0), 0);
+    return {
+      stops: allStops.length,
+      photos: sharedPhotos.length,
+      contributors: contributors.size,
+      memories: allStops.filter((stop) => stop.memory?.comment).length,
+      distance,
+    };
+  }, [days, sharedPhotos]);
+  const storyFeed = useMemo(() => {
+    const entries: Array<{
+      id: string;
+      createdAt: string;
+      dayLabel: string;
+      stopTitle: string;
+      memberName: string;
+      comment?: string;
+      photo?: SharedPhoto;
+    }> = [];
+    days.forEach((day) => day.stops.forEach((stop) => {
+      if (stop.memory?.comment) entries.push({
+        id: `memory-${stop.id}`,
+        createdAt: stop.memory.updatedAt,
+        dayLabel: day.label,
+        stopTitle: stop.title,
+        memberName: stop.memory.updatedByMemberName,
+        comment: stop.memory.comment,
+      });
+    }));
+    sharedPhotos.forEach((photo) => {
+      const day = days.find((candidate) => candidate.id === photo.dayId);
+      const stop = day?.stops.find((candidate) => candidate.id === photo.stopId);
+      if (!day || !stop) return;
+      entries.push({
+        id: `photo-${photo.fileId}`,
+        createdAt: photo.createdAt,
+        dayLabel: day.label,
+        stopTitle: stop.title,
+        memberName: photo.memberName,
+        photo,
+      });
+    });
+    return entries.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 18);
+  }, [days, sharedPhotos]);
 
   useEffect(() => {
     if (hasChosenInitialDayRef.current || sharedPhotos.length === 0) return;
@@ -596,6 +660,47 @@ export default function MemoryLane({
           Create Highlight
         </button>
       </header>
+
+      <section className="trip-statistics" aria-labelledby="trip-statistics-title">
+        <header><p className="eyebrow">Our adventure by numbers</p><h2 id="trip-statistics-title">Trip Statistics</h2></header>
+        <div>
+          <article><strong>{days.length}</strong><span>Days</span></article>
+          <article><strong>{tripStatistics.stops}</strong><span>Stops</span></article>
+          <article><strong>{tripStatistics.photos}</strong><span>Snapshots</span></article>
+          <article><strong>{tripStatistics.memories}</strong><span>Stories</span></article>
+          <article><strong>{tripStatistics.contributors}</strong><span>Storytellers</span></article>
+          <article><strong>{tripStatistics.distance < 1 ? "—" : `${Math.round(tripStatistics.distance)} km`}</strong><span>Between pins</span></article>
+        </div>
+        <small>Distance is a free straight-line estimate between consecutive mapped stops—not a road or rail distance.</small>
+      </section>
+
+      <section className="collaborative-story" aria-labelledby="collaborative-story-title">
+        <header><div><p className="eyebrow">Added by everyone</p><h2 id="collaborative-story-title">The Family Story So Far</h2></div><button className="text-button" onClick={onRefreshPhotos}>Refresh</button></header>
+        {storyFeed.length === 0 ? (
+          <div className="story-feed-empty">Photos and shared memories will gather here as the adventure unfolds.</div>
+        ) : (
+          <div className="story-feed">
+            {storyFeed.map((entry) => {
+              const photoUrl = entry.photo ? sharedPhotoUrls[entry.photo.fileId] : "";
+              return (
+                <article key={entry.id} className={entry.photo ? "photo-story" : "note-story"}>
+                  {photoUrl && (
+                    <button onClick={() => entry.photo && setLightboxPhoto(entry.photo)}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={photoUrl} alt={`${entry.memberName}'s snapshot at ${entry.stopTitle}`} loading="lazy" />
+                    </button>
+                  )}
+                  <div>
+                    <small>{entry.dayLabel} · {entry.stopTitle}</small>
+                    {entry.comment && <p>“{entry.comment}”</p>}
+                    <strong>{entry.photo ? `${entry.memberName} added a snapshot` : entry.memberName}</strong>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       <nav className="memory-day-strip" aria-label="Memory Lane days">
         {days.map((day, index) => {

@@ -3,6 +3,8 @@
 import { ChangeEvent, FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AccountPortal from "./AccountPortal";
 import MemoryLane from "./MemoryLane";
+import StopsBank from "./StopsBank";
+import type { SavedPlace } from "../lib/firebaseSavedPlaces";
 import type { AccountTrip, FamilyAccount } from "../lib/firebaseAccounts";
 import {
   getFirebaseTripState,
@@ -442,7 +444,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [placeSearchTarget, setPlaceSearchTarget] = useState<{ dayId: string; stopId: string } | null>(null);
   const [placeSearchDraft, setPlaceSearchDraft] = useState("");
   const [placesUsage, setPlacesUsage] = useState<PlacesUsage | null>(null);
-  const [activeTab, setActiveTab] = useState<"itinerary" | "gallery" | "expenses" | "memory">("itinerary");
+  const [activeTab, setActiveTab] = useState<"itinerary" | "stops" | "gallery" | "expenses" | "memory">("itinerary");
   const [itineraryView, setItineraryView] = useState<"itinerary" | "map">("itinerary");
   const [newExpenseItem, setNewExpenseItem] = useState("");
   const [newExpenseAmount, setNewExpenseAmount] = useState("");
@@ -1360,6 +1362,23 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     setShowAddStop(false);
   }
 
+  function scheduleSavedPlace(place: SavedPlace, dayId: string, time: string) {
+    if (!currentMember) return;
+    const stop: TripStop = {
+      id: crypto.randomUUID(),
+      time,
+      title: place.name,
+      place: place.location,
+      note: place.note,
+    };
+    setDays((current) => sortItineraryChronologically(current.map((day) => day.id === dayId
+      ? { ...day, stops: [...day.stops, stop] }
+      : day)));
+    setSelectedDayId(dayId);
+    selectStop(stop.id);
+    setActiveTab("itinerary");
+  }
+
   function addDay() {
     const label = newDayName.trim();
     if (!currentMember || !label || !newDayDate) return;
@@ -2080,6 +2099,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
       <section className="adventure-shortcuts" aria-label="Adventure sections">
         <button className="shortcut-card itinerary-shortcut" onClick={() => setActiveTab("itinerary")}><span aria-hidden="true">🗺️</span><strong>Itinerary</strong><small>Plan the adventure</small><b aria-hidden="true">›</b></button>
+        <button className="shortcut-card stops-shortcut" onClick={() => setActiveTab("stops")}><span aria-hidden="true">📍</span><strong>Saved Places</strong><small>Dream and vote</small><b aria-hidden="true">›</b></button>
         <button className="shortcut-card gallery-shortcut" onClick={() => setActiveTab("gallery")}><span aria-hidden="true">📷</span><strong>Photo Gallery</strong><small>Our snapshots</small><b aria-hidden="true">›</b></button>
         <button className="shortcut-card expenses-shortcut" onClick={() => setActiveTab("expenses")}><span aria-hidden="true">🧾</span><strong>Expenses</strong><small>The practical bit</small><b aria-hidden="true">›</b></button>
         <button className="shortcut-card memory-shortcut" onClick={() => setActiveTab("memory")}><span aria-hidden="true">🧳</span><strong>Memory Lane</strong><small>Relive the story</small><b aria-hidden="true">›</b></button>
@@ -2093,6 +2113,14 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
         >
           <span className="tab-icon" aria-hidden="true">🗓️</span>
           <small>Itinerary</small>
+        </button>
+        <button
+          className={activeTab === "stops" ? "active" : ""}
+          aria-current={activeTab === "stops" ? "page" : undefined}
+          onClick={() => setActiveTab("stops")}
+        >
+          <span className="tab-icon" aria-hidden="true">📍</span>
+          <small>Stops</small>
         </button>
         <button
           className={activeTab === "gallery" ? "active" : ""}
@@ -2585,6 +2613,14 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       </aside>
       </div>
         </>
+      ) : activeTab === "stops" ? (
+        <StopsBank
+          account={account}
+          tripId={accountTrip.id}
+          days={days}
+          currentMember={currentMember}
+          onSchedule={scheduleSavedPlace}
+        />
       ) : activeTab === "gallery" ? (
         <section className="gallery-page" aria-labelledby="gallery-title">
           <header className="gallery-page-heading">
