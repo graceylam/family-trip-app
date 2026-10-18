@@ -1,0 +1,129 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isTripMember(tripId) {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid));
+    }
+
+    function isTripAdmin(tripId) {
+      return isTripMember(tripId) &&
+        get(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)).data.role == "admin";
+    }
+
+    function isTripAdminAfter(tripId) {
+      return signedIn() &&
+        existsAfter(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)) &&
+        getAfter(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid)).data.role == "admin";
+    }
+
+    function validInvite(inviteId, tripId) {
+      return exists(/databases/$(database)/documents/invites/$(inviteId)) &&
+        get(/databases/$(database)/documents/invites/$(inviteId)).data.active == true &&
+        get(/databases/$(database)/documents/invites/$(inviteId)).data.tripId == tripId;
+    }
+
+    function validItineraryState(tripId) {
+      return request.resource.data.keys().hasOnly([
+          "schemaVersion", "tripId", "tripName", "coverPhotoId", "days", "members",
+          "revision", "updatedAt", "updatedByUid", "updatedByName"
+        ]) &&
+        request.resource.data.schemaVersion == 1 &&
+        request.resource.data.tripId == tripId &&
+        request.resource.data.tripName is string &&
+        request.resource.data.coverPhotoId is string &&
+        request.resource.data.days is list &&
+        request.resource.data.members is list &&
+        request.resource.data.revision is int &&
+        request.resource.data.revision >= 1 &&
+        request.resource.data.updatedByUid == request.auth.uid;
+    }
+
+    function validSavedPlacesState(tripId) {
+      return request.resource.data.keys().hasOnly([
+          "schemaVersion", "tripId", "places", "revision", "updatedAt", "updatedByUid"
+        ]) &&
+        request.resource.data.schemaVersion == 1 &&
+        request.resource.data.tripId == tripId &&
+        request.resource.data.places is list &&
+        request.resource.data.revision is int &&
+        request.resource.data.revision >= 1 &&
+        request.resource.data.updatedByUid == request.auth.uid;
+    }
+
+    match /users/{userId} {
+      allow create, read, update: if signedIn() && request.auth.uid == userId;
+      allow delete: if false;
+
+      match /trips/{tripId} {
+        allow read: if signedIn() && request.auth.uid == userId;
+        allow create, update: if (signedIn() && request.auth.uid == userId &&
+          existsAfter(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid))) ||
+          (isTripAdmin(tripId) &&
+            existsAfter(/databases/$(database)/documents/trips/$(tripId)/members/$(userId)) &&
+            request.resource.data.role == getAfter(/databases/$(database)/documents/trips/$(tripId)/members/$(userId)).data.role);
+        allow delete: if (signedIn() && request.auth.uid == userId) || isTripAdmin(tripId);
+      }
+    }
+
+    match /trips/{tripId} {
+      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow read: if isTripMember(tripId);
+      allow update: if isTripAdmin(tripId);
+      allow delete: if isTripAdmin(tripId);
+
+      match /members/{userId} {
+        allow read: if isTripMember(tripId);
+        allow create: if isTripAdmin(tripId) ||
+          (signedIn() && request.auth.uid == userId && request.resource.data.role == "admin" &&
+            getAfter(/databases/$(database)/documents/trips/$(tripId)).data.ownerUid == request.auth.uid) ||
+          (signedIn() && request.auth.uid == userId &&
+            request.resource.data.userId == request.auth.uid &&
+            request.resource.data.role == "contributor" &&
+            validInvite(request.resource.data.inviteId, tripId));
+        allow update, delete: if isTripAdmin(tripId);
+      }
+
+      match /state/{documentId} {
+        allow read: if isTripMember(tripId);
+        allow create: if (documentId == "itinerary" && isTripAdminAfter(tripId) && validItineraryState(tripId)) ||
+          (documentId == "saved-places" && isTripMember(tripId) && validSavedPlacesState(tripId));
+        allow update: if (documentId == "itinerary" && isTripMember(tripId) && validItineraryState(tripId) &&
+            request.resource.data.revision == resource.data.revision + 1 &&
+            (isTripAdmin(tripId) || (
+              request.resource.data.tripName == resource.data.tripName &&
+              request.resource.data.coverPhotoId == resource.data.coverPhotoId &&
+              request.resource.data.members == resource.data.members
+            ))) ||
+          (documentId == "saved-places" && isTripMember(tripId) && validSavedPlacesState(tripId) &&
+            request.resource.data.revision == resource.data.revision + 1);
+        allow delete: if isTripAdmin(tripId);
+      }
+
+      match /media/{mediaId} {
+        allow read: if isTripMember(tripId);
+        allow create: if isTripMember(tripId) && request.resource.data.memberId == request.auth.uid;
+        allow update: if isTripMember(tripId);
+        allow delete: if isTripAdmin(tripId) || (isTripMember(tripId) && resource.data.memberId == request.auth.uid);
+      }
+
+      match /private/{documentId} {
+        allow read, create, update, delete: if isTripAdmin(tripId);
+      }
+    }
+
+    match /invites/{inviteId} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn() &&
+        request.resource.data.createdByUid == request.auth.uid &&
+        isTripAdminAfter(request.resource.data.tripId);
+      allow update, delete: if signedIn() && isTripAdmin(resource.data.tripId);
+    }
+  }
+}
