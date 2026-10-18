@@ -1054,6 +1054,39 @@ button { cursor: pointer; }
   .scrapbook-composer { padding: 20px 16px; }
 }
 
+/* Explicit Memory Lane contrast: never inherit pale hero text onto paper cards. */
+.memory-lane-page, .memory-stop-card, .scrapbook-composer, .highlight-modal { color: #263745; }
+.memory-day-heading { color: #263745; }
+.memory-day-heading h2, .memory-day-heading strong { color: #263745; }
+.memory-day-heading p { color: #a45243; }
+.memory-day-heading time { color: #526d7a; }
+.memory-day-heading:not(.has-cover) .memory-cover-button { border-color: #8eb6c8; color: #285f79; background: #e7f3f7; }
+.memory-day-heading.has-cover, .memory-day-heading.has-cover h2, .memory-day-heading.has-cover strong { color: #fff; }
+.memory-day-heading.has-cover p { color: #ffd984; }
+.memory-day-heading.has-cover time { color: #e9f5fa; }
+.memory-day-heading.has-cover .memory-cover-button { border-color: rgba(255,255,255,.72); color: #fff; background: rgba(20,48,63,.55); }
+.trip-statistics, .trip-statistics article, .story-feed article, .highlight-scope-card, .highlight-photo-groups section, .highlight-sequence > div { color: #263745; }
+.trip-statistics > small, .trip-statistics article span, .story-feed strong, .story-feed-empty, .memory-map-footer span, .memory-no-photos, .memory-empty-day { color: #566b76; }
+.memory-day-strip button { color: #263745; }
+.memory-day-strip button small { color: #5c707b; }
+.memory-day-strip button.active, .memory-day-strip button.active strong { color: #fff; }
+.memory-day-strip button.active small { color: #e6f4fa; }
+.memory-view-switch button { color: #52666e; }
+.memory-view-switch button.active { color: #fff; }
+.scrapbook-stop, .scrapbook-card, .scrapbook-blank-page, .scrapbook-live-preview { color: #263745; }
+.scrapbook-card-copy small, .scrapbook-live-preview small { color: #596c73; }
+.scrapbook-kind-picker button:disabled { color: #65747a; opacity: .62; }
+.scrapbook-composer label, .scrapbook-options legend, .highlight-modal label, .highlight-orientation legend, .highlight-theme-picker legend { color: #536872; }
+.scrapbook-composer textarea::placeholder, .highlight-modal input::placeholder, .highlight-photo-groups textarea::placeholder { color: #73838a; opacity: 1; }
+.scrapbook-emoji-row button { color: #263745; }
+.highlight-close { color: #425860; background: #e6eceb; }
+.highlight-scope-card small, .highlight-orientation small, .highlight-length, .highlight-sequence > div > span { color: #586c75; }
+.highlight-orientation label.active { color: #254f65; background: #dcecf5; }
+.highlight-theme-picker button.postcard, .highlight-theme-picker button.adventure, .highlight-theme-picker button.polaroid { color: #314b56; }
+.highlight-theme-picker button.cinematic { color: #fff; }
+.highlight-preview > div, .highlight-preview > div strong, .highlight-preview > div span { color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.72); }
+.highlight-render-label { color: #285f79; }
+
 @media (max-width: 760px) {
   .stop-card { gap: 7px; margin: 0; padding: 8px 7px 8px 0; }
   .stop-copy small { margin-top: 1px; }
