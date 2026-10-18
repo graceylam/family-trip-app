@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   PlaceSuggestion,
   SharedPhoto,
@@ -28,6 +28,7 @@ type MemoryLaneProps = {
   onSaveMemory: (dayId: string, stopId: string, comment: string) => void;
   onAddScrapbookEntry: (dayId: string, stopId: string, entry: Omit<TripScrapbookEntry, "id" | "memberId" | "memberName" | "createdAt" | "updatedAt">) => void;
   onDeleteScrapbookEntry: (dayId: string, stopId: string, entryId: string) => void;
+  onUpdateMapPhotos: (dayId: string, stopId: string, photoIds: string[]) => void;
   onUpdateDayStory: (dayId: string, changes: Partial<Pick<TripDay, "storyTitle" | "coverPhotoId">>) => void;
   onFocusLocation: (dayId: string, stopId: string) => void;
   onLocationChange: (dayId: string, stopId: string, value: string) => void;
@@ -74,11 +75,13 @@ function distanceInKm(a: TripStop, b: TripStop): number {
 function MemoryMap({
   day,
   photos,
+  photoUrls,
   expanded,
   onPin,
 }: {
   day: TripDay;
   photos: SharedPhoto[];
+  photoUrls: Record<string, string>;
   expanded?: boolean;
   onPin: (stopId: string) => void;
 }) {
@@ -92,17 +95,21 @@ function MemoryMap({
     try {
       if (!mapElementRef.current) return;
       map = createFamilyMap(mapElementRef.current, locatedStops.map((stop) => {
-        const photoCount = stopPhotos(photos, day.id, stop.id).length;
+        const availablePhotos = stopPhotos(photos, day.id, stop.id);
+        const selectedPhotos = (stop.memory?.mapPhotoIds ?? [])
+          .map((fileId) => availablePhotos.find((photo) => photo.fileId === fileId))
+          .filter((photo): photo is SharedPhoto => Boolean(photo && photoUrls[photo.fileId]));
         return {
           id: stop.id,
           latitude: stop.latitude!,
           longitude: stop.longitude!,
           number: day.stops.indexOf(stop) + 1,
           title: stop.title,
-          subtitle: `${photoCount} photo${photoCount === 1 ? "" : "s"}`,
-          badge: photoCount,
+          subtitle: selectedPhotos.length ? `${selectedPhotos.length} highlight${selectedPhotos.length === 1 ? "" : "s"}` : "Choose highlight photos",
+          badge: selectedPhotos.length,
+          photoUrl: selectedPhotos[0] ? photoUrls[selectedPhotos[0].fileId] : undefined,
         };
-      }), { connectPins: true, onPin });
+      }), { onPin });
     } catch (error) {
       if (!disposed) setMapError(error instanceof Error ? error.message : "The map could not be opened.");
     }
@@ -110,7 +117,7 @@ function MemoryMap({
       disposed = true;
       map?.remove();
     };
-  }, [day, expanded, onPin, photos]);
+  }, [day, expanded, onPin, photos, photoUrls]);
 
   return (
     <div className={`memory-map-wrap ${expanded ? "expanded" : ""}`}>
@@ -355,6 +362,7 @@ export default function MemoryLane({
   onSaveMemory,
   onAddScrapbookEntry,
   onDeleteScrapbookEntry,
+  onUpdateMapPhotos,
   onUpdateDayStory,
   onFocusLocation,
   onLocationChange,
@@ -365,6 +373,9 @@ export default function MemoryLane({
   const [selectedDayId, setSelectedDayId] = useState(days[0]?.id ?? "");
   const [expandedMap, setExpandedMap] = useState(false);
   const [lightboxPhoto, setLightboxPhoto] = useState<SharedPhoto | null>(null);
+  const [mapGalleryStopId, setMapGalleryStopId] = useState("");
+  const [mapPhotoPickerStopId, setMapPhotoPickerStopId] = useState("");
+  const [mapPhotoDraftIds, setMapPhotoDraftIds] = useState<string[]>([]);
   const [editingMemoryStopId, setEditingMemoryStopId] = useState("");
   const [memoryDraft, setMemoryDraft] = useState("");
   const [showCoverPicker, setShowCoverPicker] = useState(false);
@@ -390,7 +401,6 @@ export default function MemoryLane({
   const [renderError, setRenderError] = useState("");
   const [videoResult, setVideoResult] = useState<{ url: string; file: File } | null>(null);
   const hasChosenInitialDayRef = useRef(false);
-  const stopCardRefs = useRef(new Map<string, HTMLElement>());
   const renderCancelledRef = useRef(false);
 
   const selectedDay = days.find((day) => day.id === selectedDayId) ?? days[0];
@@ -501,14 +511,6 @@ export default function MemoryLane({
     setEditingMemoryStopId("");
   }
 
-  const scrollToStop = useCallback((stopId: string) => {
-    setExpandedMap(false);
-    window.setTimeout(() => {
-      stopCardRefs.current.get(stopId)?.scrollIntoView({ behavior: "smooth", block: "center" });
-      stopCardRefs.current.get(stopId)?.focus({ preventScroll: true });
-    }, expandedMap ? 180 : 0);
-  }, [expandedMap]);
-
   function startEditingMemory(stop: TripStop) {
     setMemoryDraft(stop.memory?.comment ?? "");
     setEditingMemoryStopId(stop.id);
@@ -545,6 +547,23 @@ export default function MemoryLane({
       filter: scrapbookFilter,
     });
     setScrapbookStopId("");
+  }
+
+  function openMapPhotoPicker(stop: TripStop) {
+    setMapPhotoPickerStopId(stop.id);
+    setMapPhotoDraftIds((stop.memory?.mapPhotoIds ?? []).filter((id) => dayPhotos.some((photo) => photo.fileId === id)).slice(0, 4));
+  }
+
+  function toggleMapPhoto(photoId: string) {
+    setMapPhotoDraftIds((current) => current.includes(photoId)
+      ? current.filter((id) => id !== photoId)
+      : current.length < 4 ? [...current, photoId] : current);
+  }
+
+  function saveMapPhotos() {
+    if (!mapPhotoPickerStopId) return;
+    onUpdateMapPhotos(selectedDay.id, mapPhotoPickerStopId, mapPhotoDraftIds);
+    setMapPhotoPickerStopId("");
   }
 
   function openHighlight() {
@@ -729,9 +748,9 @@ export default function MemoryLane({
 
       <div className={`memory-lane-layout ${memoryView}-focus`}>
         <aside className="memory-map-column">
-          <MemoryMap day={selectedDay} photos={dayPhotos} onPin={scrollToStop} />
+          <MemoryMap day={selectedDay} photos={dayPhotos} photoUrls={sharedPhotoUrls} onPin={setMapGalleryStopId} />
           <div className="memory-map-footer">
-            <span>Numbered pins follow your itinerary. The dotted line is free and does not calculate a road route.</span>
+            <span>Photo pins hold your favourite moments. Tap one to open that location&apos;s collection.</span>
             <button className="text-button" onClick={() => setExpandedMap(true)}>Expand map</button>
           </div>
         </aside>
@@ -769,10 +788,6 @@ export default function MemoryLane({
               <article
                 className="memory-stop-card"
                 key={stop.id}
-                ref={(element) => {
-                  if (element) stopCardRefs.current.set(stop.id, element);
-                  else stopCardRefs.current.delete(stop.id);
-                }}
                 tabIndex={-1}
               >
                 <header className="memory-stop-heading">
@@ -926,10 +941,71 @@ export default function MemoryLane({
         </div>
       </div>
 
+      {memoryView === "map" && (
+        <section className="memory-map-curator" aria-labelledby="memory-map-curator-title">
+          <header><div><p className="eyebrow">Make it yours</p><h2 id="memory-map-curator-title">Photo highlights on the map</h2></div><small>Choose up to 4 at each location</small></header>
+          <div>
+            {selectedDay.stops.filter((stop) => Number.isFinite(stop.latitude) && Number.isFinite(stop.longitude)).map((stop, index) => {
+              const available = stopPhotos(dayPhotos, selectedDay.id, stop.id).filter((photo) => sharedPhotoUrls[photo.fileId]);
+              const selected = (stop.memory?.mapPhotoIds ?? []).filter((fileId) => available.some((photo) => photo.fileId === fileId));
+              return <article key={stop.id}>
+                <span>{index + 1}</span>
+                <div><strong>{stop.title}</strong><small>{selected.length ? `${selected.length} highlight${selected.length === 1 ? "" : "s"} selected` : available.length ? "No highlights selected yet" : "Add photos to this stop first"}</small></div>
+                <div className="memory-map-mini-photos">{selected.slice(0, 3).map((fileId) => <img key={fileId} src={sharedPhotoUrls[fileId]} alt="" />)}</div>
+                <button onClick={() => openMapPhotoPicker(stop)} disabled={!currentMember || available.length === 0}>{selected.length ? "Edit photos" : "Choose photos"}</button>
+              </article>;
+            })}
+          </div>
+        </section>
+      )}
+
+      {mapGalleryStopId && (() => {
+        const stop = selectedDay.stops.find((item) => item.id === mapGalleryStopId);
+        if (!stop) return null;
+        const available = stopPhotos(dayPhotos, selectedDay.id, stop.id).filter((photo) => sharedPhotoUrls[photo.fileId]);
+        const highlights = (stop.memory?.mapPhotoIds ?? []).map((fileId) => available.find((photo) => photo.fileId === fileId)).filter((photo): photo is SharedPhoto => Boolean(photo));
+        return <div className="modal-backdrop memory-map-gallery-backdrop" role="presentation" onMouseDown={() => setMapGalleryStopId("")}>
+          <section className="modal memory-map-gallery" role="dialog" aria-modal="true" aria-labelledby="memory-map-gallery-title" onMouseDown={(event) => event.stopPropagation()}>
+            <button className="highlight-close" onClick={() => setMapGalleryStopId("")} aria-label="Close location memories">×</button>
+            <p className="eyebrow">{stop.place || `Stop ${selectedDay.stops.indexOf(stop) + 1}`}</p>
+            <h2 id="memory-map-gallery-title">{stop.title}</h2>
+            {highlights.length > 0 ? <div className="memory-map-gallery-grid">{highlights.map((photo, index) => <button key={photo.fileId} onClick={() => setLightboxPhoto(photo)}>
+              <img src={sharedPhotoUrls[photo.fileId]} alt={`${photo.memberName}'s highlight at ${stop.title}`} />
+              <span>{index + 1}</span><small>{photo.memberName}</small>
+            </button>)}</div> : <div className="memory-map-gallery-empty"><span>📍</span><strong>No photo highlights here yet</strong><small>Choose a few favourites to turn this into a photo pin.</small></div>}
+            <div className="modal-actions"><button className="secondary-button" onClick={() => setMapGalleryStopId("")}>Done</button><button className="primary-button" onClick={() => { setMapGalleryStopId(""); openMapPhotoPicker(stop); }} disabled={!currentMember || available.length === 0}>{highlights.length ? "Edit highlights" : "Choose highlights"}</button></div>
+          </section>
+        </div>;
+      })()}
+
+      {mapPhotoPickerStopId && (() => {
+        const stop = selectedDay.stops.find((item) => item.id === mapPhotoPickerStopId);
+        if (!stop) return null;
+        const available = stopPhotos(dayPhotos, selectedDay.id, stop.id).filter((photo) => sharedPhotoUrls[photo.fileId]);
+        return <div className="modal-backdrop memory-map-gallery-backdrop" role="presentation" onMouseDown={() => setMapPhotoPickerStopId("")}>
+          <section className="modal memory-map-picker" role="dialog" aria-modal="true" aria-labelledby="memory-map-picker-title" onMouseDown={(event) => event.stopPropagation()}>
+            <button className="highlight-close" onClick={() => setMapPhotoPickerStopId("")} aria-label="Close highlight picker">×</button>
+            <p className="eyebrow">Photo pin · {stop.title}</p>
+            <h2 id="memory-map-picker-title">Choose your highlights</h2>
+            <p className="modal-copy">Select up to four. The first photo becomes the pin cover.</p>
+            <div className="memory-map-picker-grid">{available.map((photo) => {
+              const selectedIndex = mapPhotoDraftIds.indexOf(photo.fileId);
+              return <button className={selectedIndex >= 0 ? "selected" : ""} key={photo.fileId} onClick={() => toggleMapPhoto(photo.fileId)} disabled={selectedIndex < 0 && mapPhotoDraftIds.length >= 4}>
+                <img src={sharedPhotoUrls[photo.fileId]} alt={`Select ${photo.memberName}'s photo`} />
+                {selectedIndex >= 0 && <span>{selectedIndex + 1}</span>}
+                <small>{photo.memberName}</small>
+              </button>;
+            })}</div>
+            <div className="memory-map-picker-count"><strong>{mapPhotoDraftIds.length} of 4 selected</strong><small>Tap selected photos again to remove them.</small></div>
+            <div className="modal-actions"><button className="secondary-button" onClick={() => setMapPhotoPickerStopId("")}>Cancel</button><button className="primary-button" onClick={saveMapPhotos}>Save photo pin</button></div>
+          </section>
+        </div>;
+      })()}
+
       {expandedMap && (
         <div className="memory-expanded-map" role="dialog" aria-modal="true" aria-label={`Expanded map for ${selectedDay.label}`}>
           <button className="memory-map-close" onClick={() => setExpandedMap(false)} aria-label="Close expanded map">×</button>
-          <MemoryMap day={selectedDay} photos={dayPhotos} expanded onPin={scrollToStop} />
+          <MemoryMap day={selectedDay} photos={dayPhotos} photoUrls={sharedPhotoUrls} expanded onPin={(stopId) => { setExpandedMap(false); setMapGalleryStopId(stopId); }} />
         </div>
       )}
 

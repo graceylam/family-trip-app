@@ -614,12 +614,13 @@ function sanitizeTripState_(value) {
           latitude: Number.isFinite(Number(stop.latitude)) ? Number(stop.latitude) : undefined,
           longitude: Number.isFinite(Number(stop.longitude)) ? Number(stop.longitude) : undefined,
           googleMapsUrl: plainText_(stop.googleMapsUrl || "", 500, true),
-          memory: stop.memory && (plainText_(stop.memory.comment || "", 1000, true) || (Array.isArray(stop.memory.entries) && stop.memory.entries.length > 0))
+          memory: stop.memory && (plainText_(stop.memory.comment || "", 1000, true) || (Array.isArray(stop.memory.entries) && stop.memory.entries.length > 0) || (Array.isArray(stop.memory.mapPhotoIds) && stop.memory.mapPhotoIds.length > 0))
             ? {
                 comment: plainText_(stop.memory.comment || "", 1000, true),
                 updatedByMemberId: plainText_(stop.memory.updatedByMemberId || "", 100),
                 updatedByMemberName: plainText_(stop.memory.updatedByMemberName || "Family member", 80),
                 updatedAt: plainText_(stop.memory.updatedAt || new Date().toISOString(), 40),
+                mapPhotoIds: (Array.isArray(stop.memory.mapPhotoIds) ? stop.memory.mapPhotoIds : []).slice(0, 4).map(function(photoId) { return plainText_(photoId || "", 200); }).filter(Boolean),
                 entries: (Array.isArray(stop.memory.entries) ? stop.memory.entries : []).slice(0, 200).map(function(entry, entryIndex) {
                   const kind = entry.kind === "photo" ? "photo" : "note";
                   const frame = ["polaroid", "postcard", "clean"].indexOf(entry.frame) >= 0 ? entry.frame : "polaroid";

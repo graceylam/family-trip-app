@@ -132,7 +132,7 @@ test("uses Firebase for itinerary sync and the shared photo and video gallery", 
   assert.match(memoryLane, /Turn this day into a highlight/);
   assert.match(memoryLane, /Choose this day&apos;s cover/);
   assert.match(page, /Day subtitle/);
-  assert.match(memoryLane, /connectPins: true/);
+  assert.doesNotMatch(memoryLane, /connectPins: true/);
   assert.match(memoryLane, /onPin/);
   assert.match(memoryLane, /shared family memory/i);
   assert.match(memoryLane, /Last edited by/);
@@ -148,6 +148,10 @@ test("uses Firebase for itinerary sync and the shared photo and video gallery", 
   assert.match(memoryLane, /Memory Map/);
   assert.match(memoryLane, /Movie style/);
   assert.match(memoryLane, /Closing message/);
+  assert.match(memoryLane, /Photo highlights on the map/);
+  assert.match(memoryLane, /Choose your highlights/);
+  assert.match(memoryLane, /The first photo becomes the pin cover/);
+  assert.match(memoryLane, /Tap one to open that location&apos;s collection/);
   assert.match(stopsBank, /useState<"list" \| "map">\("list"\)/);
   assert.ok(stopsBank.indexOf("☷ List") < stopsBank.indexOf("⌖ Map"));
   assert.match(stopsBank, /Saved Places/);

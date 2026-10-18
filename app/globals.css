@@ -1087,6 +1087,53 @@ button { cursor: pointer; }
 .highlight-preview > div, .highlight-preview > div strong, .highlight-preview > div span { color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.72); }
 .highlight-render-label { color: #285f79; }
 
+/* Memory Map uses photographs as pins instead of repeating itinerary markers. */
+.family-map-photo-pin { width: 62px; height: 70px; padding: 0 0 13px; filter: drop-shadow(0 7px 9px rgba(32,54,63,.26)); }
+.family-map-photo-pin::before { top: 3px; left: 5px; width: 52px; height: 52px; border: 4px solid #fff; border-radius: 15px 15px 15px 3px; background: #fff; transform: rotate(-2deg); }
+.family-map-photo-pin img { position: relative; z-index: 1; display: block; width: 46px; height: 46px; margin-top: 1px; border: 2px solid #fff; border-radius: 11px 11px 11px 2px; object-fit: cover; transform: rotate(-2deg); }
+.family-map-photo-pin b { z-index: 2; right: 0; bottom: 6px; color: #fff; background: #397c9c; }
+.family-map-photo-pin small { z-index: 2; top: -5px; right: -5px; color: #fff; background: #df7866; }
+.memory-map-curator { display: grid; gap: 12px; padding: 17px; border: 1px solid #d9e2e2; border-radius: 16px; color: #263745; background: rgba(255,253,248,.94); box-shadow: 0 8px 22px rgba(47,62,54,.06); }
+.memory-map-curator > header { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+.memory-map-curator h2 { margin: 4px 0 0; color: #315b70; font-family: Georgia, "Times New Roman", serif; font-size: 1.35rem; font-weight: 500; }
+.memory-map-curator > header > small { color: #586c75; font-size: .64rem; font-weight: 750; }
+.memory-map-curator > div { display: grid; gap: 7px; }
+.memory-map-curator article { display: grid; grid-template-columns: 30px minmax(0,1fr) auto auto; align-items: center; gap: 9px; padding: 9px; border: 1px solid #e0e5e3; border-radius: 11px; background: #fff; }
+.memory-map-curator article > span { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 50%; color: #fff; background: #397c9c; font-size: .65rem; font-weight: 900; }
+.memory-map-curator article > div:nth-child(2) { display: grid; min-width: 0; gap: 2px; }
+.memory-map-curator article strong { overflow: hidden; color: #263745; font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.memory-map-curator article small { color: #5d7079; font-size: .58rem; }
+.memory-map-curator article > button { min-height: 32px; padding: 6px 9px; border: 1px solid #9fc5d5; border-radius: 8px; color: #2f6983; background: #edf7fa; font-size: .59rem; font-weight: 850; }
+.memory-map-curator article > button:disabled { color: #65747a; opacity: .62; }
+.memory-map-mini-photos { display: flex; padding-left: 8px; }
+.memory-map-mini-photos img { width: 29px; height: 29px; margin-left: -8px; border: 2px solid #fff; border-radius: 8px; object-fit: cover; }
+.memory-map-gallery-backdrop { z-index: 2300; }
+.memory-map-gallery, .memory-map-picker { position: relative; width: min(700px,100%); color: #263745; background: #fffaf2; }
+.memory-map-gallery h2, .memory-map-picker h2 { color: #315b70; }
+.memory-map-gallery-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
+.memory-map-gallery-grid button, .memory-map-picker-grid button { position: relative; padding: 0; overflow: hidden; border: 2px solid transparent; border-radius: 12px; color: #263745; background: #e8ece8; }
+.memory-map-gallery-grid img { display: block; width: 100%; aspect-ratio: 4/3; object-fit: cover; }
+.memory-map-gallery-grid span, .memory-map-picker-grid span { position: absolute; top: 7px; right: 7px; display: grid; width: 25px; height: 25px; place-items: center; border: 2px solid #fff; border-radius: 50%; color: #fff; background: #397c9c; font-size: .62rem; font-weight: 900; }
+.memory-map-gallery-grid small, .memory-map-picker-grid small { position: absolute; right: 7px; bottom: 7px; left: 7px; overflow: hidden; padding: 5px 7px; border-radius: 7px; color: #fff; background: rgba(31,55,65,.76); font-size: .56rem; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+.memory-map-gallery-empty { display: grid; justify-items: center; gap: 5px; padding: 32px 18px; border: 1px dashed #cbbd9e; border-radius: 13px; color: #566b76; background: #fff5d7; text-align: center; }
+.memory-map-gallery-empty span { font-size: 1.8rem; }
+.memory-map-gallery-empty strong { color: #315b70; }
+.memory-map-picker-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; max-height: 52vh; overflow-y: auto; }
+.memory-map-picker-grid button.selected { border-color: #397c9c; box-shadow: 0 0 0 2px rgba(57,124,156,.15); }
+.memory-map-picker-grid button:disabled { opacity: .42; }
+.memory-map-picker-grid img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; }
+.memory-map-picker-count { display: flex; align-items: center; justify-content: space-between; gap: 9px; margin-top: 11px; color: #315b70; font-size: .66rem; }
+.memory-map-picker-count small { color: #5d7079; }
+
+@media (max-width: 600px) {
+  .memory-map-curator { padding: 13px; }
+  .memory-map-curator > header { align-items: flex-start; flex-direction: column; }
+  .memory-map-curator article { grid-template-columns: 28px minmax(0,1fr) auto; }
+  .memory-map-mini-photos { grid-column: 2; grid-row: 2; }
+  .memory-map-curator article > button { grid-column: 3; grid-row: 1 / 3; }
+  .memory-map-picker-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+
 @media (max-width: 760px) {
   .stop-card { gap: 7px; margin: 0; padding: 8px 7px 8px 0; }
   .stop-copy small { margin-top: 1px; }

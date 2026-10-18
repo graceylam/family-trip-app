@@ -91,6 +91,7 @@ export type FamilyMapPin = {
   title: string;
   subtitle?: string;
   badge?: number;
+  photoUrl?: string;
   tone?: string;
   category?: FamilyMapPinCategory;
 };
@@ -166,9 +167,11 @@ export function createFamilyMap(
     const element = document.createElement("button");
     element.type = "button";
     const category = pin.category || inferMapPinCategory(pin.title);
-    element.className = `family-map-pin ${pin.tone || ""} category-${category}`;
+    element.className = `family-map-pin ${pin.photoUrl ? "family-map-photo-pin" : ""} ${pin.tone || ""} category-${category}`;
     element.setAttribute("aria-label", `${pin.number}. ${pin.title}`);
-    element.innerHTML = `<span class="family-map-pin-icon" aria-hidden="true">${pinIcon(category)}</span><b>${pin.number}</b>${pin.badge ? `<small>${pin.badge}</small>` : ""}`;
+    element.innerHTML = pin.photoUrl
+      ? `<img src="${escapeHtml(pin.photoUrl)}" alt=""><b>${pin.number}</b>${pin.badge ? `<small>${pin.badge}</small>` : ""}`
+      : `<span class="family-map-pin-icon" aria-hidden="true">${pinIcon(category)}</span><b>${pin.number}</b>${pin.badge ? `<small>${pin.badge}</small>` : ""}`;
     element.addEventListener("click", () => options.onPin?.(pin.id));
     new mapboxgl.Marker({ element, anchor: "bottom" })
       .setLngLat([pin.longitude, pin.latitude])

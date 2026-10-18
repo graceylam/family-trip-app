@@ -1540,6 +1540,21 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     });
   }
 
+  function updateMemoryMapPhotos(dayId: string, stopId: string, photoIds: string[]) {
+    if (!currentMember) return;
+    const now = new Date().toISOString();
+    setDays((current) => sortItineraryChronologically(current.map((day) => day.id === dayId ? {
+      ...day,
+      stops: day.stops.map((stop) => stop.id === stopId ? { ...stop, memory: {
+        ...(stop.memory ?? { comment: "", entries: [] }),
+        mapPhotoIds: photoIds.slice(0, 4),
+        updatedByMemberId: currentMember.id,
+        updatedByMemberName: currentMember.name,
+        updatedAt: now,
+      } } : stop),
+    } : day)));
+  }
+
   async function addExpense() {
     if (!currentMember || !selectedStop) return;
     const item = newExpenseItem.trim();
@@ -2863,6 +2878,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           onSaveMemory={saveStopMemory}
           onAddScrapbookEntry={addScrapbookEntry}
           onDeleteScrapbookEntry={deleteScrapbookEntry}
+          onUpdateMapPhotos={updateMemoryMapPhotos}
           onUpdateDayStory={updateDayStory}
           onFocusLocation={focusMemoryLocation}
           onLocationChange={(dayId, stopId, value) => handleLocationChangeForStop(stopId, value, dayId)}
