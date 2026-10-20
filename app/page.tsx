@@ -1,17 +1,22 @@
 "use client";
 
-import { ChangeEvent, FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import AccountPortal from "./AccountPortal";
+import Gallery from "./Gallery";
 import MemoryLane from "./MemoryLane";
 import StopsBank from "./StopsBank";
+import "mapbox-gl/dist/mapbox-gl.css";
+import { createFamilyMap, getMapboxPlace, searchMapboxPlaces, type FamilyMapTravelMode } from "../lib/mapbox";
 import type { SavedPlace } from "../lib/firebaseSavedPlaces";
-import type { AccountTrip, FamilyAccount } from "../lib/firebaseAccounts";
+import { deleteAccountTrip, observeTripAccountMembers, promoteTripMemberToAdmin, updateTripCoverPresentation, type AccountTrip, type FamilyAccount, type TripAccountMember } from "../lib/firebaseAccounts";
 import {
   getFirebaseTripState,
   initializeFirebaseTripState,
   observeFirebaseTripState,
   saveFirebaseTripState,
 } from "../lib/firebaseTripState";
+import { deleteTripMedia, observeTripMedia, updateTripMedia, uploadTripMedia, type TripMedia } from "../lib/firebaseMedia";
 import { sortItineraryChronologically } from "../lib/chronology";
 import { convertedAmount, getLatestExchangeRate } from "../lib/exchangeRates";
 import {
@@ -27,28 +32,20 @@ import {
   updateQueuedPhoto,
 } from "../lib/photoQueue";
 import {
-  checkGoogleDriveGateway,
   configureGoogleDriveGateway,
   deleteDriveFile,
   type DrivePhotoLocation,
-  getPlaceDetails,
-  getPlacesUsage,
-  getSharedPhotoBlob,
-  getSharedPhotos,
+  getSharedFileBlob,
   getSharedTrip,
-  GoogleDriveError,
-  organizeDriveFile,
   type PlaceSuggestion,
-  type PlacesUsage,
-  searchPlaces,
-  type SharedPhoto,
   type SharedTripState,
   type TripDay,
+  type TripDocument,
   type TripExpense,
   type TripMember,
   type TripStop,
-  uploadPhotoToDrive,
-  uploadTripCoverToDrive,
+  type TripScrapbookEntry,
+  uploadDocumentToDrive,
 } from "../lib/googleDrive";
 
 const initialDays: TripDay[] = [
@@ -110,6 +107,45 @@ const legacySharedTripId = "vienna-2026-family-trip";
 const initialTripName = "2026 Vienna Trip";
 const expenseCategories = ["Food & Drink", "Transport", "Accommodation", "Tickets & Activities", "Shopping", "Other"];
 const currencyOptions = ["EUR", "AUD", "USD", "GBP", "CZK", "HUF", "CHF"];
+
+type ViennaWeather = {
+  kind: "current" | "forecast";
+  heading: string;
+  detail: string;
+  icon: string;
+};
+
+function viennaDateKey(date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Vienna", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+}
+
+function weatherDescription(code: number): { label: string; icon: string } {
+  if (code === 0) return { label: "Clear", icon: "☀️" };
+  if (code <= 3) return { label: "Partly cloudy", icon: "⛅" };
+  if (code <= 48) return { label: "Foggy", icon: "🌫️" };
+  if (code <= 67 || (code >= 80 && code <= 82)) return { label: "Rainy", icon: "🌧️" };
+  if (code <= 77 || (code >= 85 && code <= 86)) return { label: "Snowy", icon: "🌨️" };
+  if (code >= 95) return { label: "Thunderstorms", icon: "⛈️" };
+  return { label: "Changeable", icon: "🌦️" };
+}
+
+async function coverThumbnail(file: File): Promise<string> {
+  const image = new Image();
+  const source = URL.createObjectURL(file);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("The cover photo could not be opened."));
+      image.src = source;
+    });
+    const scale = Math.min(1, 720 / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", .72);
+  } finally { URL.revokeObjectURL(source); }
+}
 
 type PendingTripSave = {
   version: 1;
@@ -198,19 +234,21 @@ function timelineGapHeight(currentTime: string, nextTime: string): number {
   const next = minutesFromTime(nextTime);
   if (current === null || next === null || next <= current) return 10;
 
-  // Treat the time until the next activity as the approximate time spent at
-  // this stop. Twenty pixels per hour preserves the visual rhythm without
-  // making a day with long breaks feel excessively stretched.
-  return Math.min(84, Math.max(10, Math.round((next - current) / 3)));
+  // Keep a subtle duration cue without letting long breaks stretch the phone
+  // itinerary into a mostly empty page.
+  return Math.min(42, Math.max(5, Math.round((next - current) / 6)));
 }
 
-function googleMapsSearchUrl(place: string): string {
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.trim())}`;
+function externalMapUrl(place: string, latitude?: number, longitude?: number): string {
+  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+    return `https://maps.apple.com/?ll=${latitude},${longitude}&q=${encodeURIComponent(place.trim())}`;
+  }
+  return `https://maps.apple.com/?q=${encodeURIComponent(place.trim())}`;
 }
 
-function googleMapsDirectionsUrl(place: string, placeId?: string): string {
-  const placeIdParameter = placeId ? `&destination_place_id=${encodeURIComponent(placeId)}` : "";
-  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(place.trim())}${placeIdParameter}`;
+function externalDirectionsUrl(place: string, latitude?: number, longitude?: number): string {
+  const destination = Number.isFinite(latitude) && Number.isFinite(longitude) ? `${latitude},${longitude}` : place.trim();
+  return `https://maps.apple.com/?daddr=${encodeURIComponent(destination)}`;
 }
 
 function galleryDate(value: string): string {
@@ -262,90 +300,34 @@ function FittedDayTitle({ children }: { children: string }) {
   return <h2 className="day-name-title" ref={titleRef}>{children}</h2>;
 }
 
-type LeafletMap = { remove: () => void; fitBounds: (bounds: [number, number][], options?: Record<string, unknown>) => void };
-type LeafletLayer = { addTo: (map: LeafletMap) => LeafletLayer; bindPopup: (content: string) => LeafletLayer };
-type LeafletApi = {
-  map: (element: HTMLElement) => LeafletMap & { setView: (center: [number, number], zoom: number) => LeafletMap };
-  tileLayer: (url: string, options: Record<string, unknown>) => LeafletLayer;
-  marker: (position: [number, number], options: Record<string, unknown>) => LeafletLayer;
-  divIcon: (options: Record<string, unknown>) => unknown;
-};
-
-let leafletLoader: Promise<LeafletApi> | null = null;
-
-function loadLeaflet(): Promise<LeafletApi> {
-  if (leafletLoader) return leafletLoader;
-  leafletLoader = new Promise((resolve, reject) => {
-    const leafletWindow = window as Window & { L?: LeafletApi };
-    if (leafletWindow.L) {
-      resolve(leafletWindow.L);
-      return;
-    }
-    if (!document.querySelector('link[data-family-leaflet="true"]')) {
-      const stylesheet = document.createElement("link");
-      stylesheet.rel = "stylesheet";
-      stylesheet.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-      stylesheet.dataset.familyLeaflet = "true";
-      document.head.appendChild(stylesheet);
-    }
-    const existingScript = document.querySelector<HTMLScriptElement>('script[data-family-leaflet="true"]');
-    const script = existingScript ?? document.createElement("script");
-    const finish = () => leafletWindow.L ? resolve(leafletWindow.L) : reject(new Error("The map could not be opened."));
-    script.addEventListener("load", finish, { once: true });
-    script.addEventListener("error", () => reject(new Error("The map could not be downloaded.")), { once: true });
-    if (!existingScript) {
-      script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-      script.dataset.familyLeaflet = "true";
-      document.head.appendChild(script);
-    }
-  });
-  return leafletLoader;
-}
-
-function escapeMapText(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;",
-  })[character] ?? character);
-}
-
-function DayPinMap({ day }: { day: TripDay }) {
+function DayPinMap({ day, onTravelModeChange }: { day: TripDay; onTravelModeChange: (stopId: string, mode: FamilyMapTravelMode) => void }) {
   const mapElementRef = useRef<HTMLDivElement>(null);
   const [mapError, setMapError] = useState("");
   const locatedStops = day.stops.filter((stop) => Number.isFinite(stop.latitude) && Number.isFinite(stop.longitude));
 
   useEffect(() => {
     let disposed = false;
-    let map: LeafletMap | null = null;
-    void loadLeaflet()
-      .then((leaflet) => {
-        if (disposed || !mapElementRef.current) return;
-        map = leaflet.map(mapElementRef.current).setView([48.2082, 16.3738], 12);
-        leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-          maxZoom: 19,
-        }).addTo(map);
-        const bounds: [number, number][] = [];
-        day.stops.forEach((stop, index) => {
-          if (!Number.isFinite(stop.latitude) || !Number.isFinite(stop.longitude)) return;
-          const position: [number, number] = [stop.latitude!, stop.longitude!];
-          bounds.push(position);
-          const icon = leaflet.divIcon({
-            className: "numbered-map-marker-wrap",
-            html: `<span class="numbered-map-marker"><b>${index + 1}</b></span>`,
-            iconSize: [34, 42],
-            iconAnchor: [17, 42],
-          });
-          leaflet.marker(position, { icon }).addTo(map!).bindPopup(`<strong>Stop ${index + 1}: ${escapeMapText(stop.title)}</strong><br>${escapeMapText(stop.place)}`);
-        });
-        if (bounds.length > 0) map.fitBounds(bounds, { padding: [36, 36], maxZoom: 15 });
-      })
-      .catch((error: unknown) => {
-        if (!disposed) setMapError(error instanceof Error ? error.message : "The map could not be opened.");
-      });
+    let map: ReturnType<typeof createFamilyMap> | null = null;
+    try {
+      if (!mapElementRef.current) return;
+      const pins = locatedStops.map((stop) => ({
+        id: stop.id,
+        latitude: stop.latitude!,
+        longitude: stop.longitude!,
+        number: day.stops.indexOf(stop) + 1,
+        title: stop.title,
+        subtitle: stop.place,
+      }));
+      const routeSegments = locatedStops.slice(0, -1).map((stop, index) => ({
+        id: `${stop.id}-${locatedStops[index + 1].id}`,
+        from: [stop.longitude!, stop.latitude!] as [number, number],
+        to: [locatedStops[index + 1].longitude!, locatedStops[index + 1].latitude!] as [number, number],
+        mode: stop.travelModeToNext || "walking" as FamilyMapTravelMode,
+      }));
+      map = createFamilyMap(mapElementRef.current, pins, { routeSegments, onRouteError: (message) => setMapError(message) });
+    } catch (error) {
+      if (!disposed) setMapError(error instanceof Error ? error.message : "The map could not be opened.");
+    }
     return () => {
       disposed = true;
       map?.remove();
@@ -355,14 +337,22 @@ function DayPinMap({ day }: { day: TripDay }) {
   return (
     <div className="day-map-canvas-wrap">
       <div ref={mapElementRef} className="day-map-canvas" aria-label={`Map of ${day.label}`} />
-      {locatedStops.length === 0 && !mapError && <p className="day-map-overlay">Add a Google location to a stop to place its numbered pin.</p>}
+      {locatedStops.length === 0 && !mapError && <p className="day-map-overlay">Add a Mapbox location to a stop to place its numbered pin.</p>}
       {mapError && <p className="day-map-overlay error" role="alert">{mapError}</p>}
+      {locatedStops.length > 1 && <div className="map-route-mode-list" aria-label="Travel modes between stops">
+        {locatedStops.slice(0, -1).map((stop, index) => <label key={stop.id}>
+          <span>{index + 1} → {index + 2}</span>
+          <select value={stop.travelModeToNext || "walking"} onChange={(event) => onTravelModeChange(stop.id, event.target.value as FamilyMapTravelMode)}>
+            <option value="walking">Walk</option><option value="driving">Drive</option><option value="cycling">Cycle</option><option value="direct">Train / flight</option>
+          </select>
+        </label>)}
+      </div>}
     </div>
   );
 }
 
-function groupPhotosByPerson(photos: SharedPhoto[]): Array<{ id: string; name: string; photos: SharedPhoto[] }> {
-  const groups = new Map<string, { id: string; name: string; photos: SharedPhoto[] }>();
+function groupPhotosByPerson(photos: TripMedia[]): Array<{ id: string; name: string; photos: TripMedia[] }> {
+  const groups = new Map<string, { id: string; name: string; photos: TripMedia[] }>();
   photos.forEach((photo) => {
     const id = photo.memberId || photo.memberName;
     const existing = groups.get(id);
@@ -370,6 +360,22 @@ function groupPhotosByPerson(photos: SharedPhoto[]): Array<{ id: string; name: s
     else groups.set(id, { id, name: photo.memberName || "Family member", photos: [photo] });
   });
   return Array.from(groups.values());
+}
+
+type AppIconName = "calendar" | "pin" | "camera" | "receipt" | "document" | "heart" | "overview" | "settings";
+
+function AppIcon({ name }: { name: AppIconName }) {
+  const paths: Record<AppIconName, ReactNode> = {
+    calendar: <><path d="M7 3v3M17 3v3M4 9h16" /><rect x="4" y="5" width="16" height="16" rx="3" /><path d="M8 13h3v3H8z" /></>,
+    pin: <><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></>,
+    camera: <><path d="M4 8h3l1.5-2h7L17 8h3v11H4z" /><circle cx="12" cy="13" r="4" /></>,
+    receipt: <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2Z" /><path d="M9 8h6M9 12h6M9 16h4" /></>,
+    document: <><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v5h5M9 12h6M9 16h6" /></>,
+    heart: <path d="M20.8 8.7c0 5.3-8.8 10.3-8.8 10.3S3.2 14 3.2 8.7A4.7 4.7 0 0 1 12 6.4a4.7 4.7 0 0 1 8.8 2.3Z" />,
+    overview: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
+    settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" /></>,
+  };
+  return <svg className="app-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
 
 type TripWorkspaceProps = {
@@ -392,6 +398,9 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [tripName, setTripName] = useState(workspaceInitialName);
   const [tripCoverPhotoId, setTripCoverPhotoId] = useState("");
   const [tripCoverUrl, setTripCoverUrl] = useState("");
+  const [tripCoverPositionX, setTripCoverPositionX] = useState(accountTrip.coverPositionX ?? 50);
+  const [tripCoverPositionY, setTripCoverPositionY] = useState(accountTrip.coverPositionY ?? 50);
+  const [tripCoverThumbnail, setTripCoverThumbnail] = useState(accountTrip.coverThumbnailDataUrl || "");
   const [coverUploadState, setCoverUploadState] = useState<"idle" | "uploading" | "error">("idle");
   const [coverUploadError, setCoverUploadError] = useState<string | null>(null);
   const tripId = sharedTripId;
@@ -410,7 +419,11 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [tripSyncError, setTripSyncError] = useState<string | null>(null);
   const [days, setDays] = useState<TripDay[]>(workspaceInitialDays);
   const [selectedDayId, setSelectedDayId] = useState(workspaceInitialDays[0]?.id || "");
-  const [selectedStopId, setSelectedStopId] = useState(workspaceInitialDays[0]?.stops[0]?.id || "");
+  const [selectedStopId, setSelectedStopId] = useState("");
+  const [inlineStopContainer, setInlineStopContainer] = useState<HTMLDivElement | null>(null);
+  const inlineStopContainerRef = useCallback((node: HTMLDivElement | null) => setInlineStopContainer(node), []);
+  const [documentsExpanded, setDocumentsExpanded] = useState(false);
+  const [documentNavigationTarget, setDocumentNavigationTarget] = useState<{ stopId: string; documentId: string } | null>(null);
   const [queuedPhotos, setQueuedPhotos] = useState<QueuedPhotoView[]>([]);
   const [queueState, setQueueState] = useState<"loading" | "ready" | "saving" | "unavailable">("loading");
   const [queueError, setQueueError] = useState<string | null>(null);
@@ -427,6 +440,15 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [bulkDownloadState, setBulkDownloadState] = useState<"idle" | "downloading">("idle");
   const [bulkDownloadError, setBulkDownloadError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showDeleteTripConfirm, setShowDeleteTripConfirm] = useState(false);
+  const [deleteTripConfirmation, setDeleteTripConfirmation] = useState("");
+  const [deleteTripState, setDeleteTripState] = useState<"idle" | "deleting" | "error">("idle");
+  const [deleteTripError, setDeleteTripError] = useState("");
+  const [showOverview, setShowOverview] = useState(false);
+  const [tripAccountMembers, setTripAccountMembers] = useState<TripAccountMember[]>([]);
+  const [adminUpdateUid, setAdminUpdateUid] = useState("");
+  const [adminUpdateError, setAdminUpdateError] = useState("");
+  const [viennaWeather, setViennaWeather] = useState<ViennaWeather | null>(null);
   const [invitationLink, setInvitationLink] = useState("");
   const [invitationError, setInvitationError] = useState("");
   const [newStopName, setNewStopName] = useState("");
@@ -443,8 +465,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [placeSearchError, setPlaceSearchError] = useState<string | null>(null);
   const [placeSearchTarget, setPlaceSearchTarget] = useState<{ dayId: string; stopId: string } | null>(null);
   const [placeSearchDraft, setPlaceSearchDraft] = useState("");
-  const [placesUsage, setPlacesUsage] = useState<PlacesUsage | null>(null);
-  const [activeTab, setActiveTab] = useState<"itinerary" | "stops" | "gallery" | "expenses" | "memory">("itinerary");
+  const [activeTab, setActiveTab] = useState<"itinerary" | "stops" | "gallery" | "expenses" | "documents" | "memory">("itinerary");
   const [itineraryView, setItineraryView] = useState<"itinerary" | "map">("itinerary");
   const [newExpenseItem, setNewExpenseItem] = useState("");
   const [newExpenseAmount, setNewExpenseAmount] = useState("");
@@ -457,12 +478,19 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [expensePersonFilter, setExpensePersonFilter] = useState("");
   const [expenseDayFilter, setExpenseDayFilter] = useState("");
   const [expenseCategoryFilter, setExpenseCategoryFilter] = useState("");
-  const [sharedPhotos, setSharedPhotos] = useState<SharedPhoto[]>([]);
+  const [sharedPhotos, setSharedPhotos] = useState<TripMedia[]>([]);
   const [sharedPhotoUrls, setSharedPhotoUrls] = useState<Record<string, string>>({});
   const [galleryState, setGalleryState] = useState<"idle" | "loading" | "ready" | "offline" | "error">("idle");
   const [galleryError, setGalleryError] = useState<string | null>(null);
+  const [documentUploadState, setDocumentUploadState] = useState<"idle" | "uploading">("idle");
+  const [documentError, setDocumentError] = useState<string | null>(null);
+  const [documentProgress, setDocumentProgress] = useState({ completed: 0, total: 0 });
+  const [documentPreview, setDocumentPreview] = useState<{ document: TripDocument; url: string; blob: Blob; name: string } | null>(null);
+  const [documentPreviewLoading, setDocumentPreviewLoading] = useState<TripDocument | null>(null);
   const [hasLoadedLocalState, setHasLoadedLocalState] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const documentInputRef = useRef<HTMLInputElement>(null);
+  const screenshotInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const tripCoverUrlRef = useRef("");
   const previewUrlsRef = useRef(new Map<string, string>());
@@ -484,6 +512,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const placeSearchRequestRef = useRef(0);
   const placeSessionTokenRef = useRef("");
   const isAdmin = accountTrip.role === "admin" || Boolean(adminSecret);
+  const tripCoverDisplayUrl = tripCoverUrl || tripCoverThumbnail;
   const currentMember = useMemo(
     () => members.find((member) => member.id === currentMemberId),
     [currentMemberId, members],
@@ -519,8 +548,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
             break;
           } catch (error) {
             finalError = error;
-            const retryable = error instanceof GoogleDriveError ? error.retryable : true;
-            if (!retryable || attempt === 3 || !navigator.onLine) break;
+            if (attempt === 3 || !navigator.onLine) break;
             await new Promise((resolve) => window.setTimeout(resolve, 700 * 2 ** (attempt - 1)));
           }
         }
@@ -585,67 +613,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   }, [account, accountTrip, currentMember, isOffline, sharedTripId]);
 
   const refreshSharedGallery = useCallback(async () => {
-    if (!navigator.onLine) {
-      setGalleryState("offline");
-      return;
-    }
-
-    const requestId = galleryRequestRef.current + 1;
-    galleryRequestRef.current = requestId;
-    setGalleryState("loading");
-    setGalleryError(null);
-
-    try {
-      const photos = await getSharedPhotos(sharedTripId, tripName.trim() || workspaceInitialName);
-      if (galleryRequestRef.current !== requestId) return;
-      setSharedPhotos(photos);
-
-      const liveFileIds = new Set(photos.map((photo) => photo.fileId));
-      sharedPhotoUrlsRef.current.forEach((url, fileId) => {
-        if (!liveFileIds.has(fileId)) {
-          URL.revokeObjectURL(url);
-          sharedPhotoUrlsRef.current.delete(fileId);
-          sharedPhotoBlobsRef.current.delete(fileId);
-        }
-      });
-
-      const missing = photos.filter((photo) => !sharedPhotoUrlsRef.current.has(photo.fileId));
-      let unavailableCount = 0;
-      for (let start = 0; start < missing.length; start += 3) {
-        const batch = missing.slice(start, start + 3);
-        const loaded = await Promise.all(batch.map(async (photo) => {
-          try {
-            const downloaded = await getSharedPhotoBlob(sharedTripId, photo.fileId);
-            return { photo, blob: downloaded.blob, url: URL.createObjectURL(downloaded.blob) };
-          } catch {
-            return { photo, blob: null, url: "" };
-          }
-        }));
-        if (galleryRequestRef.current !== requestId) {
-          loaded.forEach((item) => { if (item.url) URL.revokeObjectURL(item.url); });
-          return;
-        }
-        loaded.forEach(({ photo, blob, url }) => {
-          if (url && blob) {
-            sharedPhotoUrlsRef.current.set(photo.fileId, url);
-            sharedPhotoBlobsRef.current.set(photo.fileId, blob);
-          }
-          else unavailableCount += 1;
-        });
-        setSharedPhotoUrls(Object.fromEntries(sharedPhotoUrlsRef.current));
-      }
-
-      setSharedPhotoUrls(Object.fromEntries(sharedPhotoUrlsRef.current));
-      setGalleryState("ready");
-      if (unavailableCount > 0) {
-        setGalleryError(`${unavailableCount} shared snapshot${unavailableCount === 1 ? "" : "s"} could not be opened. Tap Refresh to try again.`);
-      }
-    } catch (error) {
-      if (galleryRequestRef.current !== requestId) return;
-      setGalleryState("error");
-      setGalleryError(error instanceof Error ? error.message : "The shared photo gallery could not be loaded.");
-    }
-  }, [sharedTripId, tripName, workspaceInitialName]);
+    setGalleryState(navigator.onLine ? "ready" : "offline");
+  }, []);
 
   const refreshSharedItinerary = useCallback(async () => {
     if (!navigator.onLine) {
@@ -836,13 +805,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     window.addEventListener("pagehide", preservePendingOnExit);
 
     if (navigator.onLine) {
-      setGoogleState("connecting");
-      void checkGoogleDriveGateway()
-        .then(() => setGoogleState("connected"))
-        .catch((error: unknown) => {
-          setGoogleState("disconnected");
-          setGoogleError(error instanceof Error ? error.message : "The photo service could not be connected.");
-        });
+      setGoogleState("connected");
     }
     void refreshSharedItinerary();
 
@@ -961,46 +924,75 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   }, [account.uid, accountTrip.id, accountTrip.memberName, hasLoadedLocalState, isOffline, sharedTripId]);
 
   useEffect(() => {
-    let cancelled = false;
-    if (!tripCoverPhotoId || !tripAccessKey || !navigator.onLine) {
-      if (!tripCoverPhotoId && tripCoverUrlRef.current) {
-        URL.revokeObjectURL(tripCoverUrlRef.current);
-        tripCoverUrlRef.current = "";
-        setTripCoverUrl("");
-      }
-      return;
-    }
-    void getSharedPhotoBlob(sharedTripId, tripCoverPhotoId).then(({ blob }) => {
-      if (cancelled) return;
-      if (tripCoverUrlRef.current) URL.revokeObjectURL(tripCoverUrlRef.current);
-      const url = URL.createObjectURL(blob);
-      tripCoverUrlRef.current = url;
-      setTripCoverUrl(url);
-    }).catch(() => {
-      if (!cancelled) setCoverUploadError("The saved cover could not be opened. Grace can replace it in Settings.");
-    });
-    return () => { cancelled = true; };
-  }, [sharedTripId, tripAccessKey, tripCoverPhotoId]);
+    if (tripCoverUrl || !accountTrip.coverThumbnailDataUrl) return;
+    setTripCoverThumbnail(accountTrip.coverThumbnailDataUrl);
+    setTripCoverPositionX(accountTrip.coverPositionX ?? 50);
+    setTripCoverPositionY(accountTrip.coverPositionY ?? 50);
+  }, [accountTrip.coverPositionX, accountTrip.coverPositionY, accountTrip.coverThumbnailDataUrl, tripCoverUrl]);
+
+  useEffect(() => observeTripAccountMembers(accountTrip.id, setTripAccountMembers), [accountTrip.id]);
 
   useEffect(() => {
-    if ((activeTab !== "gallery" && activeTab !== "memory") || !hasLoadedLocalState || !tripAccessKey) return;
-    const initialRefreshId = window.setTimeout(() => void refreshSharedGallery(), 0);
+    if (!showOverview || !navigator.onLine) return;
+    let cancelled = false;
+    const parameters = new URLSearchParams({
+      latitude: "48.2082",
+      longitude: "16.3738",
+      current: "temperature_2m,apparent_temperature,weather_code",
+      daily: "weather_code,temperature_2m_max,temperature_2m_min",
+      timezone: "Europe/Vienna",
+      forecast_days: "16",
+    });
+    void fetch(`https://api.open-meteo.com/v1/forecast?${parameters}`).then(async (response) => {
+      if (!response.ok) throw new Error("Weather unavailable");
+      return response.json() as Promise<{
+        current?: { temperature_2m?: number; apparent_temperature?: number; weather_code?: number };
+        daily?: { time?: string[]; weather_code?: number[]; temperature_2m_max?: number[]; temperature_2m_min?: number[] };
+      }>;
+    }).then((forecast) => {
+      if (cancelled) return;
+      const today = viennaDateKey();
+      const isTripToday = days.some((day) => day.date === today);
+      if (isTripToday && Number.isFinite(forecast.current?.temperature_2m)) {
+        const condition = weatherDescription(Number(forecast.current?.weather_code ?? 3));
+        setViennaWeather({
+          kind: "current",
+          heading: `${Math.round(forecast.current!.temperature_2m!)}°C · ${condition.label}`,
+          detail: `Feels like ${Math.round(forecast.current?.apparent_temperature ?? forecast.current!.temperature_2m!)}°C in Vienna now.`,
+          icon: condition.icon,
+        });
+        return;
+      }
+      const nextTripDate = [...days].map((day) => day.date).filter((date) => date >= today).sort()[0];
+      const index = nextTripDate ? forecast.daily?.time?.indexOf(nextTripDate) ?? -1 : -1;
+      if (index >= 0) {
+        const condition = weatherDescription(Number(forecast.daily?.weather_code?.[index] ?? 3));
+        setViennaWeather({
+          kind: "forecast",
+          heading: `${Math.round(forecast.daily?.temperature_2m_max?.[index] ?? 0)}° / ${Math.round(forecast.daily?.temperature_2m_min?.[index] ?? 0)}°C`,
+          detail: `${condition.label} forecast for the next trip day in Vienna.`,
+          icon: condition.icon,
+        });
+      } else setViennaWeather(null);
+    }).catch(() => { if (!cancelled) setViennaWeather(null); });
+    return () => { cancelled = true; };
+  }, [days, showOverview]);
 
-    const refreshWhenVisible = () => {
-      if (document.visibilityState === "visible" && navigator.onLine) void refreshSharedGallery();
-    };
-    const intervalId = window.setInterval(refreshWhenVisible, 30_000);
-    window.addEventListener("focus", refreshWhenVisible);
-    window.addEventListener("online", refreshWhenVisible);
-    document.addEventListener("visibilitychange", refreshWhenVisible);
-    return () => {
-      window.clearTimeout(initialRefreshId);
-      window.clearInterval(intervalId);
-      window.removeEventListener("focus", refreshWhenVisible);
-      window.removeEventListener("online", refreshWhenVisible);
-      document.removeEventListener("visibilitychange", refreshWhenVisible);
-    };
-  }, [activeTab, hasLoadedLocalState, refreshSharedGallery, tripAccessKey]);
+  useEffect(() => {
+    if (!hasLoadedLocalState || !accountTrip.id) return;
+    setGalleryState(navigator.onLine ? "loading" : "offline");
+    return observeTripMedia(accountTrip.id, (items) => {
+      setSharedPhotos(items);
+      setSharedPhotoUrls(Object.fromEntries(items.map((item) => [item.fileId, item.thumbnailUrl || item.downloadUrl])));
+      sharedPhotoUrlsRef.current = new Map(items.map((item) => [item.fileId, item.downloadUrl]));
+      setGalleryState(navigator.onLine ? "ready" : "offline");
+      setGoogleState(navigator.onLine ? "connected" : "disconnected");
+      setGalleryError(null);
+    }, (cause) => {
+      setGalleryState(navigator.onLine ? "error" : "offline");
+      setGalleryError(cause.message);
+    });
+  }, [accountTrip.id, hasLoadedLocalState]);
 
   useEffect(() => {
     if (!hasLoadedLocalState) return;
@@ -1067,7 +1059,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   );
 
   const selectedStop = useMemo(
-    () => selectedDay?.stops.find((stop) => stop.id === selectedStopId) ?? selectedDay?.stops[0],
+    () => selectedDay?.stops.find((stop) => stop.id === selectedStopId),
     [selectedDay, selectedStopId],
   );
   const selectedDayNumber = Math.max(1, days.findIndex((day) => day.id === selectedDay?.id) + 1);
@@ -1081,6 +1073,9 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       expense,
     }))),
   ), [days]);
+  const documentRows = useMemo(() => days.flatMap((day, dayIndex) =>
+    day.stops.flatMap((stop, stopIndex) => (stop.documents ?? []).map((document) => ({ day, dayIndex, stop, stopIndex, document })))),
+  [days]);
   const expenseFilterCategories = useMemo(
     () => Array.from(new Set(expenseRows.map(({ expense }) => expense.category))).sort(),
     [expenseRows],
@@ -1113,21 +1108,22 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     };
   }, [filteredExpenseRows]);
   const tripCountdown = useMemo(() => {
-    const firstDate = days.map((day) => new Date(`${day.date}T12:00:00`).getTime()).filter(Number.isFinite).sort((a, b) => a - b)[0];
-    if (!firstDate) return null;
-    return Math.max(0, Math.ceil((firstDate - Date.now()) / 86_400_000));
+    const datedDays = [...days].filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day.date)).sort((left, right) => left.date.localeCompare(right.date));
+    if (!datedDays.length) return { kind: "unknown" as const, value: "—", label: "Add trip dates" };
+    const today = viennaDateKey();
+    const todayDay = datedDays.find((day) => day.date === today);
+    if (todayDay) return { kind: "today" as const, value: "TODAY", label: todayDay.label };
+    if (today < datedDays[0].date) {
+      const [todayYear, todayMonth, todayDate] = today.split("-").map(Number);
+      const [startYear, startMonth, startDate] = datedDays[0].date.split("-").map(Number);
+      const count = Math.max(0, Math.round((Date.UTC(startYear, startMonth - 1, startDate) - Date.UTC(todayYear, todayMonth - 1, todayDate)) / 86_400_000));
+      return { kind: "countdown" as const, value: String(count), label: count === 1 ? "day to go!" : "days to go!" };
+    }
+    if (today > datedDays[datedDays.length - 1].date) return { kind: "complete" as const, value: "HOME", label: "Time to relive the memories" };
+    return { kind: "travelling" as const, value: "AWAY", label: "The adventure continues" };
   }, [days]);
   const tripSpendAud = useMemo(() => expenseRows.reduce((total, { expense }) => total + (expense.homeAmount ?? 0), 0), [expenseRows]);
 
-  const profileInitials = (currentMember?.name || "Family")
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-  useEffect(() => {
-    if (showSettings && isAdmin && navigator.onLine) void refreshPlacesUsage();
-  }, [showSettings, isAdmin]);
 
   const selectedPhotos = queuedPhotos.filter((photo) => photo.stopId === selectedStop?.id);
   const pendingQueuePhotos = queuedPhotos.filter(
@@ -1136,9 +1132,6 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       photo.pendingCloudDeletion,
   );
   const waitingCount = pendingQueuePhotos.length;
-  const hasDriveCopies = queuedPhotos.some(
-    (photo) => photo.status === "uploaded" && Boolean(photo.googleDriveFileId),
-  );
   const queuedBytes = pendingQueuePhotos.reduce((total, photo) => total + photo.size, 0);
   const uploadProgressPercent = uploadProgress?.total
     ? Math.round((uploadProgress.completed / uploadProgress.total) * 100)
@@ -1188,14 +1181,35 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
   function selectStop(stopId: string) {
     clearPlaceSearch();
+    setDocumentsExpanded(false);
+    setDocumentNavigationTarget(null);
     setSelectedStopId(stopId);
   }
 
   function selectDay(day: TripDay) {
     clearPlaceSearch();
     setSelectedDayId(day.id);
-    setSelectedStopId(day.stops[0]?.id ?? "");
+    setSelectedStopId("");
   }
+
+  function goToDocumentStop(dayId: string, stopId: string, documentId: string) {
+    clearPlaceSearch();
+    setItineraryView("itinerary");
+    setSelectedDayId(dayId);
+    setSelectedStopId(stopId);
+    setDocumentsExpanded(true);
+    setDocumentNavigationTarget({ stopId, documentId });
+    setActiveTab("itinerary");
+  }
+
+  useEffect(() => {
+    if (!documentNavigationTarget || activeTab !== "itinerary" || !inlineStopContainer) return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(`itinerary-stop-${documentNavigationTarget.stopId}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    const timer = window.setTimeout(() => setDocumentNavigationTarget(null), 2400);
+    return () => { window.cancelAnimationFrame(frame); window.clearTimeout(timer); };
+  }, [activeTab, documentNavigationTarget, inlineStopContainer]);
 
   function addFamilyMember() {
     const name = newMemberName.trim();
@@ -1274,6 +1288,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       uploadAttempts: 0,
       lastError: null,
       googleDriveFileId: null,
+      firebaseMediaId: null,
       memberId: currentMember.id,
       memberName: currentMember.name,
       blob: file,
@@ -1325,18 +1340,65 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     tripCoverUrlRef.current = previewUrl;
     setTripCoverUrl(previewUrl);
     try {
-      const fileId = await uploadTripCoverToDrive(
-        sharedTripId,
-        tripName.trim() || workspaceInitialName,
-        file,
-        adminSecret,
-        tripCoverPhotoId || undefined,
-      );
-      setTripCoverPhotoId(fileId);
+      const thumbnail = await coverThumbnail(file);
+      setTripCoverPhotoId("");
+      setTripCoverThumbnail(thumbnail);
+      setTripCoverPositionX(50);
+      setTripCoverPositionY(50);
+      await updateTripCoverPresentation(account, accountTrip, { coverThumbnailDataUrl: thumbnail, coverPositionX: 50, coverPositionY: 50 });
       setCoverUploadState("idle");
     } catch (error) {
       setCoverUploadState("error");
       setCoverUploadError(error instanceof Error ? error.message : "The cover photo could not be uploaded.");
+    }
+  }
+
+  async function saveCoverPosition() {
+    if (!isAdmin) return;
+    setCoverUploadState("uploading"); setCoverUploadError(null);
+    try {
+      await updateTripCoverPresentation(account, accountTrip, { coverThumbnailDataUrl: tripCoverThumbnail || undefined, coverPositionX: tripCoverPositionX, coverPositionY: tripCoverPositionY });
+      setCoverUploadState("idle");
+    } catch (error) {
+      setCoverUploadState("error");
+      setCoverUploadError(error instanceof Error ? error.message : "The cover position could not be saved.");
+    }
+  }
+
+  async function makeTripAdmin(member: TripAccountMember) {
+    if (!isAdmin || member.role === "admin") return;
+    setAdminUpdateUid(member.userId);
+    setAdminUpdateError("");
+    try {
+      await promoteTripMemberToAdmin(account, accountTrip, member);
+    } catch (error) {
+      setAdminUpdateError(error instanceof Error ? error.message : "That person could not be made an admin.");
+    } finally {
+      setAdminUpdateUid("");
+    }
+  }
+
+  function openDeleteTripConfirmation() {
+    setShowSettings(false);
+    setDeleteTripConfirmation("");
+    setDeleteTripError("");
+    setDeleteTripState("idle");
+    setShowDeleteTripConfirm(true);
+  }
+
+  async function deleteTripForEveryone() {
+    if (!isAdmin || deleteTripConfirmation.trim() !== tripName.trim()) return;
+    setDeleteTripState("deleting");
+    setDeleteTripError("");
+    try {
+      await deleteAccountTrip(account, accountTrip);
+      [itineraryKey, tripNameKey, tripIdKey, adminKey, memberIdKey, tripAccessKeyStorageKey, pendingTripSaveKey, lastTripSavedAtKey]
+        .forEach((key) => window.localStorage.removeItem(scopedStorageKey(key, sharedTripId)));
+      setShowDeleteTripConfirm(false);
+      onBackToTrips();
+    } catch (error) {
+      setDeleteTripState("error");
+      setDeleteTripError(error instanceof Error ? error.message : "The trip could not be deleted. Please try again.");
     }
   }
 
@@ -1419,14 +1481,78 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
   function saveStopMemory(dayId: string, stopId: string, comment: string) {
     if (!currentMember) return;
+    const now = new Date().toISOString();
+    setDays((current) => sortItineraryChronologically(current.map((day) => day.id === dayId ? {
+      ...day,
+      stops: day.stops.map((stop) => {
+        if (stop.id !== stopId) return stop;
+        const entries = stop.memory?.entries ?? [];
+        return { ...stop, memory: comment || entries.length > 0 ? {
+          comment,
+          entries,
+          updatedByMemberId: currentMember.id,
+          updatedByMemberName: currentMember.name,
+          updatedAt: now,
+        } : undefined };
+      }),
+    } : day)));
+  }
+
+  function addScrapbookEntry(dayId: string, stopId: string, entry: Omit<TripScrapbookEntry, "id" | "memberId" | "memberName" | "createdAt" | "updatedAt">) {
+    if (!currentMember) return;
+    const now = new Date().toISOString();
+    setDays((current) => sortItineraryChronologically(current.map((day) => day.id === dayId ? {
+      ...day,
+      stops: day.stops.map((stop) => {
+        if (stop.id !== stopId) return stop;
+        const memory = stop.memory ?? {
+          comment: "",
+          updatedByMemberId: currentMember.id,
+          updatedByMemberName: currentMember.name,
+          updatedAt: now,
+        };
+        return { ...stop, memory: {
+          ...memory,
+          entries: [...(memory.entries ?? []), {
+            ...entry,
+            id: `scrap-${crypto.randomUUID()}`,
+            memberId: currentMember.id,
+            memberName: currentMember.name,
+            createdAt: now,
+            updatedAt: now,
+          }],
+          updatedByMemberId: currentMember.id,
+          updatedByMemberName: currentMember.name,
+          updatedAt: now,
+        } };
+      }),
+    } : day)));
+  }
+
+  function deleteScrapbookEntry(dayId: string, stopId: string, entryId: string) {
+    if (!currentMember) return;
     updateStopInDay(dayId, stopId, {
-      memory: comment ? {
-        comment,
+      memory: (() => {
+        const stop = days.find((day) => day.id === dayId)?.stops.find((item) => item.id === stopId);
+        if (!stop?.memory) return undefined;
+        return { ...stop.memory, entries: (stop.memory.entries ?? []).filter((entry) => entry.id !== entryId), updatedAt: new Date().toISOString() };
+      })(),
+    });
+  }
+
+  function updateMemoryMapPhotos(dayId: string, stopId: string, photoIds: string[]) {
+    if (!currentMember) return;
+    const now = new Date().toISOString();
+    setDays((current) => sortItineraryChronologically(current.map((day) => day.id === dayId ? {
+      ...day,
+      stops: day.stops.map((stop) => stop.id === stopId ? { ...stop, memory: {
+        ...(stop.memory ?? { comment: "", entries: [] }),
+        mapPhotoIds: photoIds.slice(0, 4),
         updatedByMemberId: currentMember.id,
         updatedByMemberName: currentMember.name,
-        updatedAt: new Date().toISOString(),
-      } : undefined,
-    });
+        updatedAt: now,
+      } } : stop),
+    } : day)));
   }
 
   async function addExpense() {
@@ -1441,12 +1567,12 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     let exchangeRateDate: string | undefined;
     let homeAmount: number | null = null;
     try {
-      const conversion = await getLatestExchangeRate(newExpenseLocalCurrency, "AUD");
+      const conversion = await getLatestExchangeRate(newExpenseLocalCurrency, account.homeCurrency);
       exchangeRate = conversion.rate;
       exchangeRateDate = conversion.date;
       homeAmount = convertedAmount(localAmount, conversion.rate);
     } catch {
-      setExpenseConversionError("Expense saved in its local currency, but AUD conversion is waiting. Use Refresh AUD conversions from the Expenses tab when online.");
+      setExpenseConversionError(`Expense saved in its local currency, but ${account.homeCurrency} conversion is waiting. Use Refresh conversions from the Expenses tab when online.`);
     }
 
     const expense: TripExpense = {
@@ -1458,7 +1584,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       localAmount,
       localCurrency: newExpenseLocalCurrency,
       homeAmount,
-      homeCurrency: "AUD",
+      homeCurrency: account.homeCurrency,
       exchangeRate,
       exchangeRateDate,
       createdAt: new Date().toISOString(),
@@ -1480,7 +1606,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     setExpenseConversionError(null);
     try {
       const rates = new Map(await Promise.all(missingCurrencies.map(async (currency) => {
-        const conversion = await getLatestExchangeRate(currency, "AUD");
+        const conversion = await getLatestExchangeRate(currency, account.homeCurrency);
         return [currency, conversion] as const;
       })));
       setDays((current) => current.map((day) => ({
@@ -1493,7 +1619,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
             return conversion ? {
               ...expense,
               homeAmount: convertedAmount(expense.localAmount, conversion.rate),
-              homeCurrency: "AUD",
+              homeCurrency: account.homeCurrency,
               exchangeRate: conversion.rate,
               exchangeRateDate: conversion.date,
             } : expense;
@@ -1501,7 +1627,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
         })),
       })));
     } catch {
-      setExpenseConversionError("AUD conversion is temporarily unavailable. Local amounts remain saved and unchanged.");
+      setExpenseConversionError(`${account.homeCurrency} conversion is temporarily unavailable. Local amounts remain saved and unchanged.`);
     } finally {
       setExpenseConversionState("idle");
     }
@@ -1553,12 +1679,12 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     let exchangeRateDate: string | undefined;
     let homeAmount: number | null = null;
     try {
-      const conversion = await getLatestExchangeRate(expenseEditDraft.localCurrency, "AUD");
+      const conversion = await getLatestExchangeRate(expenseEditDraft.localCurrency, account.homeCurrency);
       exchangeRate = conversion.rate;
       exchangeRateDate = conversion.date;
       homeAmount = convertedAmount(localAmount, conversion.rate);
     } catch {
-      setExpenseConversionError("Expense updated in its local currency, but AUD conversion is waiting. Use Refresh AUD conversions from the Expenses tab when online.");
+      setExpenseConversionError(`Expense updated in its local currency, but ${account.homeCurrency} conversion is waiting. Use Refresh conversions from the Expenses tab when online.`);
     }
 
     updateSelectedStop({
@@ -1569,7 +1695,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
         localAmount,
         localCurrency: expenseEditDraft.localCurrency,
         homeAmount,
-        homeCurrency: "AUD",
+        homeCurrency: account.homeCurrency,
         exchangeRate,
         exchangeRateDate,
       } : expense),
@@ -1609,18 +1735,17 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     if (!placeSessionTokenRef.current) placeSessionTokenRef.current = crypto.randomUUID().replaceAll("-", "");
     setPlaceSearchState("searching");
     placeSearchTimerRef.current = window.setTimeout(() => {
-      void searchPlaces(value.trim(), placeSessionTokenRef.current)
-        .then(({ suggestions, usage }) => {
+      void searchMapboxPlaces(value.trim(), placeSessionTokenRef.current)
+        .then((suggestions) => {
           if (placeSearchRequestRef.current !== requestNumber) return;
           setPlaceSuggestions(suggestions);
-          setPlacesUsage(usage);
           setPlaceSearchState("idle");
         })
         .catch((error: unknown) => {
           if (placeSearchRequestRef.current !== requestNumber) return;
           setPlaceSuggestions([]);
           setPlaceSearchState("idle");
-          setPlaceSearchError(error instanceof Error ? error.message : "Google suggestions are unavailable. You can keep typing the location manually.");
+          setPlaceSearchError(error instanceof Error ? error.message : "Mapbox suggestions are unavailable. You can keep typing the location manually.");
         });
     }, 325);
   }
@@ -1632,20 +1757,19 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     setPlaceSearchState("choosing");
     setPlaceSearchError(null);
     try {
-      const { place, usage } = await getPlaceDetails(suggestion.placeId, placeSessionTokenRef.current);
+      const place = await getMapboxPlace(suggestion.placeId, placeSessionTokenRef.current);
       if (placeSearchRequestRef.current !== requestNumber) return;
       updateStopInDay(target.dayId, target.stopId, {
-        place: place.address || place.name || suggestion.text,
+        place: place.name || suggestion.text || place.address,
         placeId: place.placeId,
         latitude: place.latitude ?? undefined,
         longitude: place.longitude ?? undefined,
-        googleMapsUrl: place.googleMapsUrl || undefined,
+        googleMapsUrl: place.mapUrl || undefined,
       });
-      setPlacesUsage(usage);
       clearPlaceSearch();
     } catch (error) {
       if (placeSearchRequestRef.current !== requestNumber) return;
-      setPlaceSearchError(error instanceof Error ? error.message : "That Google location could not be saved. You can keep the location as typed.");
+      setPlaceSearchError(error instanceof Error ? error.message : "That Mapbox location could not be saved. You can keep the location as typed.");
     } finally {
       if (placeSearchRequestRef.current === requestNumber) setPlaceSearchState("idle");
     }
@@ -1704,8 +1828,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     if (!currentMember || !selectedDay || !selectedStop) return;
     const localPhotoCount = queuedPhotos.filter((photo) => photo.stopId === selectedStop.id).length;
     const warning = localPhotoCount > 0
-      ? `This stop has ${localPhotoCount} photo ${localPhotoCount === 1 ? "copy" : "copies"} on this device. Apple Photos and Drive copies will remain, but they will no longer be assigned in the itinerary. Delete the stop?`
-      : "Delete this stop from the shared itinerary? Photos already in Apple Photos or Drive will not be deleted.";
+      ? `This stop has ${localPhotoCount} ${localPhotoCount === 1 ? "memory" : "memories"} on this device. Apple Photos and shared gallery copies will remain, but they will no longer be assigned in the itinerary. Delete the stop?`
+      : "Delete this stop from the shared itinerary? Originals in Apple Photos and shared gallery copies will not be deleted.";
     if (!window.confirm(warning)) return;
     const index = selectedDay.stops.findIndex((stop) => stop.id === selectedStop.id);
     const remainingStops = selectedDay.stops.filter((stop) => stop.id !== selectedStop.id);
@@ -1719,7 +1843,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     const photo = queuedPhotos.find((item) => item.id === photoId);
     if (!photo || photo.pendingLocalRemoval) return;
     const isPrivate = !photo.isPrivate;
-    const pendingCloudDeletion = isPrivate && photo.status === "uploaded" && Boolean(photo.googleDriveFileId);
+    const pendingCloudDeletion = isPrivate && photo.status === "uploaded" && Boolean(photo.firebaseMediaId);
     setQueueError(null);
     try {
       await savePhotoChanges(photoId, {
@@ -1746,18 +1870,19 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     if (!photo) return;
     setQueueError(null);
     try {
-      if (!photo.googleDriveFileId) {
+      if (!photo.firebaseMediaId) {
         await deletePhotoLocally(photoId);
         return;
       }
 
       if (navigator.onLine) {
         try {
-          await deleteDriveFile(tripId, photo.googleDriveFileId, previousTripId || undefined);
+          const shared = sharedPhotos.find((item) => item.fileId === photo.firebaseMediaId);
+          if (shared) await deleteTripMedia(accountTrip.id, shared);
           await deletePhotoLocally(photoId);
           return;
         } catch {
-          // Preserve the record below so Drive deletion can be retried safely.
+          // Preserve the record below so cloud deletion can be retried safely.
         }
       }
 
@@ -1767,8 +1892,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
         pendingLocalRemoval: true,
         status: "needsAttention",
         lastError: navigator.onLine
-          ? "Drive removal will be retried the next time you tap Upload now."
-          : "Drive removal is waiting for an internet connection.",
+          ? "Shared gallery removal will be retried the next time you tap Upload now."
+          : "Shared gallery removal is waiting for an internet connection.",
       });
     } catch (error) {
       setQueueError(error instanceof Error ? error.message : "The photo could not be removed safely.");
@@ -1794,30 +1919,14 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
   async function connectGoogleDrive() {
     if (!navigator.onLine) {
-      setGoogleError("Connect to the internet before checking Google Drive.");
+      setGoogleError("Connect to the internet before checking the shared gallery.");
       return;
     }
-
-    setGoogleState("connecting");
     setGoogleError(null);
-    try {
-      await checkGoogleDriveGateway();
-      await refreshSharedItinerary();
-      setGoogleState("connected");
-      setShowSettings(false);
-    } catch (error) {
-      setGoogleState("disconnected");
-      setGoogleError(error instanceof Error ? error.message : "Google Drive could not be connected.");
-    }
+    setGoogleState("connected");
+    setShowSettings(false);
   }
 
-  async function refreshPlacesUsage() {
-    try {
-      setPlacesUsage(await getPlacesUsage());
-    } catch (error) {
-      setPlaceSearchError(error instanceof Error ? error.message : "Google Places usage is unavailable.");
-    }
-  }
 
   async function waitBeforeRetry(attempt: number) {
     await new Promise((resolve) => window.setTimeout(resolve, 700 * 2 ** (attempt - 1)));
@@ -1843,9 +1952,115 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     };
   }
 
+  async function handleDocumentSelection(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (!selectedDay || !selectedStop || !currentMember || files.length === 0) return;
+    if (!navigator.onLine) {
+      setDocumentError("Documents need an internet connection to upload. The original files have not been changed.");
+      return;
+    }
+    const oversized = files.find((file) => file.size > 15 * 1024 * 1024);
+    if (oversized) {
+      setDocumentError(`${oversized.name} is larger than the current 15 MB document limit.`);
+      return;
+    }
+    const location = driveLocationForStop(selectedStop.id, currentMember.id, currentMember.name);
+    if (!location) {
+      setDocumentError("This stop is still loading. Please try the document again in a moment.");
+      return;
+    }
+
+    setDocumentUploadState("uploading");
+    setDocumentError(null);
+    setDocumentProgress({ completed: 0, total: files.length });
+    const uploaded: TripDocument[] = [];
+    try {
+      for (const file of files) {
+        const id = crypto.randomUUID();
+        const fileId = await uploadDocumentToDrive(location, file, id);
+        uploaded.push({
+          id,
+          fileId,
+          name: file.name || "Trip document",
+          mimeType: file.type || "application/octet-stream",
+          size: file.size,
+          memberId: currentMember.id,
+          memberName: currentMember.name,
+          createdAt: new Date().toISOString(),
+        });
+        setDocumentProgress({ completed: uploaded.length, total: files.length });
+      }
+      updateStopInDay(selectedDay.id, selectedStop.id, { documents: [...(selectedStop.documents ?? []), ...uploaded] });
+    } catch (error) {
+      if (uploaded.length > 0) updateStopInDay(selectedDay.id, selectedStop.id, { documents: [...(selectedStop.documents ?? []), ...uploaded] });
+      setDocumentError(error instanceof Error ? error.message : "The document could not be uploaded.");
+    } finally {
+      setDocumentUploadState("idle");
+    }
+  }
+
+  async function viewDocument(document: TripDocument) {
+    setDocumentError(null);
+    setDocumentPreviewLoading(document);
+    try {
+      const { blob, name } = await getSharedFileBlob(tripId, document.fileId);
+      const url = URL.createObjectURL(blob);
+      setDocumentPreview((current) => {
+        if (current?.url) URL.revokeObjectURL(current.url);
+        return { document, url, blob, name: name || document.name };
+      });
+    } catch (error) {
+      setDocumentError(error instanceof Error ? error.message : "The document could not be opened.");
+    } finally {
+      setDocumentPreviewLoading(null);
+    }
+  }
+
+  function closeDocumentPreview() {
+    setDocumentPreview((current) => {
+      if (current?.url) URL.revokeObjectURL(current.url);
+      return null;
+    });
+  }
+
+  async function shareDocument(document: TripDocument) {
+    setDocumentError(null);
+    try {
+      const loaded = documentPreview?.document.id === document.id
+        ? { blob: documentPreview.blob, name: documentPreview.name }
+        : await getSharedFileBlob(tripId, document.fileId);
+      const file = new File([loaded.blob], loaded.name || document.name, { type: document.mimeType || loaded.blob.type });
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: document.name });
+        return;
+      }
+      const url = URL.createObjectURL(loaded.blob);
+      const link = window.document.createElement("a");
+      link.href = url; link.download = document.name; link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setDocumentError(error instanceof Error ? error.message : "The document could not be shared.");
+    }
+  }
+
+  async function removeDocument(dayId: string, stopId: string, document: TripDocument) {
+    if (!currentMember || (!isAdmin && document.memberId !== currentMember.id)) return;
+    if (!window.confirm(`Delete ${document.name} from this trip?`)) return;
+    setDocumentError(null);
+    try {
+      await deleteDriveFile(tripId, document.fileId, previousTripId || undefined);
+      const stop = days.find((day) => day.id === dayId)?.stops.find((item) => item.id === stopId);
+      updateStopInDay(dayId, stopId, { documents: (stop?.documents ?? []).filter((item) => item.id !== document.id) });
+    } catch (error) {
+      setDocumentError(error instanceof Error ? error.message : "The document could not be deleted.");
+    }
+  }
+
   async function uploadQueuedPhotos() {
     if (!navigator.onLine) {
-      setGoogleError("You are offline. The photos will remain safely queued.");
+      setGoogleError("You are offline. Your photos and videos will remain safely queued.");
       return;
     }
     if (!tripId) {
@@ -1853,7 +2068,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       return;
     }
     if (!currentMember) {
-      setGoogleError("Choose your family profile before syncing photos.");
+      setGoogleError("Choose your family profile before sharing memories.");
       setShowSettings(true);
       return;
     }
@@ -1863,11 +2078,10 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     setUploadProgress(null);
 
     try {
-      await checkGoogleDriveGateway();
-
-      for (const photo of queuedPhotos.filter((item) => item.pendingCloudDeletion && item.googleDriveFileId)) {
+      for (const photo of queuedPhotos.filter((item) => item.pendingCloudDeletion && item.firebaseMediaId)) {
         try {
-          await deleteDriveFile(tripId, photo.googleDriveFileId!, previousTripId || undefined);
+          const shared = sharedPhotos.find((item) => item.fileId === photo.firebaseMediaId);
+          if (shared) await deleteTripMedia(accountTrip.id, shared);
           if (photo.pendingLocalRemoval) {
             await deletePhotoLocally(photo.id);
             continue;
@@ -1875,6 +2089,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           await savePhotoChanges(photo.id, {
             pendingCloudDeletion: false,
             pendingLocalRemoval: false,
+            firebaseMediaId: null,
             googleDriveFileId: null,
             status: "waiting",
             uploadAttempts: 0,
@@ -1884,30 +2099,6 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           await savePhotoChanges(photo.id, {
             status: "needsAttention",
             lastError: error instanceof Error ? error.message : "The private cloud copy could not be removed.",
-          });
-        }
-      }
-
-      let organizationFailures = 0;
-      const uploadedCopies = queuedPhotos.filter(
-        (photo) =>
-          !photo.isPrivate &&
-          !photo.pendingCloudDeletion &&
-          photo.status === "uploaded" &&
-          Boolean(photo.googleDriveFileId),
-      );
-
-      for (const photo of uploadedCopies) {
-        const location = driveLocationForStop(photo.stopId, photo.memberId, photo.memberName);
-        if (!location) continue;
-
-        try {
-          await organizeDriveFile(location, photo.googleDriveFileId!);
-          if (photo.lastError) await savePhotoChanges(photo.id, { lastError: null });
-        } catch (error) {
-          organizationFailures += 1;
-          await savePhotoChanges(photo.id, {
-            lastError: error instanceof Error ? error.message : "The Drive folders could not be refreshed.",
           });
         }
       }
@@ -1948,21 +2139,23 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           });
 
           try {
-            const driveFileId = await uploadPhotoToDrive(
-              location,
+            const uploadedMedia = await uploadTripMedia(
+              account,
+              accountTrip.id,
               record,
+              { dayId: location.dayId, stopId: location.stopId },
             );
             await savePhotoChanges(record.id, {
               status: "uploaded",
               uploadAttempts: attempt,
               lastError: null,
-              googleDriveFileId: driveFileId,
+              firebaseMediaId: uploadedMedia.fileId,
+              googleDriveFileId: null,
             });
             uploaded = true;
             break;
           } catch (error) {
-            const retryable = error instanceof GoogleDriveError ? error.retryable : true;
-            if (!retryable || attempt === 3) {
+            if (attempt === 3) {
               await savePhotoChanges(record.id, {
                 status: "needsAttention",
                 uploadAttempts: attempt,
@@ -1987,18 +2180,14 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       setGoogleState("connected");
       if (uploadFailures > 0) {
         setGoogleError(
-          `${uploadFailures} ${uploadFailures === 1 ? "photo" : "photos"} could not be uploaded after three attempts. The originals remain safe in Apple Photos; tap Upload now to retry.`,
-        );
-      } else if (organizationFailures > 0) {
-        setGoogleError(
-          `${organizationFailures} existing Drive ${organizationFailures === 1 ? "copy" : "copies"} could not be reorganized. Tap refresh to try again.`,
+          `${uploadFailures} ${uploadFailures === 1 ? "memory" : "memories"} could not be uploaded after three attempts. The originals remain safe in Apple Photos; tap Upload now to retry.`,
         );
       }
       if (activeTab === "gallery" || activeTab === "memory") void refreshSharedGallery();
       await refreshStorageHealth();
     } catch (error) {
       setGoogleState("disconnected");
-      setGoogleError(error instanceof Error ? error.message : "Google Drive sync failed.");
+      setGoogleError(error instanceof Error ? error.message : "Shared gallery sync failed.");
     } finally {
       window.setTimeout(() => setUploadProgress(null), 1200);
     }
@@ -2070,8 +2259,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   return (
     <main className="app-shell">
       <header
-        className={`topbar adventure-hero ${tripCoverUrl ? "has-trip-cover" : ""}`}
-        style={tripCoverUrl ? { backgroundImage: `linear-gradient(90deg, rgba(255,250,241,.96) 0%, rgba(255,250,241,.82) 45%, rgba(255,250,241,.08) 78%), url(${tripCoverUrl})` } : undefined}
+        className={`topbar adventure-hero ${tripCoverDisplayUrl ? "has-trip-cover" : ""}`}
+        style={tripCoverDisplayUrl ? { backgroundImage: `linear-gradient(90deg, rgba(255,250,241,.88) 0%, rgba(255,250,241,.68) 45%, rgba(255,250,241,.18) 82%), url(${tripCoverDisplayUrl})`, backgroundPosition: `center, ${tripCoverPositionX}% ${tripCoverPositionY}%` } : undefined}
       >
         <div className="hero-copy">
           <button className="back-to-trips" onClick={onBackToTrips} aria-label="Back to My Adventures">← My Adventures</button>
@@ -2083,26 +2272,24 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
             aria-label="Trip name"
             readOnly={!isAdmin}
           />
-          <p className="shared-role">
-            {currentMember?.name || "Choose profile"} · {isAdmin ? "Admin" : "Contributor"} · {tripSyncLabel}
-          </p>
-        </div>
-        <div className="hero-actions">
-          {isAdmin && <button className="settings-button" aria-label="Open admin settings" onClick={() => setShowSettings(true)}><span aria-hidden="true">⚙️</span> Settings</button>}
-          {isAdmin ? (
-            <button className="avatar" aria-label="Open admin settings" onClick={() => setShowSettings(true)}>{profileInitials}</button>
-          ) : (
-            <span className="avatar locked" aria-label={`${currentMember?.name || "Family member"} profile locked to this device`}>{profileInitials}</span>
-          )}
+          <div className="trip-meta-row">
+            <p className="shared-role">
+              {currentMember?.name || "Choose profile"} · {isAdmin ? "Admin" : "Contributor"} · {tripSyncLabel}
+            </p>
+            <div className="trip-meta-actions">
+              <button className="overview-button" aria-label="Open trip overview" onClick={() => setShowOverview(true)}><AppIcon name="overview" /> Overview</button>
+              {isAdmin && <button className="settings-button" aria-label="Open trip settings" onClick={() => setShowSettings(true)}><AppIcon name="settings" /> Trip Settings</button>}
+            </div>
+          </div>
         </div>
       </header>
 
       <section className="adventure-shortcuts" aria-label="Adventure sections">
-        <button className="shortcut-card itinerary-shortcut" onClick={() => setActiveTab("itinerary")}><span aria-hidden="true">🗺️</span><strong>Itinerary</strong><small>Plan the adventure</small><b aria-hidden="true">›</b></button>
-        <button className="shortcut-card stops-shortcut" onClick={() => setActiveTab("stops")}><span aria-hidden="true">📍</span><strong>Saved Places</strong><small>Dream and vote</small><b aria-hidden="true">›</b></button>
-        <button className="shortcut-card gallery-shortcut" onClick={() => setActiveTab("gallery")}><span aria-hidden="true">📷</span><strong>Photo Gallery</strong><small>Our snapshots</small><b aria-hidden="true">›</b></button>
-        <button className="shortcut-card expenses-shortcut" onClick={() => setActiveTab("expenses")}><span aria-hidden="true">🧾</span><strong>Expenses</strong><small>The practical bit</small><b aria-hidden="true">›</b></button>
-        <button className="shortcut-card memory-shortcut" onClick={() => setActiveTab("memory")}><span aria-hidden="true">🧳</span><strong>Memory Lane</strong><small>Relive the story</small><b aria-hidden="true">›</b></button>
+        <button className="shortcut-card itinerary-shortcut" onClick={() => setActiveTab("itinerary")}><span><AppIcon name="calendar" /></span><strong>Itinerary</strong><small>Plan the adventure</small><b aria-hidden="true">›</b></button>
+        <button className="shortcut-card stops-shortcut" onClick={() => setActiveTab("stops")}><span><AppIcon name="pin" /></span><strong>Saved Places</strong><small>Dream and vote</small><b aria-hidden="true">›</b></button>
+        <button className="shortcut-card gallery-shortcut" onClick={() => setActiveTab("gallery")}><span><AppIcon name="camera" /></span><strong>Photo Gallery</strong><small>Our snapshots</small><b aria-hidden="true">›</b></button>
+        <button className="shortcut-card expenses-shortcut" onClick={() => setActiveTab("expenses")}><span><AppIcon name="receipt" /></span><strong>Expenses</strong><small>The practical bit</small><b aria-hidden="true">›</b></button>
+        <button className="shortcut-card memory-shortcut" onClick={() => setActiveTab("memory")}><span><AppIcon name="heart" /></span><strong>Memory Lane</strong><small>Relive the story</small><b aria-hidden="true">›</b></button>
       </section>
 
       <nav className="primary-tabs" aria-label="App sections">
@@ -2111,23 +2298,15 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           aria-current={activeTab === "itinerary" ? "page" : undefined}
           onClick={() => setActiveTab("itinerary")}
         >
-          <span className="tab-icon" aria-hidden="true">🗓️</span>
+          <span className="tab-icon"><AppIcon name="calendar" /></span>
           <small>Itinerary</small>
-        </button>
-        <button
-          className={activeTab === "stops" ? "active" : ""}
-          aria-current={activeTab === "stops" ? "page" : undefined}
-          onClick={() => setActiveTab("stops")}
-        >
-          <span className="tab-icon" aria-hidden="true">📍</span>
-          <small>Stops</small>
         </button>
         <button
           className={activeTab === "gallery" ? "active" : ""}
           aria-current={activeTab === "gallery" ? "page" : undefined}
           onClick={() => setActiveTab("gallery")}
         >
-          <span className="tab-icon" aria-hidden="true">📸</span>
+          <span className="tab-icon"><AppIcon name="camera" /></span>
           <small>Gallery</small>
         </button>
         <button
@@ -2135,15 +2314,31 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           aria-current={activeTab === "expenses" ? "page" : undefined}
           onClick={() => setActiveTab("expenses")}
         >
-          <span className="tab-icon" aria-hidden="true">🧾</span>
+          <span className="tab-icon"><AppIcon name="receipt" /></span>
           <small>Expenses</small>
+        </button>
+        <button
+          className={activeTab === "documents" ? "active" : ""}
+          aria-current={activeTab === "documents" ? "page" : undefined}
+          onClick={() => setActiveTab("documents")}
+        >
+          <span className="tab-icon"><AppIcon name="document" /></span>
+          <small>Documents</small>
+        </button>
+        <button
+          className={activeTab === "stops" ? "active" : ""}
+          aria-current={activeTab === "stops" ? "page" : undefined}
+          onClick={() => setActiveTab("stops")}
+        >
+          <span className="tab-icon"><AppIcon name="pin" /></span>
+          <small>Stops</small>
         </button>
         <button
           className={activeTab === "memory" ? "active" : ""}
           aria-current={activeTab === "memory" ? "page" : undefined}
           onClick={() => setActiveTab("memory")}
         >
-          <span className="tab-icon" aria-hidden="true">💛</span>
+          <span className="tab-icon"><AppIcon name="heart" /></span>
           <small>Memory Lane</small>
         </button>
       </nav>
@@ -2204,13 +2399,13 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           {itineraryView === "itinerary" ? <div className="timeline">
             {selectedDay?.stops.map((stop, index) => {
               const active = stop.id === selectedStop?.id;
-              const count = queuedPhotos.filter((photo) => photo.stopId === stop.id).length;
               const nextStop = selectedDay.stops[index + 1];
               return (
                 <Fragment key={stop.id}>
                   <button
                     className={`stop-card ${active ? "active" : ""}`}
-                    onClick={() => selectStop(stop.id)}
+                    onClick={() => selectStop(active ? "" : stop.id)}
+                    aria-expanded={active}
                   >
                     <time>{stop.time}</time>
                     <span className="timeline-marker" aria-hidden="true" />
@@ -2218,8 +2413,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                       <strong>{stop.title}</strong>
                       <small>{stop.place || "Location to be added"}</small>
                     </span>
-                    {count > 0 && <span className="photo-count">{count}</span>}
                   </button>
+                  {active && <div id={`itinerary-stop-${stop.id}`} className="inline-stop-workspace-host" ref={inlineStopContainerRef} />}
                   {nextStop && (
                     <span
                       className="timeline-gap"
@@ -2232,11 +2427,11 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
             })}
           </div> : selectedDay ? (
             <div className="day-map-layout">
-              <DayPinMap day={selectedDay} />
+              <DayPinMap day={selectedDay} onTravelModeChange={(stopId, mode) => updateStopInDay(selectedDay.id, stopId, { travelModeToNext: mode })} />
               <aside className="map-stop-sidebar" aria-label="Day stop locations">
                 <div className="map-stop-sidebar-heading">
                   <strong>Day locations</strong>
-                  <small>Only pins are shown—no billable route is calculated.</small>
+                  <small>Numbered pins follow the itinerary. Mapbox plots each route using its selected travel mode.</small>
                 </div>
                 {selectedDay.stops.map((stop, index) => {
                   const hasPin = Number.isFinite(stop.latitude) && Number.isFinite(stop.longitude);
@@ -2249,7 +2444,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                         {hasPin ? (
                           <>
                             <small>{stop.place}</small>
-                            <a href={stop.googleMapsUrl || googleMapsSearchUrl(stop.place)} target="_blank" rel="noopener noreferrer">Open in Google Maps ↗</a>
+                            <a href={externalMapUrl(stop.place, stop.latitude, stop.longitude)} target="_blank" rel="noopener noreferrer">Open in Maps ↗</a>
                           </>
                         ) : (
                           <div className="map-missing-location-field">
@@ -2261,18 +2456,18 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                                 beginPlaceSearch(selectedDay.id, stop.id, stop.place);
                               }}
                               onChange={(event) => handleLocationChangeForStop(stop.id, event.target.value, selectedDay.id)}
-                              placeholder="Add Google location"
+                              placeholder="Add a Mapbox location"
                               aria-label={`Location for Stop ${index + 1}: ${stop.title}`}
                               autoComplete="off"
                               readOnly={!currentMember}
                             />
-                            {isSelectedMapStop && placeSearchState === "searching" && <small>Searching Google Maps…</small>}
+                            {isSelectedMapStop && placeSearchState === "searching" && <small>Searching Mapbox…</small>}
                             {isSelectedMapStop && placeSuggestions.length > 0 && (
                               <div className="map-place-suggestions">
                                 {placeSuggestions.map((suggestion) => (
-                                  <button key={suggestion.placeId} type="button" onClick={() => void choosePlace(suggestion)} disabled={placeSearchState === "choosing"}>{suggestion.text}</button>
+                                  <button key={suggestion.placeId} type="button" onClick={() => void choosePlace(suggestion)} disabled={placeSearchState === "choosing"}><strong>{suggestion.text}</strong>{suggestion.secondaryText && suggestion.secondaryText !== suggestion.text && <small>{suggestion.secondaryText}</small>}</button>
                                 ))}
-                                <small>Powered by Google</small>
+                                <small>Powered by Mapbox</small>
                               </div>
                             )}
                             {hasLocationDraftChange(selectedDay.id, stop.id, stop.place) && (
@@ -2292,7 +2487,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           ) : null}
         </div>
 
-        {itineraryView === "itinerary" && selectedStop && (
+        {itineraryView === "itinerary" && selectedStop && inlineStopContainer && createPortal(
           <div className="stop-workspace">
             <section className="memory-panel selected-stop-panel" aria-labelledby="selected-stop-title">
               <div className="memory-hero">
@@ -2316,7 +2511,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                         value={locationInputValue(selectedDay.id, selectedStop.id, selectedStop.place)}
                         onFocus={() => beginPlaceSearch(selectedDay.id, selectedStop.id, selectedStop.place)}
                         onChange={(event) => handleLocationChange(event.target.value)}
-                        placeholder="Search Google Maps or type a location"
+                        placeholder="Search Mapbox or type a location"
                         readOnly={!currentMember}
                         autoComplete="off"
                         role="combobox"
@@ -2325,16 +2520,16 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                         aria-controls="place-suggestions"
                       />
                     </label>
-                    {placeSearchState === "searching" && <span className="place-search-status">Searching Google Maps…</span>}
+                    {placeSearchState === "searching" && <span className="place-search-status">Searching Mapbox…</span>}
                     {placeSuggestions.length > 0 && (
                       <div className="place-suggestions" id="place-suggestions" role="listbox">
                         {placeSuggestions.map((suggestion) => (
                           <button key={suggestion.placeId} type="button" role="option" aria-selected="false" onClick={() => void choosePlace(suggestion)} disabled={placeSearchState === "choosing"}>
                             <span aria-hidden="true">●</span>
-                            <strong>{suggestion.text}</strong>
+                            <span className="place-suggestion-copy"><strong>{suggestion.text}</strong>{suggestion.secondaryText && suggestion.secondaryText !== suggestion.text && <small>{suggestion.secondaryText}</small>}</span>
                           </button>
                         ))}
-                        <small>Powered by Google</small>
+                        <small>Powered by Mapbox</small>
                       </div>
                     )}
                     {hasLocationDraftChange(selectedDay.id, selectedStop.id, selectedStop.place) && (
@@ -2344,26 +2539,53 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                     )}
                     {placeSearchError && <span className="place-search-error">{placeSearchError}</span>}
                     {selectedStop.place.trim() ? (
-                      <div className="maps-place-card" aria-label={`Google Maps location: ${selectedStop.place}`}>
+                      <div className="maps-place-card" aria-label={`Map location: ${selectedStop.place}`}>
                         <span className="maps-place-pin" aria-hidden="true">●</span>
                         <span className="maps-place-copy">
-                          <small>Google Maps location</small>
+                          <small>Mapbox location</small>
                           <strong>{selectedStop.place}</strong>
                         </span>
                         <span className="maps-place-actions">
-                          <a href={selectedStop.googleMapsUrl || googleMapsSearchUrl(selectedStop.place)} target="_blank" rel="noopener noreferrer">Open map ↗</a>
-                          <a href={googleMapsDirectionsUrl(selectedStop.place, selectedStop.placeId)} target="_blank" rel="noopener noreferrer">Directions ↗</a>
+                          <a href={externalMapUrl(selectedStop.place, selectedStop.latitude, selectedStop.longitude)} target="_blank" rel="noopener noreferrer">Open map ↗</a>
+                          <a href={externalDirectionsUrl(selectedStop.place, selectedStop.latitude, selectedStop.longitude)} target="_blank" rel="noopener noreferrer">Directions ↗</a>
                         </span>
                       </div>
                     ) : (
-                      <span className="maps-place-empty">Add a location to attach Google Maps</span>
+                      <span className="maps-place-empty">Add a location to place it on Mapbox</span>
                     )}
                   </div>
                 </div>
-                <label>
-                  <span>Notes</span>
-                  <textarea value={selectedStop.note} onChange={(event) => updateSelectedStop({ note: event.target.value })} placeholder="Add a note" readOnly={!currentMember} />
-                </label>
+                <details className="stop-detail-disclosure notes-disclosure">
+                  <summary><span><strong>Notes</strong><small>{selectedStop.note.trim() ? "A note has been added" : "Add reminders or useful details"}</small></span></summary>
+                  <label className="stop-disclosure-body">
+                    <span className="visually-hidden">Notes</span>
+                    <textarea value={selectedStop.note} onChange={(event) => updateSelectedStop({ note: event.target.value })} placeholder="Add a note" readOnly={!currentMember} />
+                  </label>
+                </details>
+                <details className="stop-detail-disclosure documents-disclosure" open={documentsExpanded} onToggle={(event) => setDocumentsExpanded(event.currentTarget.open)}>
+                  <summary><span><strong>Documents &amp; attachments</strong><small>Tickets, bookings and saved email files</small></span><b>{(selectedStop.documents ?? []).length}</b></summary>
+                  <section className="stop-documents" aria-label="Documents and attachments">
+                  <input ref={documentInputRef} className="visually-hidden" type="file" multiple onChange={(event) => void handleDocumentSelection(event)} />
+                  <input ref={screenshotInputRef} className="visually-hidden" type="file" accept="image/*" multiple onChange={(event) => void handleDocumentSelection(event)} />
+                  <div className="document-upload-actions">
+                    <button className="secondary-button document-upload-button" onClick={() => documentInputRef.current?.click()} disabled={!currentMember || documentUploadState === "uploading" || isOffline}>
+                      <AppIcon name="document" /> {documentUploadState === "uploading" ? `Uploading ${documentProgress.completed} of ${documentProgress.total}…` : "Add files"}
+                    </button>
+                    <button className="secondary-button document-upload-button" onClick={() => screenshotInputRef.current?.click()} disabled={!currentMember || documentUploadState === "uploading" || isOffline}>
+                      <AppIcon name="camera" /> Add screenshots
+                    </button>
+                  </div>
+                  <small>PDFs, tickets, office files, saved email attachments and screenshots up to 15 MB each.</small>
+                  {(selectedStop.documents ?? []).length > 0 && <div className="stop-document-list">
+                    {(selectedStop.documents ?? []).map((document) => <div key={document.id} className={`stop-document-row ${documentNavigationTarget?.documentId === document.id ? "navigation-highlight" : ""}`}>
+                      <AppIcon name="document" />
+                      <button className="document-name-button" onClick={() => void viewDocument(document)}><strong>{document.name}</strong><small>{formatBytes(document.size)} · {document.memberName}</small></button>
+                      {(isAdmin || document.memberId === currentMember?.id) && <button className="document-delete-button" onClick={() => void removeDocument(selectedDay.id, selectedStop.id, document)} aria-label={`Delete ${document.name}`}>×</button>}
+                    </div>)}
+                  </div>}
+                  {documentError && <p className="document-alert" role="alert">{documentError}</p>}
+                  </section>
+                </details>
                 <div className="stop-management" aria-label="Stop actions">
                   <button className="danger-action" onClick={deleteSelectedStop} disabled={!currentMember}>Delete stop</button>
                 </div>
@@ -2401,9 +2623,9 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                 </label>
               </div>
               <button className="primary-button add-expense-button" onClick={() => void addExpense()} disabled={!currentMember || !newExpenseItem.trim() || !(Number(newExpenseAmount) > 0) || expenseConversionState === "converting"}>
-                {expenseConversionState === "converting" ? "Converting to AUD…" : `Add expense as ${currentMember?.name || "family member"}`}
+                {expenseConversionState === "converting" ? `Converting to ${account.homeCurrency}…` : `Add expense as ${currentMember?.name || "family member"}`}
               </button>
-              <p className="expense-rate-note">AUD is calculated automatically using the latest daily reference rate and saved with the expense.</p>
+              <p className="expense-rate-note">{account.homeCurrency} is calculated automatically using the latest daily reference rate and saved with the expense.</p>
               {expenseConversionError && <p className="expense-conversion-alert" role="alert">{expenseConversionError}</p>}
               {(selectedStop.expenses ?? []).length > 0 && (
                 <div className="stop-expense-list">
@@ -2457,23 +2679,19 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
               <div className="photo-panel-heading">
                 <div>
                   <p className="eyebrow">Photo upload</p>
-                  <h3 id="add-photos-title">Add photos</h3>
+                  <h3 id="add-photos-title">Add photos or videos</h3>
                 </div>
                 {isOffline ? (
-                  <button className="sync-button" disabled>Drive offline</button>
+                  <button className="sync-button" disabled>Cloud offline</button>
                 ) : googleState === "connected" && waitingCount > 0 ? (
                   <button className="sync-button" onClick={uploadQueuedPhotos}>Upload now — I’m on Wi-Fi</button>
                 ) : googleState === "uploading" ? (
                   <button className="sync-button" disabled>Uploading…</button>
                 ) : googleState === "connected" ? (
-                  hasDriveCopies ? (
-                    <button className="sync-button" onClick={uploadQueuedPhotos}>Refresh Drive folders</button>
-                  ) : (
-                    <button className="sync-button" disabled>Drive connected</button>
-                  )
+                  <button className="sync-button" disabled>Shared gallery ready</button>
                 ) : (
                   <button className="sync-button" onClick={connectGoogleDrive} disabled={googleState === "connecting"}>
-                    {googleState === "connecting" ? "Checking Drive…" : "Check Drive"}
+                    {googleState === "connecting" ? "Checking gallery…" : "Connect shared gallery"}
                   </button>
                 )}
               </div>
@@ -2482,7 +2700,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                 ref={fileInputRef}
                 className="visually-hidden"
                 type="file"
-                accept="image/*"
+                accept="image/*,video/*"
                 multiple
                 onChange={handlePhotoSelection}
               />
@@ -2491,7 +2709,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                 onClick={() => fileInputRef.current?.click()}
                 disabled={queueState !== "ready"}
               >
-                {queueState === "saving" ? "Saving temporary copies…" : "Choose from Apple Photos"}
+                {queueState === "saving" ? "Saving temporary copies…" : "Choose Photos or Videos"}
               </button>
               <button className="photo-status-button" onClick={() => setShowSafety((value) => !value)} aria-expanded={showSafety}>
                 Photo Upload Status
@@ -2501,12 +2719,12 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                   {googleError
                     ? googleError
                     : googleState === "uploading"
-                      ? `Uploading ${uploadProgress?.completed ?? 0} of ${uploadProgress?.total ?? waitingCount} photos…`
+                      ? `Uploading ${uploadProgress?.completed ?? 0} of ${uploadProgress?.total ?? waitingCount} memories…`
                       : isOffline
-                        ? `${waitingCount} ${waitingCount === 1 ? "photo" : "photos"} safely waiting offline`
+                        ? `${waitingCount} ${waitingCount === 1 ? "memory" : "memories"} safely waiting offline`
                         : waitingCount > 0
-                          ? `${waitingCount} ${waitingCount === 1 ? "photo needs" : "photos need"} uploading`
-                          : "All selected photos are uploaded"}
+                          ? `${waitingCount} ${waitingCount === 1 ? "memory needs" : "memories need"} uploading`
+                          : "All selected memories are uploaded"}
                 </strong>
                 {googleState === "uploading" && uploadProgress && uploadProgress.total > 0 && (
                   <>
@@ -2530,7 +2748,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                   <dl className="storage-facts">
                     <div>
                       <dt>Offline queue</dt>
-                      <dd>{waitingCount} photos · {formatBytes(queuedBytes)}</dd>
+                      <dd>{waitingCount} memories · {formatBytes(queuedBytes)}</dd>
                     </div>
                     <div>
                       <dt>Storage protection</dt>
@@ -2560,7 +2778,9 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                 {selectedPhotos.map((photo) => (
                   <figure key={photo.id} className="photo-card">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={photo.previewUrl} alt={photo.name} />
+                    {photo.mimeType.startsWith("video/")
+                      ? <video src={photo.previewUrl} controls playsInline preload="metadata" />
+                      : <img src={photo.previewUrl} alt={photo.name} />}
                     <figcaption>
                       <div className="photo-meta">
                         <span className={`status-pill ${photo.isPrivate ? "private" : photo.status}`}>
@@ -2580,37 +2800,11 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
               </div>
               )}
             </section>
-          </div>
+          </div>,
+          inlineStopContainer,
         )}
       </section>
       </div>
-      <aside className="trip-sidebar" aria-label="Trip overview">
-        <section className="trip-widget countdown-widget">
-          <p className="eyebrow">Countdown</p>
-          <strong>{tripCountdown === null ? "—" : tripCountdown}</strong>
-          <span>{tripCountdown === 0 ? "Adventure time!" : "days to go!"}</span>
-        </section>
-        <section className="trip-widget weather-widget">
-          <div className="widget-heading"><p className="eyebrow">Vienna weather</p><span aria-hidden="true">🌦️</span></div>
-          <strong>Generally in November</strong>
-          <p>Cool and changeable, usually around 4–10°C. Pack warm layers and something rainproof.</p>
-          <a href="https://weather.com/at/city/vienna/tenday" target="_blank" rel="noopener noreferrer">Check Weather.com ↗</a>
-        </section>
-        <section className="trip-widget spending-widget">
-          <p className="eyebrow">Trip spending</p>
-          <strong>{expenseMoney(tripSpendAud, "AUD")}</strong>
-          <span>{expenseRows.length} recorded expense{expenseRows.length === 1 ? "" : "s"}</span>
-          <button onClick={() => setActiveTab("expenses")}>View expenses →</button>
-        </section>
-        <section className="trip-widget travellers-widget">
-          <p className="eyebrow">Travellers</p>
-          <div className="traveller-bubbles" aria-label={`${members.length} family travellers`}>
-            {members.slice(0, 6).map((member) => <span key={member.id} title={member.name}>{member.name.slice(0, 1).toUpperCase()}</span>)}
-          </div>
-          <strong>{members.length} traveller{members.length === 1 ? "" : "s"}</strong>
-        </section>
-        <blockquote className="trip-postcard">Collect moments,<br />not things <span aria-hidden="true">♡</span></blockquote>
-      </aside>
       </div>
         </>
       ) : activeTab === "stops" ? (
@@ -2622,103 +2816,56 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           onSchedule={scheduleSavedPlace}
         />
       ) : activeTab === "gallery" ? (
-        <section className="gallery-page" aria-labelledby="gallery-title">
-          <header className="gallery-page-heading">
-            <div>
-              <p className="eyebrow">Seen through all of our eyes</p>
-              <h1 id="gallery-title">Our Snapshots</h1>
-              <p>The little moments, funny angles and favourite views we each brought home.</p>
-            </div>
-            <button className="secondary-button" onClick={() => void refreshSharedGallery()} disabled={galleryState === "loading" || isOffline}>
-              {galleryState === "loading" ? "Refreshing…" : "Refresh"}
-            </button>
+        <Gallery
+          tripId={accountTrip.id}
+          days={days}
+          media={sharedPhotos}
+          currentUid={account.uid}
+          state={galleryState}
+          error={galleryError}
+          onUpdate={async (item, changes) => updateTripMedia(accountTrip.id, item.fileId, changes)}
+          onDelete={async (item) => deleteTripMedia(accountTrip.id, item)}
+        />
+      ) : activeTab === "documents" ? (
+        <section className="documents-page" aria-labelledby="documents-title">
+          <header className="documents-page-heading">
+            <div><p className="eyebrow">Everything in one place</p><h1 id="documents-title">Trip Documents</h1><p>Tickets, confirmations, itineraries and attachments shared across the family.</p></div>
+            <span>{documentRows.length} file{documentRows.length === 1 ? "" : "s"}</span>
           </header>
-
-          {galleryError && <p className="gallery-alert" role="alert">{galleryError}</p>}
-          {galleryState === "offline" && (
-            <p className="gallery-alert">The shared gallery needs an internet connection. Your itinerary and queued uploads remain available offline.</p>
-          )}
-
-          <div className="gallery-days">
-            {days.map((day, dayIndex) => (
-              <section className="gallery-day" key={day.id} aria-labelledby={`gallery-${day.id}`}>
-                <header className="gallery-day-heading">
-                  <div>
-                    <p>Day {dayIndex + 1}</p>
-                    <h2 id={`gallery-${day.id}`}>{day.label}</h2>
-                    {day.storyTitle && <strong>{day.storyTitle}</strong>}
-                    <time dateTime={day.date}>{galleryDate(day.date)}</time>
-                  </div>
-                  <button className="gallery-day-download" onClick={() => openDayDownload(day)} disabled={!sharedPhotos.some((photo) => photo.dayId === day.id)}>
-                    Share day
-                  </button>
-                </header>
-
-                <div className="gallery-stops">
-                  {day.stops.length === 0 ? (
-                    <div className="gallery-empty-stop">No stops have been added to this day yet.</div>
-                  ) : day.stops.map((stop, stopIndex) => {
-                    const stopPhotos = sharedPhotos.filter((photo) => photo.dayId === day.id && photo.stopId === stop.id);
-                    const groups = groupPhotosByPerson(stopPhotos);
-                    return (
-                      <article className="gallery-stop" key={stop.id}>
-                        <header className="gallery-stop-heading">
-                          <div>
-                            <p>Stop {stopIndex + 1}</p>
-                            <h3>{stop.title}</h3>
-                          </div>
-                          {stop.time && <time>{stop.time}</time>}
-                        </header>
-
-                        {groups.length === 0 ? (
-                          <div className="gallery-empty-stop">
-                            <span aria-hidden="true">▧</span>
-                            <p>No snapshots here yet. Who will capture the first one?</p>
-                          </div>
-                        ) : groups.map((group) => (
-                          <section className="person-snapshots" key={group.id} aria-labelledby={`snapshots-${stop.id}-${group.id}`}>
-                            <div className="person-snapshots-heading">
-                              <span className="member-avatar" aria-hidden="true">{group.name.slice(0, 1).toUpperCase()}</span>
-                              <h4 id={`snapshots-${stop.id}-${group.id}`}>{group.name}&apos;s Snapshots</h4>
-                              <small>{group.photos.length} photo{group.photos.length === 1 ? "" : "s"}</small>
-                            </div>
-                            <div className="shared-photo-grid">
-                              {group.photos.map((photo) => {
-                                const photoUrl = sharedPhotoUrls[photo.fileId];
-                                return (
-                                  <figure className="shared-photo-card" key={photo.fileId}>
-                                    {photoUrl ? (
-                                      // eslint-disable-next-line @next/next/no-img-element
-                                      <img src={photoUrl} alt={`${group.name}'s snapshot at ${stop.title}`} loading="lazy" />
-                                    ) : (
-                                      <div className="shared-photo-loading">Loading snapshot…</div>
-                                    )}
-                                    <figcaption>
-                                      <time dateTime={photo.createdAt}>
-                                        {new Date(photo.createdAt).toLocaleString("en-AU", { dateStyle: "medium", timeStyle: "short" })}
-                                      </time>
-                                      {photoUrl && <a href={photoUrl} download={photo.name}>Save photo</a>}
-                                    </figcaption>
-                                  </figure>
-                                );
-                              })}
-                            </div>
-                          </section>
-                        ))}
+          {documentError && <p className="document-alert page-alert" role="alert">{documentError}</p>}
+          {documentRows.length === 0 ? (
+            <div className="documents-empty"><AppIcon name="document" /><strong>No documents yet</strong><p>Open an itinerary stop and choose <b>Add documents or email attachments</b>.</p></div>
+          ) : (
+            <div className="documents-days">
+              {days.map((day, dayIndex) => {
+                const dayDocuments = documentRows.filter((row) => row.day.id === day.id);
+                if (dayDocuments.length === 0) return null;
+                return <section className="documents-day" key={day.id}>
+                  <header><div><p>Day {dayIndex + 1}</p><h2>{day.label}</h2></div><time dateTime={day.date}>{galleryDate(day.date)}</time></header>
+                  <div className="documents-grid">
+                    {dayDocuments.map(({ stop, stopIndex, document }) => <div className="document-card-group" key={document.id}>
+                      <div className="document-stop-link">
+                        <span>Stop {stopIndex + 1} · {stop.title}</span>
+                        <button onClick={() => goToDocumentStop(day.id, stop.id, document.id)}>Go to stop →</button>
+                      </div>
+                      <article className="document-card">
+                        <span className="document-file-icon"><AppIcon name="document" /></span>
+                        <div className="document-card-copy"><strong>{document.name}</strong><span>{formatBytes(document.size)} · Added by {document.memberName}</span></div>
+                        <div className="document-card-actions"><button onClick={() => void viewDocument(document)}>{documentPreviewLoading?.id === document.id ? "Opening…" : "View"}</button>{(isAdmin || document.memberId === currentMember?.id) && <button className="delete" onClick={() => void removeDocument(day.id, stop.id, document)}>Delete</button>}</div>
                       </article>
-                    );
-                  })}
-                </div>
-              </section>
-            ))}
-          </div>
+                    </div>)}
+                  </div>
+                </section>;
+              })}
+            </div>
+          )}
         </section>
       ) : activeTab === "memory" ? (
         <MemoryLane
           tripName={tripName}
           days={days}
           currentMember={currentMember}
-          sharedPhotos={sharedPhotos}
+          sharedPhotos={sharedPhotos.filter((item) => item.mediaType === "photo")}
           sharedPhotoUrls={sharedPhotoUrls}
           galleryState={galleryState}
           galleryError={galleryError}
@@ -2729,6 +2876,9 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           placeSearchError={placeSearchError}
           onRefreshPhotos={() => void refreshSharedGallery()}
           onSaveMemory={saveStopMemory}
+          onAddScrapbookEntry={addScrapbookEntry}
+          onDeleteScrapbookEntry={deleteScrapbookEntry}
+          onUpdateMapPhotos={updateMemoryMapPhotos}
           onUpdateDayStory={updateDayStory}
           onFocusLocation={focusMemoryLocation}
           onLocationChange={(dayId, stopId, value) => handleLocationChangeForStop(stopId, value, dayId)}
@@ -2745,7 +2895,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
             </div>
             {expenseRows.some(({ expense }) => expense.homeAmount === null) && (
               <button className="secondary-button" onClick={() => void refreshAudConversions()} disabled={isOffline || expenseConversionState === "converting"}>
-                {expenseConversionState === "converting" ? "Converting…" : "Refresh AUD conversions"}
+                {expenseConversionState === "converting" ? "Converting…" : `Refresh ${account.homeCurrency} conversions`}
               </button>
             )}
           </header>
@@ -2795,7 +2945,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                       <td data-label="Category"><span className="expense-category">{expense.category}</span></td>
                       <td data-label="Person">{expense.memberName}</td>
                       <td data-label="Local Currency">{expenseMoney(expense.localAmount, expense.localCurrency)}</td>
-                      <td data-label="Home Currency">{expenseMoney(expense.homeAmount, "AUD")}{expense.exchangeRateDate && <small>Rate dated {expense.exchangeRateDate}</small>}</td>
+                      <td data-label="Home Currency">{expenseMoney(expense.homeAmount, expense.homeCurrency || account.homeCurrency)}{expense.exchangeRateDate && <small>Rate dated {expense.exchangeRateDate}</small>}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -2805,7 +2955,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                       <th colSpan={5} scope="row">Total</th>
                       <td>{expenseTotals.local}</td>
                       <td>
-                        <strong>{expenseMoney(expenseTotals.homeAmount, "AUD")}</strong>
+                        <strong>{expenseMoney(expenseTotals.homeAmount, account.homeCurrency)}</strong>
                         {expenseTotals.missingHomeAmounts > 0 && <small>{expenseTotals.missingHomeAmounts} awaiting conversion</small>}
                       </td>
                     </tr>
@@ -2824,22 +2974,81 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
         </section>
       )}
 
+      {documentPreview && (
+        <div className="modal-backdrop document-preview-backdrop" role="presentation" onMouseDown={closeDocumentPreview}>
+          <section className="modal document-preview-modal" role="dialog" aria-modal="true" aria-labelledby="document-preview-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header className="document-preview-heading">
+              <button className="document-preview-done" onClick={closeDocumentPreview}>Done</button>
+              <div><h2 id="document-preview-title">{documentPreview.document.name}</h2><small>{formatBytes(documentPreview.document.size)} · Added by {documentPreview.document.memberName}</small></div>
+              <button className="document-preview-share" onClick={() => void shareDocument(documentPreview.document)}>Open / Share</button>
+            </header>
+            <div className="document-preview-stage">
+              {documentPreview.document.mimeType.startsWith("image/") ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={documentPreview.url} alt={documentPreview.document.name} />
+              ) : documentPreview.document.mimeType === "application/pdf" || documentPreview.document.name.toLowerCase().endsWith(".pdf") ? (
+                <iframe src={documentPreview.url} title={documentPreview.document.name} />
+              ) : (
+                <div className="document-preview-unavailable"><AppIcon name="document" /><strong>This file needs another app to display it</strong><p>Use Open / Share to choose Word, Mail, Files or another compatible app.</p></div>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {showOverview && (
+        <div className="modal-backdrop overview-backdrop" role="presentation" onMouseDown={() => setShowOverview(false)}>
+          <aside className="trip-overview-sheet" role="dialog" aria-modal="true" aria-labelledby="overview-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header className="overview-sheet-heading">
+              <div><p className="eyebrow">At a glance</p><h2 id="overview-title">Trip Overview</h2></div>
+              <button className="overview-close" aria-label="Close trip overview" onClick={() => setShowOverview(false)}>×</button>
+            </header>
+            <div className="overview-widget-grid">
+              <section className="trip-widget countdown-widget">
+                <p className="eyebrow">Countdown</p>
+                <strong className={tripCountdown.kind === "today" ? "countdown-today" : ""}>{tripCountdown.value}</strong>
+                <span>{tripCountdown.label}</span>
+              </section>
+              <section className="trip-widget weather-widget">
+                <div className="widget-heading"><p className="eyebrow">Vienna weather</p><span aria-hidden="true">{viennaWeather?.icon || "🌦️"}</span></div>
+                <strong>{viennaWeather?.heading || "Generally in November"}</strong>
+                <p>{viennaWeather?.detail || "Cool and changeable, usually around 4–10°C. Live forecasts will appear here automatically when the trip enters the 16-day forecast window."}</p>
+                <a href="https://open-meteo.com/en/docs" target="_blank" rel="noopener noreferrer">{viennaWeather ? "Live forecast · Open-Meteo ↗" : "Weather source · Open-Meteo ↗"}</a>
+              </section>
+              <section className="trip-widget spending-widget">
+                <p className="eyebrow">Trip spending</p>
+                <strong>{expenseMoney(tripSpendAud, account.homeCurrency)}</strong>
+                <span>{expenseRows.length} recorded expense{expenseRows.length === 1 ? "" : "s"}</span>
+                <button onClick={() => { setShowOverview(false); setActiveTab("expenses"); }}>View expenses →</button>
+              </section>
+              <section className="trip-widget travellers-widget">
+                <p className="eyebrow">Travellers</p>
+                <div className="traveller-bubbles" aria-label={`${members.length} family travellers`}>
+                  {members.slice(0, 6).map((member) => <span key={member.id} title={member.name}>{member.name.slice(0, 1).toUpperCase()}</span>)}
+                </div>
+                <strong>{members.length} traveller{members.length === 1 ? "" : "s"}</strong>
+              </section>
+            </div>
+          </aside>
+        </div>
+      )}
+
       {showSettings && isAdmin && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowSettings(false)}>
-          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" onMouseDown={(event) => event.stopPropagation()}>
-            <p className="eyebrow">Trip settings</p>
-            <h2 id="settings-title">Make this trip ours</h2>
+          <section className="modal trip-settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="trip-settings-heading"><div><p className="eyebrow">Admin controls</p><h2 id="settings-title">Trip Settings</h2></div><button className="overview-close" aria-label="Close trip settings" onClick={() => setShowSettings(false)}>×</button></div>
             <section className="cover-settings" aria-labelledby="cover-settings-title">
-              <div className={`cover-settings-preview ${tripCoverUrl ? "has-image" : ""}`} style={tripCoverUrl ? { backgroundImage: `url(${tripCoverUrl})` } : undefined}>
-                {!tripCoverUrl && <span aria-hidden="true">🏛️</span>}
+              <div className={`cover-settings-preview ${tripCoverDisplayUrl ? "has-image" : ""}`} style={tripCoverDisplayUrl ? { backgroundImage: `url(${tripCoverDisplayUrl})`, backgroundPosition: `${tripCoverPositionX}% ${tripCoverPositionY}%` } : undefined}>
+                {!tripCoverDisplayUrl && <span aria-hidden="true">🏛️</span>}
               </div>
               <div>
                 <h3 id="cover-settings-title">Trip cover photo</h3>
-                <p>Choose one landscape photo for the shared app header. It is stored in the family Google Drive and appears for everyone.</p>
+                <p>Choose one landscape photo for the shared app header. A lightweight copy is saved with the trip and appears for everyone.</p>
                 <input ref={coverInputRef} className="visually-hidden" type="file" accept="image/*" onChange={handleCoverSelection} />
                 <button className="secondary-button" onClick={() => coverInputRef.current?.click()} disabled={coverUploadState === "uploading"}>
                   {coverUploadState === "uploading" ? "Uploading cover…" : tripCoverPhotoId ? "Replace cover photo" : "Upload cover photo"}
                 </button>
+                {tripCoverDisplayUrl && <div className="cover-focal-controls focal-controls"><label><span>Move left or right</span><input type="range" min="0" max="100" value={tripCoverPositionX} onChange={(event) => setTripCoverPositionX(Number(event.target.value))} /></label><label><span>Move up or down</span><input type="range" min="0" max="100" value={tripCoverPositionY} onChange={(event) => setTripCoverPositionY(Number(event.target.value))} /></label><button className="text-button" onClick={() => void saveCoverPosition()} disabled={coverUploadState === "uploading"}>Save framing</button></div>}
                 {coverUploadError && <small className="cover-upload-error" role="alert">{coverUploadError}</small>}
               </div>
             </section>
@@ -2870,44 +3079,62 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                 <button className="secondary-button" onClick={addFamilyMember} disabled={!newMemberName.trim()}>Add</button>
               </div>
             )}
-            <p className="settings-note">
-              This device is <strong>{currentMember?.name || "not assigned"}</strong> in admin mode. Everyone can add and edit itinerary items under their own locked profile; only Grace can manage profiles. If two people change the same item before syncing, both versions are kept and the newer copy is labelled with its contributor.
-            </p>
-            <section className="places-usage" aria-labelledby="places-usage-title">
-              <div className="places-usage-heading">
-                <div>
-                  <p className="eyebrow">Monthly safety cap</p>
-                  <h3 id="places-usage-title">Google Places usage</h3>
+            <h3 className="settings-section-title admin-section-title">Trip administrators</h3>
+            <p className="modal-copy admin-copy">Admins can rename the trip, edit day names, manage profiles and promote another signed-in member.</p>
+            <div className="member-list admin-member-list">
+              {tripAccountMembers.map((member) => (
+                <div className="member-row" key={member.userId}>
+                  <span className="member-avatar">{member.displayName.slice(0, 1).toUpperCase()}</span>
+                  <strong>{member.displayName}</strong>
+                  <span className={`member-role ${member.role}`}>{member.role === "admin" ? "Admin" : "Contributor"}</span>
+                  {member.role === "admin" ? <span className="admin-confirmed">Admin</span> : <button className="member-action" onClick={() => void makeTripAdmin(member)} disabled={Boolean(adminUpdateUid)}>{adminUpdateUid === member.userId ? "Updating…" : "Make admin"}</button>}
                 </div>
-                <button className="member-action" onClick={() => void refreshPlacesUsage()}>Refresh</button>
-              </div>
-              {placesUsage ? (
-                <>
-                  {!placesUsage.enabled && <p className="places-setup-note">Places setup is not finished yet. Manual locations and map links still work.</p>}
-                  <div className="usage-row">
-                    <span>Autocomplete searches</span>
-                    <strong>{placesUsage.autocompleteRemaining.toLocaleString()} remaining</strong>
-                    <progress max={placesUsage.safeLimit} value={placesUsage.autocompleteUsed} />
-                    <small>{placesUsage.autocompleteUsed.toLocaleString()} of {placesUsage.safeLimit.toLocaleString()} used</small>
-                  </div>
-                  <div className="usage-row">
-                    <span>Saved-place lookups</span>
-                    <strong>{placesUsage.detailsRemaining.toLocaleString()} remaining</strong>
-                    <progress max={placesUsage.safeLimit} value={placesUsage.detailsUsed} />
-                    <small>{placesUsage.detailsUsed.toLocaleString()} of {placesUsage.safeLimit.toLocaleString()} used</small>
-                  </div>
-                  <p className="usage-footnote">
-                    The app blocks each request type at {placesUsage.safeLimit.toLocaleString()}, below Google&apos;s {placesUsage.googleFreeAllowance.toLocaleString()} monthly free allowance. Resets {placesUsage.resetDate}.
-                  </p>
-                </>
-              ) : (
-                <p className="places-setup-note">Loading Google Places usage…</p>
-              )}
-            </section>
+              ))}
+            </div>
+            {adminUpdateError && <p className="gallery-alert" role="alert">{adminUpdateError}</p>}
             <div className="modal-actions">
               <button className="secondary-button" onClick={() => setShowSettings(false)}>Close</button>
               <button className="primary-button" onClick={connectGoogleDrive} disabled={googleState === "connecting"}>
                 {googleState === "connecting" ? "Refreshing…" : "Refresh shared trip"}
+              </button>
+            </div>
+            <details className="admin-technical-details">
+              <summary>Connection details</summary>
+              <p className="settings-note">
+                This device is <strong>{currentMember?.name || "not assigned"}</strong> in {isAdmin ? "admin" : "contributor"} mode, with its profile locked to this device. If two people change the same item before syncing, both versions are preserved.
+              </p>
+              <section className="places-usage" aria-labelledby="places-usage-title">
+                <div className="places-usage-heading">
+                  <div><p className="eyebrow">Maps &amp; location search</p><h3 id="places-usage-title">Mapbox connected</h3></div>
+                  <span className="place-status visited">Active</span>
+                </div>
+                <p className="places-setup-note">Itinerary, Saved Places and Memory Lane use the same Mapbox maps and search.</p>
+              </section>
+            </details>
+            <div className="modal-danger-zone trip-delete-zone">
+              <div><strong>Delete this trip</strong><small>Removes the trip from every traveller&apos;s app. Export shared photos and videos first.</small></div>
+              <button className="danger-button" onClick={openDeleteTripConfirmation}>Delete trip</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {showDeleteTripConfirm && isAdmin && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => deleteTripState !== "deleting" && setShowDeleteTripConfirm(false)}>
+          <section className="modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-trip-title" onMouseDown={(event) => event.stopPropagation()}>
+            <p className="eyebrow">Permanent action</p>
+            <h2 id="delete-trip-title">Delete trip for everyone?</h2>
+            <p className="modal-copy">This removes <strong>{tripName}</strong>, its itinerary, expenses, saved places, invitations and membership from every traveller&apos;s app. This cannot be undone.</p>
+            <p className="delete-trip-memory-note"><strong>Your original photos and videos remain in Apple Photos.</strong> Export anything you need from the shared gallery before deleting the trip.</p>
+            <label>
+              Type <strong>{tripName}</strong> to confirm
+              <input value={deleteTripConfirmation} onChange={(event) => setDeleteTripConfirmation(event.target.value)} autoComplete="off" disabled={deleteTripState === "deleting"} />
+            </label>
+            {deleteTripError && <p className="gallery-alert" role="alert">{deleteTripError}</p>}
+            <div className="modal-actions">
+              <button className="secondary-button" onClick={() => setShowDeleteTripConfirm(false)} disabled={deleteTripState === "deleting"}>Cancel</button>
+              <button className="danger-button solid" onClick={() => void deleteTripForEveryone()} disabled={deleteTripConfirmation.trim() !== tripName.trim() || deleteTripState === "deleting"}>
+                {deleteTripState === "deleting" ? "Deleting trip…" : "Delete trip for everyone"}
               </button>
             </div>
           </section>
@@ -2991,7 +3218,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
       {showEditDay && selectedDay && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowEditDay(false)}>
-          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="edit-day-title" onMouseDown={(event) => event.stopPropagation()}>
+          <section className="modal edit-day-modal" role="dialog" aria-modal="true" aria-labelledby="edit-day-title" onMouseDown={(event) => event.stopPropagation()}>
             <p className="eyebrow">Day {selectedDayNumber}</p>
             <h2 id="edit-day-title">Edit day details</h2>
             <label>
@@ -3033,8 +3260,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
             <h2 id="delete-day-title">Delete Day {selectedDayNumber}?</h2>
             <p className="modal-copy">
               {queuedPhotos.some((photo) => selectedDay.stops.some((stop) => stop.id === photo.stopId))
-                ? "This day has photos on this device. Their Apple Photos and Drive copies will remain, but they will no longer be assigned in this itinerary."
-                : "This removes the day from the shared itinerary. Photos already in Apple Photos or Drive will not be deleted."}
+                ? "This day has memories on this device. Their Apple Photos and shared gallery copies will remain, but they will no longer be assigned in this itinerary."
+                : "This removes the day from the shared itinerary. Originals in Apple Photos and shared gallery copies will not be deleted."}
             </p>
             <div className="modal-actions">
               <button className="secondary-button" onClick={() => { setShowDeleteDayConfirm(false); setShowEditDay(true); }}>Keep day</button>

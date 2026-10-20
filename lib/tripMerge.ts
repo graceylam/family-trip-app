@@ -1,4 +1,4 @@
-import type { SharedTripState, TripDay, TripExpense, TripMember, TripStop, TripStopMemory } from "./googleDrive";
+import type { SharedTripState, TripDay, TripDocument, TripExpense, TripMember, TripScrapbookEntry, TripStop, TripStopMemory } from "./googleDrive";
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -45,7 +45,25 @@ function mergeMemory(current?: TripStopMemory, submitted?: TripStopMemory, base?
   const currentTime = Date.parse(current?.updatedAt ?? "") || 0;
   const submittedTime = Date.parse(submitted?.updatedAt ?? "") || 0;
   const latest = submittedTime >= currentTime ? submitted : current;
-  return latest ? clone(latest) : undefined;
+  if (!latest) return undefined;
+  const currentEntries = current?.entries ?? [];
+  const submittedEntries = submitted?.entries ?? [];
+  const baseEntries = base?.entries ?? [];
+  const mergedEntries = mergeScrapbookEntries(currentEntries, submittedEntries, baseEntries);
+  return { ...clone(latest), entries: mergedEntries };
+}
+
+function mergeScrapbookEntries(current: TripScrapbookEntry[], submitted: TripScrapbookEntry[], base: TripScrapbookEntry[]): TripScrapbookEntry[] {
+  const result = current.map(clone);
+  const baseItems = byId(base);
+  submitted.forEach((entry) => {
+    const index = result.findIndex((item) => item.id === entry.id);
+    if (index < 0) result.push(clone(entry));
+    else if (json(result[index]) === json(baseItems.get(entry.id)) || json(result[index]) === json(entry)) result[index] = clone(entry);
+    else if ((Date.parse(entry.updatedAt) || 0) >= (Date.parse(result[index].updatedAt) || 0)) result[index] = clone(entry);
+  });
+  const submittedIds = new Set(submitted.map((entry) => entry.id));
+  return result.filter((entry) => submittedIds.has(entry.id) || !baseItems.has(entry.id));
 }
 
 function mergeExpenses(current: TripExpense[], submitted: TripExpense[], base: TripExpense[], contributorName: string): TripExpense[] {
@@ -76,6 +94,18 @@ function mergeExpenses(current: TripExpense[], submitted: TripExpense[], base: T
     return json(current.find((expense) => expense.id === baseExpense.id)) === json(baseExpense);
   }).map((expense) => expense.id));
   return result.filter((expense) => !removable.has(expense.id));
+}
+
+function mergeDocuments(current: TripDocument[], submitted: TripDocument[], base: TripDocument[]): TripDocument[] {
+  const result = current.map(clone);
+  const baseItems = byId(base);
+  submitted.forEach((document) => {
+    const index = result.findIndex((item) => item.id === document.id);
+    if (index < 0) result.push(clone(document));
+    else if (json(result[index]) === json(baseItems.get(document.id)) || json(result[index]) === json(document)) result[index] = clone(document);
+  });
+  const submittedIds = new Set(submitted.map((document) => document.id));
+  return result.filter((document) => submittedIds.has(document.id) || !baseItems.has(document.id));
 }
 
 function valuesConflict<T>(current: T, submitted: T, base: T): boolean {
@@ -138,6 +168,7 @@ function mergeStops(current: TripStop[], submitted: TripStop[], base: TripStop[]
       longitude: mergedLocation.longitude,
       googleMapsUrl: mergedLocation.googleMapsUrl,
       expenses: mergeExpenses(currentStop.expenses ?? [], submittedStop.expenses ?? [], baseStop.expenses ?? [], contributorName),
+      documents: mergeDocuments(currentStop.documents ?? [], submittedStop.documents ?? [], baseStop.documents ?? []),
       memory: mergeMemory(currentStop.memory, submittedStop.memory, baseStop.memory),
     };
   });

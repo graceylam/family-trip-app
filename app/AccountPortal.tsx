@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import {
   attachLegacyViennaTrip,
@@ -17,6 +17,7 @@ import {
   rotateTripInvite,
   signInToFamilyAccount,
   signOutOfFamilyAccount,
+  updateFamilyProfile,
   type AccountTrip,
   type FamilyAccount,
   type TripInvite,
@@ -43,6 +44,26 @@ function invitationUrl(inviteId: string): string {
   url.hash = "";
   url.searchParams.set("join", inviteId);
   return url.toString();
+}
+
+async function compactImage(file: File, maximumSide = 700): Promise<string> {
+  const image = new Image();
+  const source = URL.createObjectURL(file);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("That photo could not be opened."));
+      image.src = source;
+    });
+    const scale = Math.min(1, maximumSide / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", .78);
+  } finally {
+    URL.revokeObjectURL(source);
+  }
 }
 
 export default function AccountPortal({ renderTrip }: AccountPortalProps) {
@@ -74,7 +95,48 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
   const [invite, setInvite] = useState<TripInvite | null>(null);
   const [inviteQr, setInviteQr] = useState("");
   const [copiedInvite, setCopiedInvite] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [profileCurrency, setProfileCurrency] = useState("AUD");
+  const [profilePhoto, setProfilePhoto] = useState("");
+  const [profileX, setProfileX] = useState(50);
+  const [profileY, setProfileY] = useState(50);
+  const [profileState, setProfileState] = useState<"idle" | "saving">("idle");
+  const [profileError, setProfileError] = useState("");
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
   const inviteLink = useMemo(() => invite?.id && typeof window !== "undefined" ? invitationUrl(invite.id) : "", [invite]);
+
+  function openProfile() {
+    if (!account) return;
+    setProfileName(account.displayName);
+    setProfileCurrency(account.homeCurrency || "AUD");
+    setProfilePhoto(account.profilePhotoDataUrl || "");
+    setProfileX(account.profilePhotoX ?? 50);
+    setProfileY(account.profilePhotoY ?? 50);
+    setProfileError("");
+    setConfirmSignOut(false);
+    setShowProfile(true);
+  }
+
+  async function chooseProfilePhoto(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setProfileError("Choose a photo from your library."); return; }
+    try { setProfilePhoto(await compactImage(file)); setProfileX(50); setProfileY(50); }
+    catch (error) { setProfileError(firebaseErrorMessage(error)); }
+  }
+
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!account) return;
+    setProfileState("saving"); setProfileError("");
+    try {
+      await updateFamilyProfile(account, { displayName: profileName, homeCurrency: profileCurrency, profilePhotoDataUrl: profilePhoto || undefined, profilePhotoX: profileX, profilePhotoY: profileY });
+      setShowProfile(false);
+    } catch (error) { setProfileError(firebaseErrorMessage(error)); }
+    finally { setProfileState("idle"); }
+  }
 
   useEffect(() => {
     let observed = false;
@@ -303,7 +365,9 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
     <main className="account-shell trips-shell">
       <header className="trips-header">
         <div><p className="eyebrow">Welcome back, {account.displayName}</p><h1>My Adventures</h1><p>Where are we going—and which story are we opening again?</p></div>
-        <div className="account-menu"><span>{account.displayName.slice(0, 1).toUpperCase()}</span><button onClick={() => void signOutOfFamilyAccount()}>Sign out</button></div>
+        <button className="profile-button" onClick={openProfile} aria-label="Open your profile settings">
+          {account.profilePhotoDataUrl ? <span style={{ backgroundImage: `url(${account.profilePhotoDataUrl})`, backgroundPosition: `${account.profilePhotoX}% ${account.profilePhotoY}%` }} /> : <span>{account.displayName.slice(0, 1).toUpperCase()}</span>}
+        </button>
       </header>
 
       <section className="trip-dashboard-actions" aria-label="Trip actions">
@@ -329,7 +393,7 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
           <div className="trip-card-grid">
             {trips.map((trip) => (
               <article className="account-trip-card" key={trip.id}>
-                <button className="trip-card-open" onClick={() => setActiveTrip(trip)}>
+                <button className={`trip-card-open ${trip.coverThumbnailDataUrl ? "has-cover" : ""}`} onClick={() => setActiveTrip(trip)} style={trip.coverThumbnailDataUrl ? { backgroundImage: `linear-gradient(180deg, rgba(17,39,49,.08), rgba(17,39,49,.78)), url(${trip.coverThumbnailDataUrl})`, backgroundPosition: `center, ${trip.coverPositionX ?? 50}% ${trip.coverPositionY ?? 50}%` } : undefined}>
                   <span className="trip-role">{trip.role === "admin" ? "Admin" : "Contributor"}</span>
                   <h3>{trip.name}</h3>
                   <p>{dateLabel(trip.startDate)}{trip.endDate && trip.endDate !== trip.startDate ? ` — ${dateLabel(trip.endDate)}` : ""}</p>
@@ -341,6 +405,26 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
           </div>
         )}
       </section>
+
+      {showProfile && (
+        <div className="modal-backdrop profile-backdrop" role="presentation" onMouseDown={() => setShowProfile(false)}>
+          <section className="modal profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-title" onMouseDown={(event) => event.stopPropagation()}>
+            <p className="eyebrow">Your travel profile</p><h2 id="profile-title">Make it feel like you</h2>
+            <form className="account-form" onSubmit={saveProfile}>
+              <div className="profile-photo-editor">
+                <div className="profile-photo-preview" style={profilePhoto ? { backgroundImage: `url(${profilePhoto})`, backgroundPosition: `${profileX}% ${profileY}%` } : undefined}>{!profilePhoto && profileName.slice(0, 1).toUpperCase()}</div>
+                <div><label className="secondary-button profile-photo-picker">Choose profile photo<input className="visually-hidden" type="file" accept="image/*" onChange={chooseProfilePhoto} /></label><small>Use the sliders to choose what stays in the circle.</small></div>
+              </div>
+              {profilePhoto && <div className="focal-controls"><label><span>Move photo left or right</span><input type="range" min="0" max="100" value={profileX} onChange={(event) => setProfileX(Number(event.target.value))} /></label><label><span>Move photo up or down</span><input type="range" min="0" max="100" value={profileY} onChange={(event) => setProfileY(Number(event.target.value))} /></label></div>}
+              <label><span>Your name</span><input value={profileName} onChange={(event) => setProfileName(event.target.value)} required /></label>
+              <label><span>Default home currency</span><select value={profileCurrency} onChange={(event) => setProfileCurrency(event.target.value)}>{["AUD","EUR","USD","GBP","NZD","CAD","JPY","CHF","SGD","HKD"].map((currency) => <option key={currency}>{currency}</option>)}</select></label>
+              {profileError && <p className="account-alert" role="alert">{profileError}</p>}
+              <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowProfile(false)}>Cancel</button><button className="primary-button" disabled={profileState === "saving"}>{profileState === "saving" ? "Saving…" : "Save profile"}</button></div>
+            </form>
+            <div className="profile-signout"><p><strong>Finished for now?</strong><small>Your trips stay safe and ready for next time.</small></p>{confirmSignOut ? <><button className="text-button danger-text" onClick={() => void signOutOfFamilyAccount()}>Confirm sign out</button><button className="text-button" onClick={() => setConfirmSignOut(false)}>Stay signed in</button></> : <button className="text-button" onClick={() => setConfirmSignOut(true)}>Sign out</button>}</div>
+          </section>
+        </div>
+      )}
 
       {showCreateTrip && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowCreateTrip(false)}>

@@ -15,6 +15,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   initializeFirestore,
   onSnapshot,
   persistentLocalCache,
@@ -32,10 +33,11 @@ type PublicFirebaseConfig = {
   authDomain: string;
   projectId: string;
   appId: string;
+  storageBucket: string;
 };
 
 type FirebaseEnvironment = Partial<Record<
-  "VITE_FIREBASE_API_KEY" | "VITE_FIREBASE_AUTH_DOMAIN" | "VITE_FIREBASE_PROJECT_ID" | "VITE_FIREBASE_APP_ID",
+  "VITE_FIREBASE_API_KEY" | "VITE_FIREBASE_AUTH_DOMAIN" | "VITE_FIREBASE_PROJECT_ID" | "VITE_FIREBASE_APP_ID" | "VITE_FIREBASE_STORAGE_BUCKET",
   string
 >>;
 
@@ -49,6 +51,7 @@ const firebaseConfig: PublicFirebaseConfig = {
   authDomain: environment.VITE_FIREBASE_AUTH_DOMAIN?.trim() || "family-trip-app-4d00e.firebaseapp.com",
   projectId: environment.VITE_FIREBASE_PROJECT_ID?.trim() || "family-trip-app-4d00e",
   appId: environment.VITE_FIREBASE_APP_ID?.trim() || "1:920791463665:web:723cd70585dd8b31afdb50",
+  storageBucket: environment.VITE_FIREBASE_STORAGE_BUCKET?.trim() || "family-trip-app-4d00e.firebasestorage.app",
 };
 
 export const firebaseConfigured = Object.values(firebaseConfig).every(Boolean);
@@ -76,13 +79,31 @@ export function getFamilyFirestore(): Firestore {
   return services().db;
 }
 
+export async function getFamilyIdToken(forceRefresh = false): Promise<string> {
+  const user = services().auth.currentUser;
+  if (!user) throw new Error("Please sign in before sharing memories.");
+  return user.getIdToken(forceRefresh);
+}
+
 export type FamilyAccount = {
   uid: string;
   email: string;
   displayName: string;
+  homeCurrency: string;
+  profilePhotoDataUrl?: string;
+  profilePhotoX: number;
+  profilePhotoY: number;
 };
 
 export type TripRole = "admin" | "contributor";
+
+export type TripAccountMember = {
+  userId: string;
+  displayName: string;
+  email: string;
+  role: TripRole;
+  legacyMemberId?: string;
+};
 
 export type AccountTrip = {
   id: string;
@@ -94,6 +115,9 @@ export type AccountTrip = {
   endDate: string;
   memberName: string;
   legacyDriveTripId?: string;
+  coverThumbnailDataUrl?: string;
+  coverPositionX?: number;
+  coverPositionY?: number;
 };
 
 export type CreatedTrip = {
@@ -113,11 +137,15 @@ export type TripInvite = {
 
 type TripReferenceDocument = Omit<AccountTrip, "id"> & { updatedAt?: unknown };
 
-function accountFromUser(user: User): FamilyAccount {
+function accountFromUser(user: User, profile: Record<string, unknown> = {}): FamilyAccount {
   return {
     uid: user.uid,
     email: user.email ?? "",
-    displayName: user.displayName?.trim() || user.email?.split("@")[0] || "Traveller",
+    displayName: String(profile.displayName || user.displayName || user.email?.split("@")[0] || "Traveller").trim(),
+    homeCurrency: String(profile.homeCurrency || "AUD"),
+    ...(profile.profilePhotoDataUrl ? { profilePhotoDataUrl: String(profile.profilePhotoDataUrl) } : {}),
+    profilePhotoX: Number(profile.profilePhotoX ?? 50),
+    profilePhotoY: Number(profile.profilePhotoY ?? 50),
   };
 }
 
@@ -127,7 +155,19 @@ export function observeFamilyAccount(listener: (account: FamilyAccount | null) =
     return () => undefined;
   }
   const { auth } = services();
-  return onAuthStateChanged(auth, (user) => listener(user ? accountFromUser(user) : null));
+  let stopProfile: Unsubscribe | null = null;
+  const stopAuth = onAuthStateChanged(auth, (user) => {
+    stopProfile?.();
+    stopProfile = null;
+    if (!user) {
+      listener(null);
+      return;
+    }
+    stopProfile = onSnapshot(doc(services().db, "users", user.uid), (snapshot) => {
+      listener(accountFromUser(user, snapshot.exists() ? snapshot.data() : {}));
+    }, () => listener(accountFromUser(user)));
+  });
+  return () => { stopProfile?.(); stopAuth(); };
 }
 
 export async function createFamilyAccount(displayName: string, email: string, password: string): Promise<FamilyAccount> {
@@ -138,16 +178,56 @@ export async function createFamilyAccount(displayName: string, email: string, pa
   await setDoc(doc(db, "users", credential.user.uid), {
     displayName: cleanName,
     email: credential.user.email ?? email.trim(),
+    homeCurrency: "AUD",
+    profilePhotoX: 50,
+    profilePhotoY: 50,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   }, { merge: true });
-  return accountFromUser(credential.user);
+  return accountFromUser(credential.user, { displayName: cleanName, homeCurrency: "AUD" });
 }
 
 export async function signInToFamilyAccount(email: string, password: string): Promise<FamilyAccount> {
   const { auth } = services();
   const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
   return accountFromUser(credential.user);
+}
+
+export async function updateFamilyProfile(
+  account: FamilyAccount,
+  updates: Pick<FamilyAccount, "displayName" | "homeCurrency" | "profilePhotoX" | "profilePhotoY"> & { profilePhotoDataUrl?: string },
+): Promise<void> {
+  const { auth, db } = services();
+  const cleanName = updates.displayName.trim();
+  if (!cleanName) throw new Error("Enter the name you would like your family to see.");
+  if (auth.currentUser) await updateProfile(auth.currentUser, { displayName: cleanName });
+  await setDoc(doc(db, "users", account.uid), {
+    ...updates,
+    displayName: cleanName,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+
+  const references = await getDocs(collection(db, "users", account.uid, "trips"));
+  const batch = writeBatch(db);
+  references.docs.forEach((reference) => {
+    batch.set(reference.ref, { memberName: cleanName, updatedAt: serverTimestamp() }, { merge: true });
+    batch.set(doc(db, "trips", reference.id, "members", account.uid), { displayName: cleanName }, { merge: true });
+  });
+  if (!references.empty) await batch.commit();
+}
+
+export async function updateTripCoverPresentation(
+  account: FamilyAccount,
+  trip: AccountTrip,
+  cover: { coverThumbnailDataUrl?: string; coverPositionX: number; coverPositionY: number },
+): Promise<void> {
+  const { db } = services();
+  if (trip.role !== "admin") throw new Error("Only the trip admin can change the cover photo.");
+  const values = { ...cover, updatedAt: serverTimestamp() };
+  const batch = writeBatch(db);
+  batch.set(doc(db, "trips", trip.id), values, { merge: true });
+  batch.set(doc(db, "users", account.uid, "trips", trip.id), values, { merge: true });
+  await batch.commit();
 }
 
 export async function signOutOfFamilyAccount(): Promise<void> {
@@ -168,14 +248,91 @@ export async function resetFamilyPassword(email: string): Promise<void> {
 
 export function observeAccountTrips(account: FamilyAccount, listener: (trips: AccountTrip[]) => void): Unsubscribe {
   const { db } = services();
+  let generation = 0;
   return onSnapshot(collection(db, "users", account.uid, "trips"), (snapshot) => {
-    const trips = snapshot.docs.map((tripDocument) => ({
+    const currentGeneration = ++generation;
+    const references = snapshot.docs.map((tripDocument) => ({
       id: tripDocument.id,
       ...(tripDocument.data() as TripReferenceDocument),
     }));
-    trips.sort((left, right) => left.startDate.localeCompare(right.startDate) || left.name.localeCompare(right.name));
-    listener(trips);
+    void Promise.all(references.map(async (trip) => {
+      try {
+        const shared = await getDoc(doc(db, "trips", trip.id));
+        const data = shared.exists() ? shared.data() : {};
+        return {
+          ...trip,
+          ...(data.coverThumbnailDataUrl ? { coverThumbnailDataUrl: String(data.coverThumbnailDataUrl) } : {}),
+          coverPositionX: Number(data.coverPositionX ?? trip.coverPositionX ?? 50),
+          coverPositionY: Number(data.coverPositionY ?? trip.coverPositionY ?? 50),
+        };
+      } catch { return trip; }
+    })).then((trips) => {
+      if (currentGeneration !== generation) return;
+      trips.sort((left, right) => left.startDate.localeCompare(right.startDate) || left.name.localeCompare(right.name));
+      listener(trips);
+    });
   });
+}
+
+export function observeTripAccountMembers(tripId: string, listener: (members: TripAccountMember[]) => void): Unsubscribe {
+  const { db } = services();
+  return onSnapshot(collection(db, "trips", tripId, "members"), (snapshot) => {
+    const members = snapshot.docs.map((memberDocument) => {
+      const data = memberDocument.data();
+      return {
+        userId: String(data.userId || memberDocument.id),
+        displayName: String(data.displayName || "Traveller"),
+        email: String(data.email || ""),
+        role: data.role === "admin" ? "admin" : "contributor",
+        ...(data.legacyMemberId ? { legacyMemberId: String(data.legacyMemberId) } : {}),
+      } satisfies TripAccountMember;
+    });
+    members.sort((left, right) => left.displayName.localeCompare(right.displayName));
+    listener(members);
+  });
+}
+
+export async function promoteTripMemberToAdmin(
+  account: FamilyAccount,
+  trip: AccountTrip,
+  member: TripAccountMember,
+): Promise<void> {
+  const { db } = services();
+  if (trip.role !== "admin") throw new Error("Only an existing trip admin can add another admin.");
+  if (member.role === "admin") return;
+  const batch = writeBatch(db);
+  batch.set(doc(db, "trips", trip.id, "members", member.userId), { role: "admin", promotedByUid: account.uid, updatedAt: serverTimestamp() }, { merge: true });
+  batch.set(doc(db, "users", member.userId, "trips", trip.id), { role: "admin", updatedAt: serverTimestamp() }, { merge: true });
+  await batch.commit();
+}
+
+export async function deleteAccountTrip(account: FamilyAccount, trip: AccountTrip): Promise<void> {
+  const { db } = services();
+  if (trip.role !== "admin") throw new Error("Only a trip admin can delete this trip.");
+
+  const tripReference = doc(db, "trips", trip.id);
+  const [tripSnapshot, memberSnapshot] = await Promise.all([
+    getDoc(tripReference),
+    getDocs(collection(db, "trips", trip.id, "members")),
+  ]);
+  if (!tripSnapshot.exists()) return;
+  if (memberSnapshot.docs.length * 2 + 5 > 500) {
+    throw new Error("This trip has too many members to delete safely in one step. Please contact support.");
+  }
+
+  const activeInviteId = String(tripSnapshot.data().activeInviteId || "");
+  const batch = writeBatch(db);
+  memberSnapshot.docs.forEach((memberDocument) => {
+    const memberUid = String(memberDocument.data().userId || memberDocument.id);
+    batch.delete(doc(db, "users", memberUid, "trips", trip.id));
+    batch.delete(memberDocument.ref);
+  });
+  batch.delete(doc(db, "trips", trip.id, "state", "itinerary"));
+  batch.delete(doc(db, "trips", trip.id, "state", "saved-places"));
+  batch.delete(doc(db, "trips", trip.id, "private", "invite"));
+  if (activeInviteId) batch.delete(doc(db, "invites", activeInviteId));
+  batch.delete(tripReference);
+  await batch.commit();
 }
 
 function normalizeGroupName(value: string): string {

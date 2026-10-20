@@ -1,0 +1,21 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() { return request.auth != null; }
+    function tripMember(tripId) {
+      return signedIn() && firestore.exists(/databases/(default)/documents/trips/$(tripId)/members/$(request.auth.uid));
+    }
+    function tripAdmin(tripId) {
+      return tripMember(tripId) &&
+        firestore.get(/databases/(default)/documents/trips/$(tripId)/members/$(request.auth.uid)).data.role == "admin";
+    }
+
+    match /trips/{tripId}/{allPaths=**} {
+      allow read: if tripMember(tripId);
+      allow create: if tripMember(tripId) && request.resource.metadata.memberId == request.auth.uid;
+      allow update: if false;
+      allow delete: if tripAdmin(tripId) || (tripMember(tripId) && resource.metadata.memberId == request.auth.uid);
+    }
+  }
+}

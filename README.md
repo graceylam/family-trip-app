@@ -1,6 +1,6 @@
 # Family Trip
 
-An installable, mobile-first family itinerary and photo-upload PWA. It works offline, keeps the original photographs in Apple Photos, queues temporary upload copies in IndexedDB, and shares the itinerary and selected photographs through a dedicated Google Drive account.
+An installable, mobile-first family itinerary and memory app. It works offline, keeps the original photographs in Apple Photos, queues temporary upload copies in IndexedDB, and shares trip data through Firebase with private photo and video objects in Cloudflare R2.
 
 ## Run locally
 
@@ -26,7 +26,11 @@ node --test tests/*.test.mjs
 - Take photographs with the normal iPhone Camera app first.
 - Apple Photos remains the permanent original.
 - Browser storage contains temporary upload copies only.
-- Uploaded copies go to Google Drive through the separately deployed family gateway.
-- A requested deletion remains queued until Google Drive confirms that its copy was removed.
+- Uploaded copies go to the private `family-trip-media` Cloudflare R2 bucket through an authenticated Worker.
+- A requested deletion remains visible and retryable until R2 confirms that its copy was removed.
 
-The Google Apps Script gateway configuration is maintained privately and is intentionally omitted from the public GitHub mirror.
+Firebase continues to provide sign-in, membership and real-time trip metadata. Google Drive is no longer used by the current media flow; its previous implementation remains recoverable from Git history.
+
+## Private media service
+
+The Worker source and non-secret configuration live in `r2-worker/`. Upload and delete operations require a valid Firebase ID token and an authorised trip membership. The R2 bucket remains private; viewing uses unguessable per-media access-key URLs. The service also enforces a 100 GB bucket ceiling as an additional cost guard.

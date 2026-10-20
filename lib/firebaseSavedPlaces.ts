@@ -1,7 +1,8 @@
 import { doc, onSnapshot, runTransaction, type Unsubscribe } from "firebase/firestore";
 import { getFamilyFirestore, type FamilyAccount } from "./firebaseAccounts";
 
-export type SavedPlaceVote = "love" | "maybe";
+export type SavedPlaceVote = "love" | "open" | "not_for_me" | "maybe";
+export type SavedPlaceStatus = "dreaming" | "shortlisted" | "scheduled" | "visited";
 
 export type SavedPlace = {
   id: string;
@@ -9,6 +10,12 @@ export type SavedPlace = {
   location: string;
   category: string;
   note: string;
+  sourceUrl?: string;
+  placeId?: string;
+  latitude?: number;
+  longitude?: number;
+  googleMapsUrl?: string;
+  status: SavedPlaceStatus;
   createdByUid: string;
   createdByName: string;
   createdAt: string;
@@ -35,6 +42,14 @@ function cleanPlace(value: Partial<SavedPlace>): SavedPlace {
     location: String(value.location || ""),
     category: String(value.category || "Other"),
     note: String(value.note || ""),
+    ...(value.sourceUrl ? { sourceUrl: String(value.sourceUrl) } : {}),
+    ...(value.placeId ? { placeId: String(value.placeId) } : {}),
+    ...(Number.isFinite(value.latitude) ? { latitude: Number(value.latitude) } : {}),
+    ...(Number.isFinite(value.longitude) ? { longitude: Number(value.longitude) } : {}),
+    ...(value.googleMapsUrl ? { googleMapsUrl: String(value.googleMapsUrl) } : {}),
+    status: (["dreaming", "shortlisted", "scheduled", "visited"] as SavedPlaceStatus[]).includes(value.status as SavedPlaceStatus)
+      ? value.status as SavedPlaceStatus
+      : "dreaming",
     createdByUid: String(value.createdByUid || ""),
     createdByName: String(value.createdByName || "Family member"),
     createdAt: String(value.createdAt || new Date().toISOString()),

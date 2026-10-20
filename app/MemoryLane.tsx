@@ -1,13 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   PlaceSuggestion,
   SharedPhoto,
+  TripScrapbookEntry,
   TripDay,
   TripMember,
   TripStop,
 } from "../lib/googleDrive";
+import { createFamilyMap } from "../lib/mapbox";
 
 type MemoryLaneProps = {
   tripName: string;
@@ -24,6 +26,9 @@ type MemoryLaneProps = {
   placeSearchError: string | null;
   onRefreshPhotos: () => void;
   onSaveMemory: (dayId: string, stopId: string, comment: string) => void;
+  onAddScrapbookEntry: (dayId: string, stopId: string, entry: Omit<TripScrapbookEntry, "id" | "memberId" | "memberName" | "createdAt" | "updatedAt">) => void;
+  onDeleteScrapbookEntry: (dayId: string, stopId: string, entryId: string) => void;
+  onUpdateMapPhotos: (dayId: string, stopId: string, photoIds: string[]) => void;
   onUpdateDayStory: (dayId: string, changes: Partial<Pick<TripDay, "storyTitle" | "coverPhotoId">>) => void;
   onFocusLocation: (dayId: string, stopId: string) => void;
   onLocationChange: (dayId: string, stopId: string, value: string) => void;
@@ -31,69 +36,14 @@ type MemoryLaneProps = {
   onChoosePlace: (suggestion: PlaceSuggestion) => void;
 };
 
-type LeafletMap = {
-  remove: () => void;
-  fitBounds: (bounds: [number, number][], options?: Record<string, unknown>) => void;
-  invalidateSize: () => void;
-};
-type LeafletLayer = {
-  addTo: (map: LeafletMap) => LeafletLayer;
-  bindPopup: (content: string) => LeafletLayer;
-  on: (event: string, handler: () => void) => LeafletLayer;
-};
-type LeafletApi = {
-  map: (element: HTMLElement) => LeafletMap & { setView: (center: [number, number], zoom: number) => LeafletMap };
-  tileLayer: (url: string, options: Record<string, unknown>) => LeafletLayer;
-  marker: (position: [number, number], options: Record<string, unknown>) => LeafletLayer;
-  polyline: (positions: [number, number][], options: Record<string, unknown>) => LeafletLayer;
-  divIcon: (options: Record<string, unknown>) => unknown;
-};
-
 type HighlightOrientation = "portrait" | "landscape";
 type HighlightStep = "scope" | "photos" | "arrange" | "preview" | "rendering" | "done";
+type HighlightTheme = "postcard" | "adventure" | "polaroid" | "cinematic";
 
-let memoryLeafletLoader: Promise<LeafletApi> | null = null;
-
-function loadLeaflet(): Promise<LeafletApi> {
-  if (memoryLeafletLoader) return memoryLeafletLoader;
-  memoryLeafletLoader = new Promise((resolve, reject) => {
-    const leafletWindow = window as Window & { L?: LeafletApi };
-    if (leafletWindow.L) {
-      resolve(leafletWindow.L);
-      return;
-    }
-    if (!document.querySelector('link[data-family-leaflet="true"]')) {
-      const stylesheet = document.createElement("link");
-      stylesheet.rel = "stylesheet";
-      stylesheet.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-      stylesheet.dataset.familyLeaflet = "true";
-      document.head.appendChild(stylesheet);
-    }
-    const existingScript = document.querySelector<HTMLScriptElement>('script[data-family-leaflet="true"]');
-    const script = existingScript ?? document.createElement("script");
-    const finish = () => leafletWindow.L
-      ? resolve(leafletWindow.L)
-      : reject(new Error("The map could not be opened."));
-    script.addEventListener("load", finish, { once: true });
-    script.addEventListener("error", () => reject(new Error("The map could not be downloaded.")), { once: true });
-    if (!existingScript) {
-      script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-      script.dataset.familyLeaflet = "true";
-      document.head.appendChild(script);
-    }
-  });
-  return memoryLeafletLoader;
-}
-
-function escapeMapText(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;",
-  })[character] ?? character);
-}
+const scrapbookEmojis = ["✨", "❤️", "😂", "🥹", "😍", "🌟", "🍜", "🏛️", "🚂", "🌅", "🎉", "✈️"];
+const scrapbookStickers = ["none", "ticket", "postmark", "tape", "heart", "sparkles"] as const;
+const scrapbookFrames: Array<NonNullable<TripScrapbookEntry["frame"]>> = ["polaroid", "postcard", "clean"];
+const scrapbookFilters: Array<NonNullable<TripScrapbookEntry["filter"]>> = ["none", "warm", "soft", "mono"];
 
 function memoryDate(value: string): string {
   const date = new Date(`${value}T12:00:00`);
@@ -125,11 +75,13 @@ function distanceInKm(a: TripStop, b: TripStop): number {
 function MemoryMap({
   day,
   photos,
+  photoUrls,
   expanded,
   onPin,
 }: {
   day: TripDay;
   photos: SharedPhoto[];
+  photoUrls: Record<string, string>;
   expanded?: boolean;
   onPin: (stopId: string) => void;
 }) {
@@ -139,58 +91,39 @@ function MemoryMap({
 
   useEffect(() => {
     let disposed = false;
-    let map: LeafletMap | null = null;
-    void loadLeaflet()
-      .then((leaflet) => {
-        if (disposed || !mapElementRef.current) return;
-        map = leaflet.map(mapElementRef.current).setView([48.2082, 16.3738], 12);
-        leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-          maxZoom: 19,
-        }).addTo(map);
-
-        const bounds: [number, number][] = [];
-        day.stops.forEach((stop, index) => {
-          if (!Number.isFinite(stop.latitude) || !Number.isFinite(stop.longitude)) return;
-          const position: [number, number] = [stop.latitude!, stop.longitude!];
-          const photoCount = stopPhotos(photos, day.id, stop.id).length;
-          bounds.push(position);
-          const icon = leaflet.divIcon({
-            className: "memory-map-marker-wrap",
-            html: `<span class="memory-map-marker"><b>${index + 1}</b>${photoCount > 0 ? `<small>${photoCount}</small>` : ""}</span>`,
-            iconSize: [42, 48],
-            iconAnchor: [21, 48],
-          });
-          leaflet.marker(position, { icon })
-            .addTo(map!)
-            .bindPopup(`<strong>Stop ${index + 1}: ${escapeMapText(stop.title)}</strong><br>${photoCount} photo${photoCount === 1 ? "" : "s"}`)
-            .on("click", () => onPin(stop.id));
-        });
-        if (bounds.length > 1) {
-          leaflet.polyline(bounds, {
-            color: "#d8795e",
-            weight: 4,
-            opacity: 0.82,
-            dashArray: "8 8",
-          }).addTo(map);
-        }
-        if (bounds.length > 0) map.fitBounds(bounds, { padding: [42, 42], maxZoom: 15 });
-        window.setTimeout(() => map?.invalidateSize(), 50);
-      })
-      .catch((error: unknown) => {
-        if (!disposed) setMapError(error instanceof Error ? error.message : "The map could not be opened.");
-      });
+    let map: ReturnType<typeof createFamilyMap> | null = null;
+    try {
+      if (!mapElementRef.current) return;
+      map = createFamilyMap(mapElementRef.current, locatedStops.map((stop) => {
+        const availablePhotos = stopPhotos(photos, day.id, stop.id);
+        const selectedPhotos = (stop.memory?.mapPhotoIds ?? [])
+          .map((fileId) => availablePhotos.find((photo) => photo.fileId === fileId))
+          .filter((photo): photo is SharedPhoto => Boolean(photo && photoUrls[photo.fileId]));
+        return {
+          id: stop.id,
+          latitude: stop.latitude!,
+          longitude: stop.longitude!,
+          number: day.stops.indexOf(stop) + 1,
+          title: stop.title,
+          subtitle: selectedPhotos.length ? `${selectedPhotos.length} highlight${selectedPhotos.length === 1 ? "" : "s"}` : "Choose highlight photos",
+          badge: selectedPhotos.length,
+          photoUrl: selectedPhotos[0] ? photoUrls[selectedPhotos[0].fileId] : undefined,
+        };
+      }), { onPin });
+    } catch (error) {
+      if (!disposed) setMapError(error instanceof Error ? error.message : "The map could not be opened.");
+    }
     return () => {
       disposed = true;
       map?.remove();
     };
-  }, [day, expanded, onPin, photos]);
+  }, [day, expanded, onPin, photos, photoUrls]);
 
   return (
     <div className={`memory-map-wrap ${expanded ? "expanded" : ""}`}>
       <div ref={mapElementRef} className="memory-map-canvas" aria-label={`Memory map for ${day.label}`} />
       {locatedStops.length === 0 && !mapError && (
-        <p className="memory-map-message">Add a Google location to a stop to place its photo pin.</p>
+        <p className="memory-map-message">Add a Mapbox location to a stop to place its photo pin.</p>
       )}
       {mapError && <p className="memory-map-message error" role="alert">{mapError}</p>}
     </div>
@@ -258,6 +191,9 @@ async function createHighlightVideo({
   captions,
   orientation,
   secondsPerPhoto,
+  theme,
+  openingTitle,
+  closingMessage,
   onProgress,
   isCancelled,
 }: {
@@ -268,6 +204,9 @@ async function createHighlightVideo({
   captions: Record<string, string>;
   orientation: HighlightOrientation;
   secondsPerPhoto: number;
+  theme: HighlightTheme;
+  openingTitle: string;
+  closingMessage: string;
   onProgress: (completed: number, total: number, label: string) => void;
   isCancelled: () => boolean;
 }): Promise<{ blob: Blob; extension: "mp4" | "webm" }> {
@@ -316,14 +255,21 @@ async function createHighlightVideo({
     }
   };
 
+  const themeColours: Record<HighlightTheme, [string, string, string]> = {
+    postcard: ["#f6eee1", "#dbeaf0", "#d86f5c"],
+    adventure: ["#174d68", "#2d7da0", "#f6c966"],
+    polaroid: ["#f8f4e9", "#dfd7c7", "#315b70"],
+    cinematic: ["#111d24", "#243642", "#d6b26b"],
+  };
+  const [themeStart, themeEnd, themeAccent] = themeColours[theme];
   const drawTitleCard = (heading: string, subheading: string) => {
     const { width, height } = canvas;
     const gradient = context.createLinearGradient(0, 0, width, height);
-    gradient.addColorStop(0, "#214d3c");
-    gradient.addColorStop(1, "#102c22");
+    gradient.addColorStop(0, themeStart);
+    gradient.addColorStop(1, themeEnd);
     context.fillStyle = gradient;
     context.fillRect(0, 0, width, height);
-    context.fillStyle = "#eabf67";
+    context.fillStyle = themeAccent;
     context.fillRect(width * 0.12, height * 0.25, width * 0.13, 7);
     context.fillStyle = "#fffdf8";
     context.font = `${orientation === "portrait" ? 56 : 54}px Georgia`;
@@ -338,7 +284,7 @@ async function createHighlightVideo({
 
   try {
     await render(2, "Creating the opening card", () => {
-      drawTitleCard(day.label, memoryDate(day.date));
+      drawTitleCard(openingTitle || day.label, memoryDate(day.date));
     });
 
     for (let index = 0; index < selectedPhotos.length; index += 1) {
@@ -352,6 +298,11 @@ async function createHighlightVideo({
         context.fillStyle = "#102c22";
         context.fillRect(0, 0, canvas.width, canvas.height);
         drawCover(context, image, canvas.width, canvas.height, 1.02 + progress * 0.06, progress);
+        if (theme === "polaroid") {
+          context.strokeStyle = "rgba(255,255,255,.94)";
+          context.lineWidth = 22;
+          context.strokeRect(15, 15, canvas.width - 30, canvas.height - 30);
+        }
         const fade = Math.min(1, progress / 0.13, (1 - progress) / 0.13);
         context.globalAlpha = Math.max(0, fade);
         const caption = captions[photo.stopId]?.trim();
@@ -375,7 +326,7 @@ async function createHighlightVideo({
     }
 
     await render(2, "Creating the closing card", () => {
-      drawTitleCard(tripName, "Made together in Memory Lane");
+      drawTitleCard(tripName, closingMessage || "Made together in Memory Lane");
     });
     recorder.stop();
     await stopped;
@@ -409,30 +360,47 @@ export default function MemoryLane({
   placeSearchError,
   onRefreshPhotos,
   onSaveMemory,
+  onAddScrapbookEntry,
+  onDeleteScrapbookEntry,
+  onUpdateMapPhotos,
   onUpdateDayStory,
   onFocusLocation,
   onLocationChange,
   onUseTypedLocation,
   onChoosePlace,
 }: MemoryLaneProps) {
+  const [memoryView, setMemoryView] = useState<"scrapbook" | "map">("scrapbook");
   const [selectedDayId, setSelectedDayId] = useState(days[0]?.id ?? "");
   const [expandedMap, setExpandedMap] = useState(false);
   const [lightboxPhoto, setLightboxPhoto] = useState<SharedPhoto | null>(null);
+  const [mapGalleryStopId, setMapGalleryStopId] = useState("");
+  const [mapPhotoPickerStopId, setMapPhotoPickerStopId] = useState("");
+  const [mapPhotoDraftIds, setMapPhotoDraftIds] = useState<string[]>([]);
   const [editingMemoryStopId, setEditingMemoryStopId] = useState("");
   const [memoryDraft, setMemoryDraft] = useState("");
   const [showCoverPicker, setShowCoverPicker] = useState(false);
   const [showHighlight, setShowHighlight] = useState(false);
+  const [scrapbookStopId, setScrapbookStopId] = useState("");
+  const [scrapbookKind, setScrapbookKind] = useState<"note" | "photo">("note");
+  const [scrapbookText, setScrapbookText] = useState("");
+  const [scrapbookPhotoId, setScrapbookPhotoId] = useState("");
+  const [scrapbookEmoji, setScrapbookEmoji] = useState("✨");
+  const [scrapbookSticker, setScrapbookSticker] = useState<(typeof scrapbookStickers)[number]>("tape");
+  const [scrapbookFrame, setScrapbookFrame] = useState<TripScrapbookEntry["frame"]>("polaroid");
+  const [scrapbookFilter, setScrapbookFilter] = useState<TripScrapbookEntry["filter"]>("warm");
   const [highlightStep, setHighlightStep] = useState<HighlightStep>("scope");
   const [orientation, setOrientation] = useState<HighlightOrientation>("portrait");
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>([]);
   const [captionDrafts, setCaptionDrafts] = useState<Record<string, string>>({});
   const [secondsPerPhoto, setSecondsPerPhoto] = useState(3);
+  const [highlightTheme, setHighlightTheme] = useState<HighlightTheme>("postcard");
+  const [highlightTitle, setHighlightTitle] = useState("");
+  const [highlightClosing, setHighlightClosing] = useState("What a day to remember ✨");
   const [previewIndex, setPreviewIndex] = useState(0);
   const [renderProgress, setRenderProgress] = useState({ completed: 0, total: 1, label: "" });
   const [renderError, setRenderError] = useState("");
   const [videoResult, setVideoResult] = useState<{ url: string; file: File } | null>(null);
   const hasChosenInitialDayRef = useRef(false);
-  const stopCardRefs = useRef(new Map<string, HTMLElement>());
   const renderCancelledRef = useRef(false);
 
   const selectedDay = days.find((day) => day.id === selectedDayId) ?? days[0];
@@ -467,7 +435,7 @@ export default function MemoryLane({
       stops: allStops.length,
       photos: sharedPhotos.length,
       contributors: contributors.size,
-      memories: allStops.filter((stop) => stop.memory?.comment).length,
+      memories: allStops.reduce((total, stop) => total + (stop.memory?.comment ? 1 : 0) + (stop.memory?.entries?.length ?? 0), 0),
       distance,
     };
   }, [days, sharedPhotos]);
@@ -490,6 +458,15 @@ export default function MemoryLane({
         memberName: stop.memory.updatedByMemberName,
         comment: stop.memory.comment,
       });
+      (stop.memory?.entries ?? []).forEach((memory) => entries.push({
+        id: `scrapbook-${memory.id}`,
+        createdAt: memory.createdAt,
+        dayLabel: day.label,
+        stopTitle: stop.title,
+        memberName: memory.memberName,
+        comment: `${memory.emoji ? `${memory.emoji} ` : ""}${memory.text}`.trim(),
+        photo: memory.photoId ? sharedPhotos.find((photo) => photo.fileId === memory.photoId) : undefined,
+      }));
     }));
     sharedPhotos.forEach((photo) => {
       const day = days.find((candidate) => candidate.id === photo.dayId);
@@ -534,14 +511,6 @@ export default function MemoryLane({
     setEditingMemoryStopId("");
   }
 
-  const scrollToStop = useCallback((stopId: string) => {
-    setExpandedMap(false);
-    window.setTimeout(() => {
-      stopCardRefs.current.get(stopId)?.scrollIntoView({ behavior: "smooth", block: "center" });
-      stopCardRefs.current.get(stopId)?.focus({ preventScroll: true });
-    }, expandedMap ? 180 : 0);
-  }, [expandedMap]);
-
   function startEditingMemory(stop: TripStop) {
     setMemoryDraft(stop.memory?.comment ?? "");
     setEditingMemoryStopId(stop.id);
@@ -553,12 +522,59 @@ export default function MemoryLane({
     setEditingMemoryStopId("");
   }
 
+  function openScrapbookComposer(stop: TripStop, photoId = "") {
+    setScrapbookStopId(stop.id);
+    setScrapbookKind(photoId ? "photo" : "note");
+    setScrapbookPhotoId(photoId || stopPhotos(dayPhotos, selectedDay.id, stop.id)[0]?.fileId || "");
+    setScrapbookText("");
+    setScrapbookEmoji("✨");
+    setScrapbookSticker(photoId ? "tape" : "postmark");
+    setScrapbookFrame("polaroid");
+    setScrapbookFilter("warm");
+  }
+
+  function saveScrapbookEntry() {
+    if (!selectedDay || !scrapbookStopId || !currentMember) return;
+    const photoId = scrapbookKind === "photo" ? scrapbookPhotoId : undefined;
+    if (!scrapbookText.trim() && !photoId) return;
+    onAddScrapbookEntry(selectedDay.id, scrapbookStopId, {
+      kind: scrapbookKind,
+      text: scrapbookText.trim(),
+      photoId,
+      emoji: scrapbookEmoji,
+      sticker: scrapbookSticker,
+      frame: scrapbookFrame,
+      filter: scrapbookFilter,
+    });
+    setScrapbookStopId("");
+  }
+
+  function openMapPhotoPicker(stop: TripStop) {
+    setMapPhotoPickerStopId(stop.id);
+    setMapPhotoDraftIds((stop.memory?.mapPhotoIds ?? []).filter((id) => dayPhotos.some((photo) => photo.fileId === id)).slice(0, 4));
+  }
+
+  function toggleMapPhoto(photoId: string) {
+    setMapPhotoDraftIds((current) => current.includes(photoId)
+      ? current.filter((id) => id !== photoId)
+      : current.length < 4 ? [...current, photoId] : current);
+  }
+
+  function saveMapPhotos() {
+    if (!mapPhotoPickerStopId) return;
+    onUpdateMapPhotos(selectedDay.id, mapPhotoPickerStopId, mapPhotoDraftIds);
+    setMapPhotoPickerStopId("");
+  }
+
   function openHighlight() {
     if (!selectedDay) return;
     const defaults = availableDayPhotos.slice(0, 8).map((photo) => photo.fileId);
     setSelectedPhotoIds(defaults);
     setCaptionDrafts(Object.fromEntries(selectedDay.stops.map((stop) => [stop.id, stop.memory?.comment ?? ""])));
     setOrientation("portrait");
+    setHighlightTheme("postcard");
+    setHighlightTitle(selectedDay.storyTitle || selectedDay.label);
+    setHighlightClosing("What a day to remember ✨");
     setSecondsPerPhoto(3);
     setPreviewIndex(0);
     setRenderError("");
@@ -603,6 +619,9 @@ export default function MemoryLane({
         captions: captionDrafts,
         orientation,
         secondsPerPhoto,
+        theme: highlightTheme,
+        openingTitle: highlightTitle,
+        closingMessage: highlightClosing,
         onProgress: (completed, total, label) => setRenderProgress({ completed, total, label }),
         isCancelled: () => renderCancelledRef.current,
       });
@@ -653,13 +672,17 @@ export default function MemoryLane({
     <section className="memory-lane-page" aria-labelledby="memory-lane-title">
       <header className="memory-lane-heading">
         <div>
-          <p className="eyebrow">The story we made together</p>
+          <p className="eyebrow">Made together, remembered forever</p>
           <h1 id="memory-lane-title">Memory Lane</h1>
+          <p>Your shared travel scrapbook—full of little moments, big feelings and favourite stories.</p>
         </div>
-        <button className="primary-button" onClick={openHighlight} disabled={availableDayPhotos.length === 0}>
-          Create Highlight
-        </button>
+        <button className="primary-button memory-movie-button" onClick={openHighlight} disabled={availableDayPhotos.length === 0}><span>▶</span>Create a Movie</button>
       </header>
+
+      <div className="memory-view-switch" role="group" aria-label="Memory Lane view">
+        <button className={memoryView === "scrapbook" ? "active" : ""} onClick={() => setMemoryView("scrapbook")}><span>📖</span>Scrapbook</button>
+        <button className={memoryView === "map" ? "active" : ""} onClick={() => setMemoryView("map")}><span>📍</span>Memory Map</button>
+      </div>
 
       <section className="trip-statistics" aria-labelledby="trip-statistics-title">
         <header><p className="eyebrow">Our adventure by numbers</p><h2 id="trip-statistics-title">Trip Statistics</h2></header>
@@ -720,14 +743,14 @@ export default function MemoryLane({
 
       {galleryError && <p className="gallery-alert" role="alert">{galleryError}</p>}
       {galleryState === "offline" && (
-        <p className="gallery-alert">Memory Lane needs an internet connection to open shared Drive photos. Saved itinerary details remain available.</p>
+        <p className="gallery-alert">Memory Lane needs an internet connection to open shared photos. Saved itinerary details remain available.</p>
       )}
 
-      <div className="memory-lane-layout">
+      <div className={`memory-lane-layout ${memoryView}-focus`}>
         <aside className="memory-map-column">
-          <MemoryMap day={selectedDay} photos={dayPhotos} onPin={scrollToStop} />
+          <MemoryMap day={selectedDay} photos={dayPhotos} photoUrls={sharedPhotoUrls} onPin={setMapGalleryStopId} />
           <div className="memory-map-footer">
-            <span>Numbered pins follow your itinerary. The dotted line is free and does not calculate a road route.</span>
+            <span>Photo pins hold your favourite moments. Tap one to open that location&apos;s collection.</span>
             <button className="text-button" onClick={() => setExpandedMap(true)}>Expand map</button>
           </div>
         </aside>
@@ -765,10 +788,6 @@ export default function MemoryLane({
               <article
                 className="memory-stop-card"
                 key={stop.id}
-                ref={(element) => {
-                  if (element) stopCardRefs.current.set(stop.id, element);
-                  else stopCardRefs.current.delete(stop.id);
-                }}
                 tabIndex={-1}
               >
                 <header className="memory-stop-heading">
@@ -797,12 +816,12 @@ export default function MemoryLane({
                       value={isLocationTarget && locationDraftValue !== null ? locationDraftValue : stop.place}
                       onFocus={() => onFocusLocation(selectedDay.id, stop.id)}
                       onChange={(event) => onLocationChange(selectedDay.id, stop.id, event.target.value)}
-                      placeholder="Search Google location"
-                      aria-label={`Google location for ${stop.title}`}
+                      placeholder="Search Mapbox location"
+                      aria-label={`Mapbox location for ${stop.title}`}
                       autoComplete="off"
                       readOnly={!currentMember}
                     />
-                    {isLocationTarget && placeSearchState === "searching" && <small>Searching Google Maps…</small>}
+                    {isLocationTarget && placeSearchState === "searching" && <small>Searching Mapbox…</small>}
                     {isLocationTarget && placeSuggestions.length > 0 && (
                       <div className="memory-place-suggestions">
                         {placeSuggestions.map((suggestion) => (
@@ -811,10 +830,11 @@ export default function MemoryLane({
                             onClick={() => onChoosePlace(suggestion)}
                             disabled={placeSearchState === "choosing"}
                           >
-                            {suggestion.text}
+                            <strong>{suggestion.text}</strong>
+                            {suggestion.secondaryText && suggestion.secondaryText !== suggestion.text && <small>{suggestion.secondaryText}</small>}
                           </button>
                         ))}
-                        <small>Powered by Google</small>
+                        <small>Powered by Mapbox</small>
                       </div>
                     )}
                     {isLocationTarget && locationDraftValue !== null && locationDraftValue.trim() !== stop.place.trim() && (
@@ -846,6 +866,41 @@ export default function MemoryLane({
                 ) : (
                   <p className="memory-no-photos">No snapshots yet. This part of the story is still waiting.</p>
                 )}
+
+                <section className="scrapbook-stop" aria-label={`Scrapbook memories for ${stop.title}`}>
+                  <header>
+                    <div><span aria-hidden="true">✦</span><strong>Our scrapbook</strong></div>
+                    <button onClick={() => openScrapbookComposer(stop)} disabled={!currentMember}>+ Add a memory</button>
+                  </header>
+                  {(stop.memory?.entries?.length ?? 0) > 0 ? (
+                    <div className="scrapbook-card-grid">
+                      {stop.memory!.entries!.map((entry, entryIndex) => {
+                        const photoUrl = entry.photoId ? sharedPhotoUrls[entry.photoId] : "";
+                        return (
+                          <article className={`scrapbook-card ${entry.kind} ${entry.frame || "polaroid"} tilt-${entryIndex % 3}`} key={entry.id}>
+                            {entry.sticker && entry.sticker !== "none" && <span className={`scrapbook-sticker ${entry.sticker}`} aria-hidden="true">{entry.sticker === "heart" ? "♡" : entry.sticker === "sparkles" ? "✦" : entry.sticker === "postmark" ? "VIENNA" : entry.sticker === "ticket" ? "ADMIT ONE" : ""}</span>}
+                            {photoUrl && (
+                              <button className="scrapbook-photo" onClick={() => setLightboxPhoto(sharedPhotos.find((photo) => photo.fileId === entry.photoId) ?? null)}>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img className={`filter-${entry.filter || "none"}`} src={photoUrl} alt={`${entry.memberName}'s scrapbook memory`} loading="lazy" />
+                              </button>
+                            )}
+                            <div className="scrapbook-card-copy">
+                              {entry.emoji && <b aria-label="Decoration">{entry.emoji}</b>}
+                              {entry.text && <p>{entry.text}</p>}
+                              <small>— {entry.memberName}</small>
+                            </div>
+                            {entry.memberId === currentMember?.id && <button className="scrapbook-delete" onClick={() => onDeleteScrapbookEntry(selectedDay.id, stop.id, entry.id)} aria-label="Delete this scrapbook memory">×</button>}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <button className="scrapbook-blank-page" onClick={() => openScrapbookComposer(stop)} disabled={!currentMember}>
+                      <span>📖</span><strong>Start this page</strong><small>Add a thought, quote, emoji or decorated photo.</small>
+                    </button>
+                  )}
+                </section>
 
                 {editing ? (
                   <div className="memory-comment-editor">
@@ -886,10 +941,71 @@ export default function MemoryLane({
         </div>
       </div>
 
+      {memoryView === "map" && (
+        <section className="memory-map-curator" aria-labelledby="memory-map-curator-title">
+          <header><div><p className="eyebrow">Make it yours</p><h2 id="memory-map-curator-title">Photo highlights on the map</h2></div><small>Choose up to 4 at each location</small></header>
+          <div>
+            {selectedDay.stops.filter((stop) => Number.isFinite(stop.latitude) && Number.isFinite(stop.longitude)).map((stop, index) => {
+              const available = stopPhotos(dayPhotos, selectedDay.id, stop.id).filter((photo) => sharedPhotoUrls[photo.fileId]);
+              const selected = (stop.memory?.mapPhotoIds ?? []).filter((fileId) => available.some((photo) => photo.fileId === fileId));
+              return <article key={stop.id}>
+                <span>{index + 1}</span>
+                <div><strong>{stop.title}</strong><small>{selected.length ? `${selected.length} highlight${selected.length === 1 ? "" : "s"} selected` : available.length ? "No highlights selected yet" : "Add photos to this stop first"}</small></div>
+                <div className="memory-map-mini-photos">{selected.slice(0, 3).map((fileId) => <img key={fileId} src={sharedPhotoUrls[fileId]} alt="" />)}</div>
+                <button onClick={() => openMapPhotoPicker(stop)} disabled={!currentMember || available.length === 0}>{selected.length ? "Edit photos" : "Choose photos"}</button>
+              </article>;
+            })}
+          </div>
+        </section>
+      )}
+
+      {mapGalleryStopId && (() => {
+        const stop = selectedDay.stops.find((item) => item.id === mapGalleryStopId);
+        if (!stop) return null;
+        const available = stopPhotos(dayPhotos, selectedDay.id, stop.id).filter((photo) => sharedPhotoUrls[photo.fileId]);
+        const highlights = (stop.memory?.mapPhotoIds ?? []).map((fileId) => available.find((photo) => photo.fileId === fileId)).filter((photo): photo is SharedPhoto => Boolean(photo));
+        return <div className="modal-backdrop memory-map-gallery-backdrop" role="presentation" onMouseDown={() => setMapGalleryStopId("")}>
+          <section className="modal memory-map-gallery" role="dialog" aria-modal="true" aria-labelledby="memory-map-gallery-title" onMouseDown={(event) => event.stopPropagation()}>
+            <button className="highlight-close" onClick={() => setMapGalleryStopId("")} aria-label="Close location memories">×</button>
+            <p className="eyebrow">{stop.place || `Stop ${selectedDay.stops.indexOf(stop) + 1}`}</p>
+            <h2 id="memory-map-gallery-title">{stop.title}</h2>
+            {highlights.length > 0 ? <div className="memory-map-gallery-grid">{highlights.map((photo, index) => <button key={photo.fileId} onClick={() => setLightboxPhoto(photo)}>
+              <img src={sharedPhotoUrls[photo.fileId]} alt={`${photo.memberName}'s highlight at ${stop.title}`} />
+              <span>{index + 1}</span><small>{photo.memberName}</small>
+            </button>)}</div> : <div className="memory-map-gallery-empty"><span>📍</span><strong>No photo highlights here yet</strong><small>Choose a few favourites to turn this into a photo pin.</small></div>}
+            <div className="modal-actions"><button className="secondary-button" onClick={() => setMapGalleryStopId("")}>Done</button><button className="primary-button" onClick={() => { setMapGalleryStopId(""); openMapPhotoPicker(stop); }} disabled={!currentMember || available.length === 0}>{highlights.length ? "Edit highlights" : "Choose highlights"}</button></div>
+          </section>
+        </div>;
+      })()}
+
+      {mapPhotoPickerStopId && (() => {
+        const stop = selectedDay.stops.find((item) => item.id === mapPhotoPickerStopId);
+        if (!stop) return null;
+        const available = stopPhotos(dayPhotos, selectedDay.id, stop.id).filter((photo) => sharedPhotoUrls[photo.fileId]);
+        return <div className="modal-backdrop memory-map-gallery-backdrop" role="presentation" onMouseDown={() => setMapPhotoPickerStopId("")}>
+          <section className="modal memory-map-picker" role="dialog" aria-modal="true" aria-labelledby="memory-map-picker-title" onMouseDown={(event) => event.stopPropagation()}>
+            <button className="highlight-close" onClick={() => setMapPhotoPickerStopId("")} aria-label="Close highlight picker">×</button>
+            <p className="eyebrow">Photo pin · {stop.title}</p>
+            <h2 id="memory-map-picker-title">Choose your highlights</h2>
+            <p className="modal-copy">Select up to four. The first photo becomes the pin cover.</p>
+            <div className="memory-map-picker-grid">{available.map((photo) => {
+              const selectedIndex = mapPhotoDraftIds.indexOf(photo.fileId);
+              return <button className={selectedIndex >= 0 ? "selected" : ""} key={photo.fileId} onClick={() => toggleMapPhoto(photo.fileId)} disabled={selectedIndex < 0 && mapPhotoDraftIds.length >= 4}>
+                <img src={sharedPhotoUrls[photo.fileId]} alt={`Select ${photo.memberName}'s photo`} />
+                {selectedIndex >= 0 && <span>{selectedIndex + 1}</span>}
+                <small>{photo.memberName}</small>
+              </button>;
+            })}</div>
+            <div className="memory-map-picker-count"><strong>{mapPhotoDraftIds.length} of 4 selected</strong><small>Tap selected photos again to remove them.</small></div>
+            <div className="modal-actions"><button className="secondary-button" onClick={() => setMapPhotoPickerStopId("")}>Cancel</button><button className="primary-button" onClick={saveMapPhotos}>Save photo pin</button></div>
+          </section>
+        </div>;
+      })()}
+
       {expandedMap && (
         <div className="memory-expanded-map" role="dialog" aria-modal="true" aria-label={`Expanded map for ${selectedDay.label}`}>
           <button className="memory-map-close" onClick={() => setExpandedMap(false)} aria-label="Close expanded map">×</button>
-          <MemoryMap day={selectedDay} photos={dayPhotos} expanded onPin={scrollToStop} />
+          <MemoryMap day={selectedDay} photos={dayPhotos} photoUrls={sharedPhotoUrls} expanded onPin={(stopId) => { setExpandedMap(false); setMapGalleryStopId(stopId); }} />
         </div>
       )}
 
@@ -901,6 +1017,48 @@ export default function MemoryLane({
           <small>{lightboxPhoto.memberName}&apos;s snapshot</small>
         </div>
       )}
+
+      {scrapbookStopId && (() => {
+        const scrapbookStop = selectedDay.stops.find((stop) => stop.id === scrapbookStopId);
+        const scrapbookPhotos = scrapbookStop ? stopPhotos(dayPhotos, selectedDay.id, scrapbookStop.id).filter((photo) => sharedPhotoUrls[photo.fileId]) : [];
+        if (!scrapbookStop) return null;
+        return (
+          <div className="modal-backdrop scrapbook-backdrop" role="presentation" onMouseDown={() => setScrapbookStopId("")}>
+            <section className="modal scrapbook-composer" role="dialog" aria-modal="true" aria-labelledby="scrapbook-composer-title" onMouseDown={(event) => event.stopPropagation()}>
+              <button className="highlight-close" onClick={() => setScrapbookStopId("")} aria-label="Close scrapbook editor">×</button>
+              <p className="eyebrow">{scrapbookStop.title}</p>
+              <h2 id="scrapbook-composer-title">Make a memory</h2>
+              <div className="scrapbook-kind-picker">
+                <button className={scrapbookKind === "note" ? "active" : ""} onClick={() => setScrapbookKind("note")}>✍️ Thought or quote</button>
+                <button className={scrapbookKind === "photo" ? "active" : ""} onClick={() => setScrapbookKind("photo")} disabled={scrapbookPhotos.length === 0}>📷 Decorated photo</button>
+              </div>
+              {scrapbookKind === "photo" && (
+                <div className="scrapbook-photo-picker">
+                  {scrapbookPhotos.map((photo) => <button className={scrapbookPhotoId === photo.fileId ? "selected" : ""} key={photo.fileId} onClick={() => setScrapbookPhotoId(photo.fileId)}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={sharedPhotoUrls[photo.fileId]} alt={`Choose ${photo.memberName}'s photo`} />
+                    {scrapbookPhotoId === photo.fileId && <span>✓</span>}
+                  </button>)}
+                </div>
+              )}
+              <label>Your words
+                <textarea value={scrapbookText} onChange={(event) => setScrapbookText(event.target.value)} maxLength={400} placeholder="A funny quote, a tiny detail, or what this moment felt like…" />
+              </label>
+              <fieldset className="scrapbook-options"><legend>Pick an emoji</legend><div className="scrapbook-emoji-row">{scrapbookEmojis.map((emoji) => <button className={scrapbookEmoji === emoji ? "active" : ""} key={emoji} onClick={() => setScrapbookEmoji(emoji)}>{emoji}</button>)}</div></fieldset>
+              <div className="scrapbook-style-row">
+                <label>Frame<select value={scrapbookFrame} onChange={(event) => setScrapbookFrame(event.target.value as TripScrapbookEntry["frame"])}>{scrapbookFrames.map((frame) => <option key={frame} value={frame}>{frame[0].toUpperCase() + frame.slice(1)}</option>)}</select></label>
+                <label>Photo look<select value={scrapbookFilter} onChange={(event) => setScrapbookFilter(event.target.value as TripScrapbookEntry["filter"])}>{scrapbookFilters.map((filter) => <option key={filter} value={filter}>{filter[0].toUpperCase() + filter.slice(1)}</option>)}</select></label>
+                <label>Decoration<select value={scrapbookSticker} onChange={(event) => setScrapbookSticker(event.target.value as (typeof scrapbookStickers)[number])}>{scrapbookStickers.map((sticker) => <option key={sticker} value={sticker}>{sticker[0].toUpperCase() + sticker.slice(1)}</option>)}</select></label>
+              </div>
+              <div className="scrapbook-live-preview">
+                {scrapbookKind === "photo" && scrapbookPhotoId && <img className={`filter-${scrapbookFilter}`} src={sharedPhotoUrls[scrapbookPhotoId]} alt="Scrapbook preview" />}
+                <div><b>{scrapbookEmoji}</b><p>{scrapbookText || "Your memory will appear here…"}</p><small>— {currentMember?.name}</small></div>
+              </div>
+              <div className="modal-actions"><button className="secondary-button" onClick={() => setScrapbookStopId("")}>Cancel</button><button className="primary-button" onClick={saveScrapbookEntry} disabled={!scrapbookText.trim() && !(scrapbookKind === "photo" && scrapbookPhotoId)}>Add to scrapbook</button></div>
+            </section>
+          </div>
+        );
+      })()}
 
       {showCoverPicker && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowCoverPicker(false)}>
@@ -953,6 +1111,16 @@ export default function MemoryLane({
                   <strong>{selectedDay.label}</strong>
                   <small>{availableDayPhotos.length} ready photo{availableDayPhotos.length === 1 ? "" : "s"}</small>
                 </div>
+                <label className="highlight-title-field">Opening title<input value={highlightTitle} onChange={(event) => setHighlightTitle(event.target.value)} maxLength={70} placeholder="Our unforgettable day" /></label>
+                <fieldset className="highlight-theme-picker">
+                  <legend>Movie style</legend>
+                  {(["postcard", "adventure", "polaroid", "cinematic"] as HighlightTheme[]).map((theme) => (
+                    <button type="button" className={`${theme} ${highlightTheme === theme ? "active" : ""}`} key={theme} onClick={() => setHighlightTheme(theme)}>
+                      <span aria-hidden="true">{theme === "postcard" ? "💌" : theme === "adventure" ? "✈️" : theme === "polaroid" ? "📸" : "🎬"}</span>
+                      <strong>{theme[0].toUpperCase() + theme.slice(1)}</strong>
+                    </button>
+                  ))}
+                </fieldset>
                 <fieldset className="highlight-orientation">
                   <legend>Format</legend>
                   <label className={orientation === "portrait" ? "active" : ""}>
@@ -1042,6 +1210,7 @@ export default function MemoryLane({
                     <option value={4}>4 seconds</option>
                   </select>
                 </label>
+                <label className="highlight-closing">Closing message<input value={highlightClosing} onChange={(event) => setHighlightClosing(event.target.value)} maxLength={90} placeholder="What a day to remember ✨" /></label>
                 <p className="highlight-length">About {4 + selectedPhotoIds.length * secondsPerPhoto} seconds · 720p · no music</p>
                 {renderError && <p className="gallery-alert" role="alert">{renderError}</p>}
                 <div className="modal-actions">
@@ -1095,7 +1264,7 @@ export default function MemoryLane({
                 <h2 id="highlight-title">{selectedDay.label}</h2>
                 <video className="highlight-video" src={videoResult.url} controls playsInline />
                 {renderError && <p className="gallery-alert" role="alert">{renderError}</p>}
-                <p className="modal-copy">On iPhone, tap Share and choose <strong>Save Video</strong> to place it in Apple Photos. The app does not upload this video to Drive.</p>
+                <p className="modal-copy">On iPhone, tap Share and choose <strong>Save Video</strong> to place it in Apple Photos. The generated video stays on your device unless you choose to share it.</p>
                 <div className="modal-actions">
                   <button className="secondary-button" onClick={() => setHighlightStep("scope")}>Create Another</button>
                   <button className="primary-button" onClick={() => void shareVideo()}>Save or Share Video</button>

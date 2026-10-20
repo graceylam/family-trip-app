@@ -62,8 +62,12 @@ service cloud.firestore {
 
       match /trips/{tripId} {
         allow read: if signedIn() && request.auth.uid == userId;
-        allow create, update, delete: if signedIn() && request.auth.uid == userId &&
-          existsAfter(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid));
+        allow create, update: if (signedIn() && request.auth.uid == userId &&
+          existsAfter(/databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid))) ||
+          (isTripAdmin(tripId) &&
+            existsAfter(/databases/$(database)/documents/trips/$(tripId)/members/$(userId)) &&
+            request.resource.data.role == getAfter(/databases/$(database)/documents/trips/$(tripId)/members/$(userId)).data.role);
+        allow delete: if (signedIn() && request.auth.uid == userId) || isTripAdmin(tripId);
       }
     }
 
@@ -71,7 +75,7 @@ service cloud.firestore {
       allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
       allow read: if isTripMember(tripId);
       allow update: if isTripAdmin(tripId);
-      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
+      allow delete: if isTripAdmin(tripId);
 
       match /members/{userId} {
         allow read: if isTripMember(tripId);
@@ -99,6 +103,13 @@ service cloud.firestore {
           (documentId == "saved-places" && isTripMember(tripId) && validSavedPlacesState(tripId) &&
             request.resource.data.revision == resource.data.revision + 1);
         allow delete: if isTripAdmin(tripId);
+      }
+
+      match /media/{mediaId} {
+        allow read: if isTripMember(tripId);
+        allow create: if isTripMember(tripId) && request.resource.data.memberId == request.auth.uid;
+        allow update: if isTripMember(tripId);
+        allow delete: if isTripAdmin(tripId) || (isTripMember(tripId) && resource.data.memberId == request.auth.uid);
       }
 
       match /private/{documentId} {

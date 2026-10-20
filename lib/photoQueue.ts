@@ -18,6 +18,7 @@ export type StoredQueuedPhoto = {
   uploadAttempts: number;
   lastError: string | null;
   googleDriveFileId: string | null;
+  firebaseMediaId?: string | null;
   memberId: string;
   memberName: string;
   blob: Blob;
@@ -51,6 +52,7 @@ function normalizeRecord(record: StoredQueuedPhoto): StoredQueuedPhoto {
     uploadAttempts: record.uploadAttempts ?? 0,
     lastError: record.lastError ?? null,
     googleDriveFileId: record.googleDriveFileId ?? null,
+    firebaseMediaId: record.firebaseMediaId ?? null,
     memberId: record.memberId ?? "unknown-member",
     memberName: record.memberName ?? "Family member",
   };

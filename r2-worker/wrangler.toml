@@ -1,0 +1,13 @@
+name = "family-trip-media-api"
+main = "src/index.ts"
+compatibility_date = "2026-10-19"
+workers_dev = true
+preview_urls = false
+
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "family-trip-media"
+
+[vars]
+FIREBASE_PROJECT_ID = "family-trip-app-4d00e"
+MAX_STORAGE_BYTES = "100000000000"

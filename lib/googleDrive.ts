@@ -39,17 +39,47 @@ export type TripStop = {
   place: string;
   note: string;
   expenses?: TripExpense[];
+  documents?: TripDocument[];
   memory?: TripStopMemory;
   placeId?: string;
   latitude?: number;
   longitude?: number;
   googleMapsUrl?: string;
+  travelModeToNext?: "walking" | "driving" | "cycling" | "direct";
+};
+
+export type TripDocument = {
+  id: string;
+  fileId: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  memberId: string;
+  memberName: string;
+  createdAt: string;
 };
 
 export type TripStopMemory = {
   comment: string;
   updatedByMemberId: string;
   updatedByMemberName: string;
+  updatedAt: string;
+  entries?: TripScrapbookEntry[];
+  mapPhotoIds?: string[];
+};
+
+export type TripScrapbookEntry = {
+  id: string;
+  kind: "note" | "photo";
+  text: string;
+  photoId?: string;
+  emoji?: string;
+  sticker?: string;
+  filter?: "none" | "warm" | "soft" | "mono";
+  frame?: "polaroid" | "postcard" | "clean";
+  memberId: string;
+  memberName: string;
+  createdAt: string;
   updatedAt: string;
 };
 
@@ -71,6 +101,7 @@ export type TripExpense = {
 export type PlaceSuggestion = {
   placeId: string;
   text: string;
+  secondaryText?: string;
 };
 
 export type PlaceDetails = {
@@ -309,6 +340,24 @@ export async function uploadPhotoToDrive(
   return response.fileId;
 }
 
+export async function uploadDocumentToDrive(
+  location: DrivePhotoLocation,
+  file: File,
+  documentId: string,
+): Promise<string> {
+  const response = await gatewayRequest({
+    action: "upload",
+    ...location,
+    photoId: `document-${documentId}`,
+    name: file.name || "Trip document",
+    mimeType: file.type || "application/octet-stream",
+    createdAt: new Date().toISOString(),
+    data: await blobToBase64(file),
+  });
+  if (!response.fileId) throw new GoogleDriveError("Google Drive did not return the uploaded document.", false);
+  return response.fileId;
+}
+
 export async function uploadTripCoverToDrive(
   tripId: string,
   tripName: string,
@@ -351,6 +400,8 @@ export async function getSharedPhotoBlob(tripId: string, fileId: string): Promis
     name: response.fileName || "Trip photo",
   };
 }
+
+export const getSharedFileBlob = getSharedPhotoBlob;
 
 export async function organizeDriveFile(
   location: DrivePhotoLocation,
