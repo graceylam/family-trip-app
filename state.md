@@ -14,6 +14,7 @@ Last updated: 20 October 2026
 - Uploads authenticate with Firebase ID tokens and verify trip membership through Firestore rules.
 - Originals and thumbnails are uploaded directly from the device; Firestore stores their metadata and access-key URLs.
 - Failed uploads remain in the existing IndexedDB retry queue. Failed deletions keep their Firestore record so they stay visible and retryable.
+- The itinerary media picker uses a camera-roll grid with photo/video previews, per-item states and a clear `Share to Trip` action. Shared media is visible both at its assigned stop and in Photo Gallery for every trip member.
 
 ## Verification
 

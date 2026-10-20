@@ -88,6 +88,12 @@ test("uses Firebase for trip sync and private R2 photo and video storage", async
   assert.match(storageRules, /tripMember/);
   assert.match(page, /accept="image\/\*,video\/\*"/);
   assert.match(page, /uploadTripMedia/);
+  assert.match(page, /Share to Trip/);
+  assert.match(page, /Adds these memories to this stop for everyone in the trip/);
+  assert.match(page, /Shared at this stop/);
+  assert.match(page, /selectedSharedPhotos/);
+  assert.match(styles, /camera-roll-grid/);
+  assert.match(styles, /grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
   assert.doesNotMatch(page, /Refresh Drive folders|Drive connected|Drive offline|Checking Drive/);
   assert.match(gallery, /Photos and videos/);
   assert.match(gallery, /Favourites/);

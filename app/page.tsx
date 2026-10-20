@@ -425,6 +425,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [documentsExpanded, setDocumentsExpanded] = useState(false);
   const [documentNavigationTarget, setDocumentNavigationTarget] = useState<{ stopId: string; documentId: string } | null>(null);
   const [queuedPhotos, setQueuedPhotos] = useState<QueuedPhotoView[]>([]);
+  const [previewQueuedPhotoId, setPreviewQueuedPhotoId] = useState("");
+  const [previewSharedMediaId, setPreviewSharedMediaId] = useState("");
   const [queueState, setQueueState] = useState<"loading" | "ready" | "saving" | "unavailable">("loading");
   const [queueError, setQueueError] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<{ completed: number; total: number } | null>(null);
@@ -1126,6 +1128,14 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
 
   const selectedPhotos = queuedPhotos.filter((photo) => photo.stopId === selectedStop?.id);
+  const selectedPendingPhotos = selectedPhotos.filter((photo) =>
+    !photo.isPrivate && !photo.pendingCloudDeletion && photo.status !== "uploaded",
+  );
+  const selectedSharedPhotos = sharedPhotos.filter((photo) => photo.stopId === selectedStop?.id);
+  const selectedLocalMediaIds = new Set(selectedPhotos.map((photo) => photo.firebaseMediaId).filter(Boolean));
+  const sharedOnlyPhotos = selectedSharedPhotos.filter((photo) => !selectedLocalMediaIds.has(photo.fileId));
+  const previewQueuedPhoto = queuedPhotos.find((photo) => photo.id === previewQueuedPhotoId) ?? null;
+  const previewSharedMedia = sharedPhotos.find((photo) => photo.fileId === previewSharedMediaId) ?? null;
   const pendingQueuePhotos = queuedPhotos.filter(
     (photo) =>
       (!photo.isPrivate && photo.status !== "uploaded") ||
@@ -2058,7 +2068,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     }
   }
 
-  async function uploadQueuedPhotos() {
+  async function uploadQueuedPhotos(stopId?: string) {
     if (!navigator.onLine) {
       setGoogleError("You are offline. Your photos and videos will remain safely queued.");
       return;
@@ -2107,7 +2117,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
         (photo) =>
           !photo.isPrivate &&
           !photo.pendingCloudDeletion &&
-          photo.status !== "uploaded",
+          photo.status !== "uploaded" &&
+          (!stopId || photo.stopId === stopId),
       );
       setUploadProgress({ completed: 0, total: uploadCandidates.length });
       const finishUploadProgress = () => setUploadProgress((current) => current
@@ -2684,7 +2695,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                 {isOffline ? (
                   <button className="sync-button" disabled>Cloud offline</button>
                 ) : googleState === "connected" && waitingCount > 0 ? (
-                  <button className="sync-button" onClick={uploadQueuedPhotos}>Upload now — I’m on Wi-Fi</button>
+                  <button className="sync-button" onClick={() => void uploadQueuedPhotos()}>Upload waiting memories</button>
                 ) : googleState === "uploading" ? (
                   <button className="sync-button" disabled>Uploading…</button>
                 ) : googleState === "connected" ? (
@@ -2709,8 +2720,18 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                 onClick={() => fileInputRef.current?.click()}
                 disabled={queueState !== "ready"}
               >
-                {queueState === "saving" ? "Saving temporary copies…" : "Choose Photos or Videos"}
+                {queueState === "saving" ? "Saving temporary copies…" : "+ Choose Photos or Videos"}
               </button>
+              <button
+                className="share-trip-button"
+                onClick={() => selectedStop && void uploadQueuedPhotos(selectedStop.id)}
+                disabled={selectedPendingPhotos.length === 0 || googleState === "uploading" || isOffline}
+              >
+                {googleState === "uploading"
+                  ? "Sharing…"
+                  : `Share to Trip${selectedPendingPhotos.length ? ` (${selectedPendingPhotos.length})` : ""}`}
+              </button>
+              <small className="share-trip-explainer">Adds these memories to this stop for everyone in the trip.</small>
               <button className="photo-status-button" onClick={() => setShowSafety((value) => !value)} aria-expanded={showSafety}>
                 Photo Upload Status
               </button>
@@ -2763,8 +2784,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
               )}
 
               <div className="gallery-heading">
-              <h3>Memories from this stop</h3>
-              <span>{selectedPhotos.length} queued</span>
+              <h3>Selected for this stop</h3>
+              <span>{selectedPhotos.length} on this device</span>
               </div>
 
               {selectedPhotos.length === 0 ? (
@@ -2774,30 +2795,53 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                 <p>Your originals will always remain safely in Apple Photos.</p>
               </div>
             ) : (
-              <div className="photo-grid">
+              <div className="photo-grid camera-roll-grid">
                 {selectedPhotos.map((photo) => (
-                  <figure key={photo.id} className="photo-card">
+                  <figure key={photo.id} className="camera-roll-tile">
+                    <button className="camera-roll-preview" onClick={() => setPreviewQueuedPhotoId(photo.id)} aria-label={`Preview ${photo.name}`}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     {photo.mimeType.startsWith("video/")
-                      ? <video src={photo.previewUrl} controls playsInline preload="metadata" />
+                      ? <video src={photo.previewUrl} muted playsInline preload="metadata" />
                       : <img src={photo.previewUrl} alt={photo.name} />}
-                    <figcaption>
-                      <div className="photo-meta">
-                        <span className={`status-pill ${photo.isPrivate ? "private" : photo.status}`}>
-                          {statusLabel(photo)}
-                        </span>
-                        <small>By {photo.memberName}</small>
-                      </div>
-                      <div>
-                        <button onClick={() => togglePrivacy(photo.id)} disabled={photo.pendingLocalRemoval}>
-                          {photo.isPrivate ? "Share" : "Keep private"}
-                        </button>
-                        <button onClick={() => removePhoto(photo.id)}>{photo.pendingLocalRemoval ? "Retry removal" : "Delete"}</button>
-                      </div>
-                    </figcaption>
+                    <span className={`camera-roll-status ${photo.isPrivate ? "private" : photo.status}`}>
+                      {photo.status === "uploaded" && !photo.isPrivate ? "✓" : photo.status === "uploading" ? "↑" : photo.status === "needsAttention" ? "!" : photo.isPrivate ? "Private" : "Ready"}
+                    </span>
+                    {photo.mimeType.startsWith("video/") && <span className="camera-roll-video">▶ Video</span>}
+                    <span className="camera-roll-name">{photo.name}</span>
+                    </button>
+                    <button
+                      className="camera-roll-remove"
+                      aria-label={`Remove ${photo.name}`}
+                      onClick={() => void removePhoto(photo.id)}
+                    >×</button>
                   </figure>
                 ))}
               </div>
+              )}
+
+              <div className="gallery-heading shared-stop-heading">
+                <div><h3>Shared at this stop</h3><small>Visible here and in Photo Gallery</small></div>
+                <span>{selectedSharedPhotos.length} shared</span>
+              </div>
+              {selectedSharedPhotos.length === 0 ? (
+                <div className="shared-stop-empty">Shared memories from every family member will appear here.</div>
+              ) : (
+                <div className="photo-grid camera-roll-grid shared-stop-grid">
+                  {selectedPhotos.filter((photo) => photo.status === "uploaded" && photo.firebaseMediaId).map((photo) => (
+                    <button key={`local-${photo.id}`} className="camera-roll-tile shared" onClick={() => setPreviewQueuedPhotoId(photo.id)} aria-label={`Open shared ${photo.name}`}>
+                      {photo.mimeType.startsWith("video/") ? <video src={photo.previewUrl} muted playsInline preload="metadata" /> : <img src={photo.previewUrl} alt={photo.name} />}
+                      <span className="camera-roll-status uploaded">✓ Shared</span>
+                      <span className="camera-roll-person">You</span>
+                    </button>
+                  ))}
+                  {sharedOnlyPhotos.map((photo) => (
+                    <button key={photo.fileId} className="camera-roll-tile shared" onClick={() => setPreviewSharedMediaId(photo.fileId)} aria-label={`Open ${photo.memberName}'s ${photo.mediaType}`}>
+                      {photo.mediaType === "video" ? <video src={photo.thumbnailUrl || photo.downloadUrl} muted playsInline preload="metadata" /> : <img src={photo.thumbnailUrl || photo.downloadUrl} alt={photo.caption || photo.name} loading="lazy" />}
+                      {photo.mediaType === "video" && <span className="camera-roll-video">▶ Video</span>}
+                      <span className="camera-roll-person">{photo.memberName}</span>
+                    </button>
+                  ))}
+                </div>
               )}
             </section>
           </div>,
@@ -3191,6 +3235,40 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
               {invitationError && <p className="gallery-alert" role="alert">{invitationError}</p>}
               <button className="primary-button" type="submit">Connect this device</button>
             </form>
+          </section>
+        </div>
+      )}
+
+      {previewQueuedPhoto && (
+        <div className="media-preview-backdrop" role="presentation" onMouseDown={() => setPreviewQueuedPhotoId("")}>
+          <section className="media-preview" role="dialog" aria-modal="true" aria-label={`Preview ${previewQueuedPhoto.name}`} onMouseDown={(event) => event.stopPropagation()}>
+            <header><button onClick={() => setPreviewQueuedPhotoId("")}>Done</button><div><strong>{previewQueuedPhoto.name}</strong><small>{statusLabel(previewQueuedPhoto)} · {previewQueuedPhoto.memberName}</small></div><span /></header>
+            <div className="media-preview-stage">
+              {previewQueuedPhoto.mimeType.startsWith("video/")
+                ? <video src={previewQueuedPhoto.previewUrl} controls autoPlay playsInline />
+                : <img src={previewQueuedPhoto.previewUrl} alt={previewQueuedPhoto.name} />}
+            </div>
+            <footer>
+              <button className="secondary-button" onClick={() => void togglePrivacy(previewQueuedPhoto.id)} disabled={previewQueuedPhoto.pendingLocalRemoval}>
+                {previewQueuedPhoto.isPrivate ? "Share with trip" : "Keep private"}
+              </button>
+              <button className="danger-button" onClick={() => { void removePhoto(previewQueuedPhoto.id); setPreviewQueuedPhotoId(""); }}>
+                {previewQueuedPhoto.pendingLocalRemoval ? "Retry removal" : "Remove"}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+
+      {previewSharedMedia && (
+        <div className="media-preview-backdrop" role="presentation" onMouseDown={() => setPreviewSharedMediaId("")}>
+          <section className="media-preview" role="dialog" aria-modal="true" aria-label={`Shared by ${previewSharedMedia.memberName}`} onMouseDown={(event) => event.stopPropagation()}>
+            <header><button onClick={() => setPreviewSharedMediaId("")}>Done</button><div><strong>{previewSharedMedia.caption || previewSharedMedia.name}</strong><small>Shared by {previewSharedMedia.memberName}</small></div><span /></header>
+            <div className="media-preview-stage">
+              {previewSharedMedia.mediaType === "video"
+                ? <video src={previewSharedMedia.downloadUrl} controls autoPlay playsInline />
+                : <img src={previewSharedMedia.downloadUrl} alt={previewSharedMedia.caption || previewSharedMedia.name} />}
+            </div>
           </section>
         </div>
       )}
