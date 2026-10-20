@@ -24,8 +24,8 @@ Last updated: 20 October 2026
 
 ## Next operational steps
 
-1. Commit and push the R2 migration so GitHub Pages deploys it.
-2. Pull/sync the same commit into the Xcode/Capacitor copy and refresh the iPhone build.
+1. GitHub Pages is deployed and its live bundle points to the private R2 Worker.
+2. The Capacitor iOS project is synced. Installing on Grace's iPhone is paused because Xcode 26.6 could not mount its developer disk image for iOS 26.6.2; retry with the phone unlocked and connected by USB, then update Xcode if it persists.
 3. Configure Cloudflare usage notifications (informational alerts, not a true billing hard cap).
 4. Test one small photo and one short video from the iPhone, then verify gallery display, download and deletion.
 
