@@ -25,9 +25,9 @@ Last updated: 20 October 2026
 ## Next operational steps
 
 1. GitHub Pages is deployed and its live bundle points to the private R2 Worker.
-2. The Capacitor iOS project is synced. Installing on Grace's iPhone is paused because Xcode 26.6 could not mount its developer disk image for iOS 26.6.2; retry with the phone unlocked and connected by USB, then update Xcode if it persists.
+2. The Capacitor iOS project is synced, signed, installed and launched successfully on Grace's iPhone 13 (`com.graceylam.familytrip`).
 3. Configure Cloudflare usage notifications (informational alerts, not a true billing hard cap).
-4. Test one small photo and one short video from the iPhone, then verify gallery display, download and deletion.
+4. Test one small photo and one short video from the installed iPhone app, then verify gallery display, download and deletion.
 
 ## Rollback
 
