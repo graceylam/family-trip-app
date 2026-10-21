@@ -4,6 +4,11 @@ export const MAPBOX_ACCESS_TOKEN = ((import.meta as ImportMeta & { env?: { VITE_
 
 mapboxgl.accessToken = MAPBOX_ACCESS_TOKEN;
 
+function requireMapboxToken(): string {
+  if (!MAPBOX_ACCESS_TOKEN) throw new Error("Mapbox is not connected in this app build. Please ask the trip admin to refresh the app.");
+  return MAPBOX_ACCESS_TOKEN;
+}
+
 export type MapboxSuggestion = {
   placeId: string;
   text: string;
@@ -44,7 +49,7 @@ type RetrieveResponse = {
 export async function searchMapboxPlaces(input: string, sessionToken: string): Promise<MapboxSuggestion[]> {
   const parameters = new URLSearchParams({
     q: input,
-    access_token: MAPBOX_ACCESS_TOKEN,
+    access_token: requireMapboxToken(),
     session_token: sessionToken,
     language: "en",
     limit: "6",
@@ -60,7 +65,7 @@ export async function searchMapboxPlaces(input: string, sessionToken: string): P
 }
 
 export async function getMapboxPlace(placeId: string, sessionToken: string): Promise<MapboxPlace> {
-  const parameters = new URLSearchParams({ access_token: MAPBOX_ACCESS_TOKEN, session_token: sessionToken });
+  const parameters = new URLSearchParams({ access_token: requireMapboxToken(), session_token: sessionToken });
   const response = await fetch(`https://api.mapbox.com/search/searchbox/v1/retrieve/${encodeURIComponent(placeId)}?${parameters}`);
   if (!response.ok) throw new Error("That Mapbox location could not be opened.");
   const result = await response.json() as RetrieveResponse;
@@ -131,7 +136,7 @@ async function getRoute(segment: FamilyMapRouteSegment): Promise<RouteResult> {
   if (cached) return cached;
   const request = (async () => {
     const coordinates = `${segment.from.join(",")};${segment.to.join(",")}`;
-    const parameters = new URLSearchParams({ access_token: MAPBOX_ACCESS_TOKEN, geometries: "geojson", overview: "full" });
+    const parameters = new URLSearchParams({ access_token: requireMapboxToken(), geometries: "geojson", overview: "full" });
     const response = await fetch(`https://api.mapbox.com/directions/v5/mapbox/${segment.mode}/${coordinates}?${parameters}`);
     if (!response.ok) throw new Error("Mapbox could not calculate this route.");
     const result = await response.json() as { routes?: Array<{ geometry?: { coordinates?: [number, number][] }; duration?: number; distance?: number }> };
@@ -149,6 +154,7 @@ export function createFamilyMap(
   pins: FamilyMapPin[],
   options: { connectPins?: boolean; routeSegments?: FamilyMapRouteSegment[]; onPin?: (id: string) => void; onRouteError?: (message: string) => void } = {},
 ): mapboxgl.Map {
+  requireMapboxToken();
   const map = new mapboxgl.Map({
     container,
     style: "mapbox://styles/mapbox/standard",

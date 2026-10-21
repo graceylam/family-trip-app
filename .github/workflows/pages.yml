@@ -17,6 +17,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      VITE_MAPBOX_ACCESS_TOKEN: ${{ vars.VITE_MAPBOX_ACCESS_TOKEN || secrets.VITE_MAPBOX_ACCESS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -27,6 +29,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Verify Mapbox configuration
+        run: test -n "$VITE_MAPBOX_ACCESS_TOKEN"
       - run: pnpm run build:pages
       - uses: actions/upload-pages-artifact@v3
         with:

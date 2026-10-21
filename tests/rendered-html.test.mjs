@@ -126,6 +126,9 @@ test("uses Firebase for trip sync and private R2 photo and video storage", async
   assert.match(page, /Location for Stop/);
   assert.doesNotMatch(page, /tile\.openstreetmap\.org/);
   assert.match(mapbox, /mapbox:\/\/styles\/mapbox\/standard/);
+  assert.match(mapbox, /requireMapboxToken/);
+  assert.match(pagesWorkflow, /VITE_MAPBOX_ACCESS_TOKEN/);
+  assert.match(pagesWorkflow, /Verify Mapbox configuration/);
   assert.match(mapbox, /search\/searchbox\/v1\/suggest/);
   assert.match(mapbox, /text: item\.name/);
   assert.match(mapbox, /secondaryText: item\.full_address/);

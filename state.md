@@ -15,6 +15,7 @@ Last updated: 20 October 2026
 - Originals and thumbnails are uploaded directly from the device; Firestore stores their metadata and access-key URLs.
 - Failed uploads remain in the existing IndexedDB retry queue. Failed deletions keep their Firestore record so they stay visible and retryable.
 - The itinerary media picker uses a camera-roll grid with photo/video previews, per-item states and a clear `Share to Trip` action. Shared media is visible both at its assigned stop and in Photo Gallery for every trip member.
+- Mapbox is verified for place autocomplete, the Standard visual map style and walking routes. Web builds now receive `VITE_MAPBOX_ACCESS_TOKEN` from the GitHub Actions repository variable/secret and fail deployment instead of silently shipping maps without a token.
 
 ## Verification
 
