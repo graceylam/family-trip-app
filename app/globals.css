@@ -482,8 +482,9 @@ button { cursor: pointer; }
 .camera-roll-tile.selected .camera-roll-select-mark { background: #397c9c; }
 .stop-media-selection-bar { display: grid; gap: 9px; margin: 0 24px 12px; padding: 10px; border-radius: 14px; background: #eef6f8; }
 .stop-media-selection-bar > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--ink); font-size: .72rem; }
-.stop-media-selection-actions { display: grid; grid-template-columns: .75fr 1.5fr .75fr; gap: 7px; }
+.stop-media-selection-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
 .stop-media-selection-actions button { min-width: 0; min-height: 38px; padding: 7px 8px; font-size: .65rem; }
+.stop-media-selection-actions .sharing-action { grid-column: 1 / -1; }
 .shared-stop-heading { padding-top: 3px; }
 .shared-stop-heading > div { display: grid; gap: 3px; }
 .shared-stop-heading small { color: var(--muted); font-size: .64rem; }

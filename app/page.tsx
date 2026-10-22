@@ -446,7 +446,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [previewSharedMediaId, setPreviewSharedMediaId] = useState("");
   const [stopMediaSelectionMode, setStopMediaSelectionMode] = useState(false);
   const [selectedStopMediaIds, setSelectedStopMediaIds] = useState<string[]>([]);
-  const [stopMediaBulkState, setStopMediaBulkState] = useState<"idle" | "saving" | "unsharing" | "deleting">("idle");
+  const [stopMediaBulkState, setStopMediaBulkState] = useState<"idle" | "saving" | "sharing" | "adding" | "unsharing" | "deleting">("idle");
   const [stopMediaBulkProgress, setStopMediaBulkProgress] = useState({ completed: 0, total: 0 });
   const [queueState, setQueueState] = useState<"loading" | "ready" | "saving" | "unavailable">("loading");
   const [queueError, setQueueError] = useState<string | null>(null);
@@ -1467,6 +1467,49 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       window.setTimeout(() => setPhotoActionMessage(""), 2200);
     } catch (error) {
       setQueueError(error instanceof Error ? error.message : "The selected memories could not all be saved.");
+    } finally {
+      setStopMediaBulkState("idle"); setStopMediaBulkProgress({ completed: 0, total: 0 });
+    }
+  }
+
+  async function shareSelectedStopMedia() {
+    if (!selectedStopMediaCount) return;
+    const total = selectedStopMediaCount;
+    setStopMediaBulkState("sharing"); setStopMediaBulkProgress({ completed: 0, total }); setQueueError(null);
+    try {
+      const files: File[] = [];
+      for (const photo of selectedLocalStopPhotos) {
+        const record = await getQueuedPhoto(photo.id);
+        if (!record) throw new Error(`${photo.name} is no longer stored on this device.`);
+        files.push(new File([record.blob], record.name, { type: record.mimeType || record.blob.type }));
+        setStopMediaBulkProgress((current) => ({ ...current, completed: current.completed + 1 }));
+      }
+      for (const media of selectedRemoteStopPhotos) {
+        const response = await fetch(media.downloadUrl);
+        if (!response.ok) throw new Error(`Could not prepare ${media.name}.`);
+        files.push(new File([await response.blob()], media.name, { type: media.mimeType }));
+        setStopMediaBulkProgress((current) => ({ ...current, completed: current.completed + 1 }));
+      }
+      if (navigator.share && navigator.canShare?.({ files })) await navigator.share({ files, title: "Trip memories" });
+      else files.forEach((file) => { const url = URL.createObjectURL(file); const link = document.createElement("a"); link.href = url; link.download = file.name; link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); });
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) setQueueError(error instanceof Error ? error.message : "The selected memories could not be shared.");
+    } finally {
+      setStopMediaBulkState("idle"); setStopMediaBulkProgress({ completed: 0, total: 0 });
+    }
+  }
+
+  async function addSelectedStopMediaToSharing() {
+    const privatePhotos = selectedLocalStopPhotos.filter((photo) => photo.isPrivate);
+    if (!privatePhotos.length) return;
+    setStopMediaBulkState("adding"); setStopMediaBulkProgress({ completed: 0, total: privatePhotos.length }); setQueueError(null);
+    try {
+      for (const photo of privatePhotos) {
+        await togglePrivacy(photo.id);
+        setStopMediaBulkProgress((current) => ({ ...current, completed: current.completed + 1 }));
+      }
+    } catch (error) {
+      setQueueError(error instanceof Error ? error.message : "The selected memories could not be added to sharing.");
     } finally {
       setStopMediaBulkState("idle"); setStopMediaBulkProgress({ completed: 0, total: 0 });
     }
@@ -2924,7 +2967,9 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                 <div><strong>{selectedStopMediaCount} selected</strong><button className="text-button" disabled={stopMediaBulkState !== "idle"} onClick={() => { const allIds = [...selectedPhotos.map((photo) => `local:${photo.id}`), ...sharedOnlyPhotos.map((photo) => `shared:${photo.fileId}`)]; setSelectedStopMediaIds(selectedStopMediaCount === allIds.length ? [] : allIds); }}>{selectedStopMediaCount === selectedPhotos.length + sharedOnlyPhotos.length ? "Deselect all" : "Select all"}</button></div>
                 <div className="stop-media-selection-actions">
                   <button className="primary-button" disabled={!selectedStopMediaCount || stopMediaBulkState !== "idle"} onClick={() => void saveSelectedStopMedia()}>{stopMediaBulkState === "saving" ? `Saving ${stopMediaBulkProgress.completed}/${stopMediaBulkProgress.total}` : "Save"}</button>
-                  <button className="secondary-button" disabled={(!selectedLocalStopPhotos.some((photo) => !photo.isPrivate) && !removableRemoteStopPhotos.length) || stopMediaBulkState !== "idle"} onClick={() => void unshareSelectedStopMedia()}>{stopMediaBulkState === "unsharing" ? `Removing ${stopMediaBulkProgress.completed}/${stopMediaBulkProgress.total}` : "Remove from sharing"}</button>
+                  <button className="secondary-button" disabled={!selectedStopMediaCount || stopMediaBulkState !== "idle"} onClick={() => void shareSelectedStopMedia()}>{stopMediaBulkState === "sharing" ? `Preparing ${stopMediaBulkProgress.completed}/${stopMediaBulkProgress.total}` : "Share"}</button>
+                  {selectedLocalStopPhotos.some((photo) => photo.isPrivate) && <button className="secondary-button sharing-action" disabled={stopMediaBulkState !== "idle"} onClick={() => void addSelectedStopMediaToSharing()}>{stopMediaBulkState === "adding" ? `Adding ${stopMediaBulkProgress.completed}/${stopMediaBulkProgress.total}` : "Add to sharing"}</button>}
+                  {(selectedLocalStopPhotos.some((photo) => !photo.isPrivate) || removableRemoteStopPhotos.length > 0) && <button className="secondary-button sharing-action" disabled={stopMediaBulkState !== "idle"} onClick={() => void unshareSelectedStopMedia()}>{stopMediaBulkState === "unsharing" ? `Removing ${stopMediaBulkProgress.completed}/${stopMediaBulkProgress.total}` : "Remove from sharing"}</button>}
                   <button className="secondary-button danger-button" disabled={(!selectedLocalStopPhotos.length && !removableRemoteStopPhotos.length) || stopMediaBulkState !== "idle"} onClick={() => void deleteSelectedStopMedia()}>{stopMediaBulkState === "deleting" ? `Deleting ${stopMediaBulkProgress.completed}/${stopMediaBulkProgress.total}` : "Delete"}</button>
                 </div>
               </div>}
