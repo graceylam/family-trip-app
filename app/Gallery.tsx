@@ -76,6 +76,12 @@ export default function Gallery({ tripId, days, media, currentUid, isAdmin, stat
     setShowDetails(false);
   }, [viewer, viewerIndex, visible]);
 
+  useEffect(() => {
+    if (!viewer) return;
+    document.documentElement.classList.add("media-viewer-open");
+    return () => document.documentElement.classList.remove("media-viewer-open");
+  }, [viewer]);
+
   function open(item: TripMedia) {
     if (selectionMode) {
       setSelectedIds((current) => current.includes(item.fileId) ? current.filter((id) => id !== item.fileId) : [...current, item.fileId]);

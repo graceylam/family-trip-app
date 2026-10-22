@@ -1185,6 +1185,12 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     : 0;
 
   useEffect(() => {
+    if (!previewQueuedPhoto && !previewSharedMedia) return;
+    document.documentElement.classList.add("media-viewer-open");
+    return () => document.documentElement.classList.remove("media-viewer-open");
+  }, [previewQueuedPhoto, previewSharedMedia]);
+
+  useEffect(() => {
     if (autoUploadCount > 0 && queueState === "ready" && googleState !== "uploading" && !isOffline && currentMember && tripId) {
       void uploadQueuedPhotos();
     }
