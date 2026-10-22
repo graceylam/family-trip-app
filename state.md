@@ -14,9 +14,9 @@ Last updated: 22 October 2026
 - Uploads authenticate with Firebase ID tokens and verify trip membership through Firestore rules.
 - Originals and thumbnails are uploaded directly from the device; Firestore stores their metadata and access-key URLs.
 - Failed uploads remain in the existing IndexedDB retry queue. Failed deletions keep their Firestore record so they stay visible and retryable.
-- The itinerary media picker uses a camera-roll grid with photo/video previews and per-item states. One `Upload All Waiting` action uploads every queued memory across the trip to its assigned stop.
+- The itinerary media picker now behaves like a messaging app: selected photos/videos appear immediately and automatically upload in the background. The durable IndexedDB queue remains underneath for offline safety, with only subtle per-tile progress/error badges and a compact status message.
 - Photo Gallery has one `Save All Shared` action. It includes only successfully uploaded/shared media, never items that are still in the local offline queue.
-- Individual queued and shared previews have `Save to Photos`; on iPhone this opens Apple's Share Sheet so the person can choose Save Image or Save Video. Shared media remains visible both at its assigned stop and in Photo Gallery for every trip member.
+- Stop and Gallery previews are full-screen, support horizontal swiping and swipe-down dismissal, preload neighbouring gallery photos, and use compact Share, Favourite, More and Delete controls. Share opens Apple's Share Sheet so the person can choose Save Image or Save Video. Shared media remains visible both at its assigned stop and in Photo Gallery for every trip member.
 - Mapbox is verified for place autocomplete, the Standard visual map style and walking routes. Web builds now receive `VITE_MAPBOX_ACCESS_TOKEN` from the GitHub Actions repository variable/secret and fail deployment instead of silently shipping maps without a token.
 
 ## Verification

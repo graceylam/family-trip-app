@@ -490,6 +490,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [documentPreviewLoading, setDocumentPreviewLoading] = useState<TripDocument | null>(null);
   const [hasLoadedLocalState, setHasLoadedLocalState] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const documentInputRef = useRef<HTMLInputElement>(null);
   const screenshotInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
@@ -1138,9 +1139,16 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       photo.pendingCloudDeletion,
   );
   const waitingCount = pendingQueuePhotos.length;
+  const autoUploadCount = queuedPhotos.filter((photo) => !photo.isPrivate && photo.status === "waiting" && !photo.pendingCloudDeletion).length;
   const uploadProgressPercent = uploadProgress?.total
     ? Math.round((uploadProgress.completed / uploadProgress.total) * 100)
     : 0;
+
+  useEffect(() => {
+    if (autoUploadCount > 0 && queueState === "ready" && googleState !== "uploading" && !isOffline && currentMember && tripId) {
+      void uploadQueuedPhotos();
+    }
+  }, [autoUploadCount, currentMember, googleState, isOffline, queueState, tripId]);
   const tripSyncLabel = isOffline
     ? hasPendingTripSave ? "Offline · changes kept safely" : "Offline copy"
     : tripSyncState === "saving"
@@ -2722,20 +2730,10 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
             <section className="photo-panel" aria-labelledby="add-photos-title">
               <div className="photo-panel-heading">
                 <div>
-                  <p className="eyebrow">Photo upload</p>
-                  <h3 id="add-photos-title">Add photos or videos</h3>
+                  <p className="eyebrow">Memories from this stop</p>
+                  <h3 id="add-photos-title">Photos & videos</h3>
                 </div>
-                {isOffline ? (
-                  <button className="sync-button" disabled>Cloud offline</button>
-                ) : googleState === "uploading" ? (
-                  <button className="sync-button" disabled>Uploading…</button>
-                ) : googleState === "connected" ? (
-                  <button className="sync-button" disabled>Shared gallery ready</button>
-                ) : (
-                  <button className="sync-button" onClick={connectGoogleDrive} disabled={googleState === "connecting"}>
-                    {googleState === "connecting" ? "Checking gallery…" : "Connect shared gallery"}
-                  </button>
-                )}
+                <button className="media-add-button" onClick={() => fileInputRef.current?.click()} disabled={queueState !== "ready"} aria-label="Add photos or videos">＋</button>
               </div>
               <div className="photo-actions">
               <input
@@ -2746,34 +2744,17 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                 multiple
                 onChange={handlePhotoSelection}
               />
-              <button
-                className="primary-button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={queueState !== "ready"}
-              >
-                {queueState === "saving" ? "Saving temporary copies…" : "+ Choose Photos or Videos"}
-              </button>
-              <button
-                className="share-trip-button"
-                onClick={() => void uploadQueuedPhotos()}
-                disabled={waitingCount === 0 || googleState === "uploading" || isOffline}
-              >
-                {googleState === "uploading"
-                  ? "Uploading all…"
-                  : `Upload All Waiting${waitingCount ? ` (${waitingCount})` : ""}`}
-              </button>
-              <small className="share-trip-explainer">Uploads every waiting memory to its assigned stop for everyone in the trip.</small>
-              {(googleError || googleState === "uploading" || isOffline) && <div className={`photo-upload-feedback ${googleError ? "error" : ""}`} role={googleError ? "alert" : "status"} aria-live="polite">
+              {(googleError || googleState === "uploading" || isOffline || queueState === "saving") && <div className={`photo-upload-feedback compact ${googleError ? "error" : ""}`} role={googleError ? "alert" : "status"} aria-live="polite">
                 <strong>
                   {googleError
                     ? googleError
+                    : queueState === "saving"
+                      ? "Adding to this stop…"
                     : googleState === "uploading"
-                      ? `Uploading ${uploadProgress?.completed ?? 0} of ${uploadProgress?.total ?? waitingCount} memories…`
+                      ? `Sharing ${uploadProgress?.completed ?? 0} of ${uploadProgress?.total ?? waitingCount}…`
                       : isOffline
-                        ? `${waitingCount} ${waitingCount === 1 ? "memory" : "memories"} safely waiting offline`
-                        : waitingCount > 0
-                          ? `${waitingCount} ${waitingCount === 1 ? "memory needs" : "memories need"} uploading`
-                          : "All selected memories are uploaded"}
+                        ? `${waitingCount} waiting safely for a connection`
+                        : "Ready"}
                 </strong>
                 {googleState === "uploading" && uploadProgress && uploadProgress.total > 0 && (
                   <>
@@ -2782,21 +2763,20 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                   </>
                 )}
               </div>}
-              <p>Take photos with the iPhone Camera first, then choose them here.</p>
               {queueState === "loading" && <p className="queue-message">Opening your offline photo queue…</p>}
               {queueError && <p className="queue-message error" role="alert">{queueError}</p>}
               </div>
 
               <div className="gallery-heading">
-              <h3>Selected for this stop</h3>
-              <span>{selectedPhotos.length} on this device</span>
+              <h3>At this stop</h3>
+              <span>{selectedPhotos.length + sharedOnlyPhotos.length} memories</span>
               </div>
 
-              {selectedPhotos.length === 0 ? (
+              {selectedPhotos.length === 0 && sharedOnlyPhotos.length === 0 ? (
               <div className="empty-gallery">
-                <div className="empty-icon">▧</div>
-                <strong>No photos assigned yet</strong>
-                <p>Your originals will always remain safely in Apple Photos.</p>
+                <div className="empty-icon">＋</div>
+                <strong>Add the first memory</strong>
+                <p>It appears here instantly and shares quietly in the background.</p>
               </div>
             ) : (
               <div className="photo-grid camera-roll-grid">
@@ -2808,7 +2788,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                       ? <video src={photo.previewUrl} muted playsInline preload="metadata" />
                       : <img src={photo.previewUrl} alt={photo.name} />}
                     <span className={`camera-roll-status ${photo.isPrivate ? "private" : photo.status}`}>
-                      {photo.status === "uploaded" && !photo.isPrivate ? "✓" : photo.status === "uploading" ? "↑" : photo.status === "needsAttention" ? "!" : photo.isPrivate ? "Private" : "Ready"}
+                      {photo.status === "uploaded" && !photo.isPrivate ? "✓" : photo.status === "uploading" ? "◌" : photo.status === "needsAttention" ? "!" : photo.isPrivate ? "Private" : "…"}
                     </span>
                     {photo.mimeType.startsWith("video/") && <span className="camera-roll-video">▶ Video</span>}
                     <span className="camera-roll-name">{photo.name}</span>
@@ -2820,24 +2800,6 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                     >×</button>
                   </figure>
                 ))}
-              </div>
-              )}
-
-              <div className="gallery-heading shared-stop-heading">
-                <div><h3>Shared at this stop</h3><small>Visible here and in Photo Gallery</small></div>
-                <span>{selectedSharedPhotos.length} shared</span>
-              </div>
-              {selectedSharedPhotos.length === 0 ? (
-                <div className="shared-stop-empty">Shared memories from every family member will appear here.</div>
-              ) : (
-                <div className="photo-grid camera-roll-grid shared-stop-grid">
-                  {selectedPhotos.filter((photo) => photo.status === "uploaded" && photo.firebaseMediaId).map((photo) => (
-                    <button key={`local-${photo.id}`} className="camera-roll-tile shared" onClick={() => setPreviewQueuedPhotoId(photo.id)} aria-label={`Open shared ${photo.name}`}>
-                      {photo.mimeType.startsWith("video/") ? <video src={photo.previewUrl} muted playsInline preload="metadata" /> : <img src={photo.previewUrl} alt={photo.name} />}
-                      <span className="camera-roll-status uploaded">✓ Shared</span>
-                      <span className="camera-roll-person">You</span>
-                    </button>
-                  ))}
                   {sharedOnlyPhotos.map((photo) => (
                     <button key={photo.fileId} className="camera-roll-tile shared" onClick={() => setPreviewSharedMediaId(photo.fileId)} aria-label={`Open ${photo.memberName}'s ${photo.mediaType}`}>
                       {photo.mediaType === "video" ? <video src={photo.thumbnailUrl || photo.downloadUrl} muted playsInline preload="metadata" /> : <img src={photo.thumbnailUrl || photo.downloadUrl} alt={photo.caption || photo.name} loading="lazy" />}
@@ -3245,21 +3207,17 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
       {previewQueuedPhoto && (
         <div className="media-preview-backdrop" role="presentation" onMouseDown={() => setPreviewQueuedPhotoId("")}>
-          <section className="media-preview" role="dialog" aria-modal="true" aria-label={`Preview ${previewQueuedPhoto.name}`} onMouseDown={(event) => event.stopPropagation()}>
-            <header><button onClick={() => setPreviewQueuedPhotoId("")}>Done</button><div><strong>{previewQueuedPhoto.name}</strong><small>{statusLabel(previewQueuedPhoto)} · {previewQueuedPhoto.memberName}</small></div><span /></header>
+          <section className="media-preview" role="dialog" aria-modal="true" aria-label={`Preview ${previewQueuedPhoto.name}`} onMouseDown={(event) => event.stopPropagation()} onTouchStart={(event) => { mediaSwipeStartRef.current = { x: event.touches[0]?.clientX ?? 0, y: event.touches[0]?.clientY ?? 0 }; }} onTouchEnd={(event) => { const start = mediaSwipeStartRef.current; if (!start) return; const x = event.changedTouches[0]?.clientX ?? start.x; const y = event.changedTouches[0]?.clientY ?? start.y; const dx = x - start.x; const dy = y - start.y; mediaSwipeStartRef.current = null; if (Math.abs(dy) > 90 && Math.abs(dy) > Math.abs(dx)) { setPreviewQueuedPhotoId(""); return; } if (Math.abs(dx) > 55) { const index = selectedPhotos.findIndex((photo) => photo.id === previewQueuedPhoto.id); setPreviewQueuedPhotoId(selectedPhotos[(index + (dx > 0 ? -1 : 1) + selectedPhotos.length) % selectedPhotos.length]?.id ?? ""); } }}>
+            <header><button className="media-icon-button close" onClick={() => setPreviewQueuedPhotoId("")} aria-label="Close">×</button><div><strong>{previewQueuedPhoto.name}</strong><small>{statusLabel(previewQueuedPhoto)} · {previewQueuedPhoto.memberName}</small></div><span /></header>
             <div className="media-preview-stage">
               {previewQueuedPhoto.mimeType.startsWith("video/")
                 ? <video src={previewQueuedPhoto.previewUrl} controls autoPlay playsInline />
                 : <img src={previewQueuedPhoto.previewUrl} alt={previewQueuedPhoto.name} />}
             </div>
-            <footer>
-              <button className="secondary-button" onClick={() => void saveQueuedMemoryToPhotos(previewQueuedPhoto)}>Save to Photos</button>
-              <button className="secondary-button" onClick={() => void togglePrivacy(previewQueuedPhoto.id)} disabled={previewQueuedPhoto.pendingLocalRemoval}>
-                {previewQueuedPhoto.isPrivate ? "Share with trip" : "Keep private"}
-              </button>
-              <button className="danger-button" onClick={() => { void removePhoto(previewQueuedPhoto.id); setPreviewQueuedPhotoId(""); }}>
-                {previewQueuedPhoto.pendingLocalRemoval ? "Retry removal" : "Remove"}
-              </button>
+            <footer className="media-native-toolbar">
+              <button className="media-icon-action" onClick={() => void saveQueuedMemoryToPhotos(previewQueuedPhoto)} aria-label="Share or save to Photos"><span>↥</span><small>Share</small></button>
+              <button className="media-icon-action" onClick={() => void togglePrivacy(previewQueuedPhoto.id)} disabled={previewQueuedPhoto.pendingLocalRemoval} aria-label={previewQueuedPhoto.isPrivate ? "Share with trip" : "Keep private"}><span>{previewQueuedPhoto.isPrivate ? "☁" : "◉"}</span><small>{previewQueuedPhoto.isPrivate ? "Share" : "Private"}</small></button>
+              <button className="media-icon-action danger" onClick={() => { if (window.confirm("Remove this memory? Your original remains in Apple Photos.")) { void removePhoto(previewQueuedPhoto.id); setPreviewQueuedPhotoId(""); } }} aria-label="Delete memory"><span>♲</span><small>Delete</small></button>
             </footer>
           </section>
         </div>
@@ -3267,14 +3225,14 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
       {previewSharedMedia && (
         <div className="media-preview-backdrop" role="presentation" onMouseDown={() => setPreviewSharedMediaId("")}>
-          <section className="media-preview" role="dialog" aria-modal="true" aria-label={`Shared by ${previewSharedMedia.memberName}`} onMouseDown={(event) => event.stopPropagation()}>
-            <header><button onClick={() => setPreviewSharedMediaId("")}>Done</button><div><strong>{previewSharedMedia.caption || previewSharedMedia.name}</strong><small>Shared by {previewSharedMedia.memberName}</small></div><span /></header>
+          <section className="media-preview" role="dialog" aria-modal="true" aria-label={`Shared by ${previewSharedMedia.memberName}`} onMouseDown={(event) => event.stopPropagation()} onTouchStart={(event) => { mediaSwipeStartRef.current = { x: event.touches[0]?.clientX ?? 0, y: event.touches[0]?.clientY ?? 0 }; }} onTouchEnd={(event) => { const start = mediaSwipeStartRef.current; if (!start) return; const x = event.changedTouches[0]?.clientX ?? start.x; const y = event.changedTouches[0]?.clientY ?? start.y; const dx = x - start.x; const dy = y - start.y; mediaSwipeStartRef.current = null; if (Math.abs(dy) > 90 && Math.abs(dy) > Math.abs(dx)) { setPreviewSharedMediaId(""); return; } if (Math.abs(dx) > 55) { const index = selectedSharedPhotos.findIndex((photo) => photo.fileId === previewSharedMedia.fileId); setPreviewSharedMediaId(selectedSharedPhotos[(index + (dx > 0 ? -1 : 1) + selectedSharedPhotos.length) % selectedSharedPhotos.length]?.fileId ?? ""); } }}>
+            <header><button className="media-icon-button close" onClick={() => setPreviewSharedMediaId("")} aria-label="Close">×</button><div><strong>{previewSharedMedia.caption || previewSharedMedia.name}</strong><small>Shared by {previewSharedMedia.memberName}</small></div><span /></header>
             <div className="media-preview-stage">
               {previewSharedMedia.mediaType === "video"
                 ? <video src={previewSharedMedia.downloadUrl} controls autoPlay playsInline />
                 : <img src={previewSharedMedia.downloadUrl} alt={previewSharedMedia.caption || previewSharedMedia.name} />}
             </div>
-            <footer><button className="secondary-button" onClick={() => void saveSharedMemoryToPhotos(previewSharedMedia)}>Save to Photos</button></footer>
+            <footer className="media-native-toolbar"><button className="media-icon-action" onClick={() => void saveSharedMemoryToPhotos(previewSharedMedia)} aria-label="Share or save to Photos"><span>↥</span><small>Share</small></button>{previewSharedMedia.memberId === currentMember?.id && <button className="media-icon-action danger" onClick={() => { if (window.confirm("Delete this memory for everyone? Your original remains in Apple Photos.")) { void deleteTripMedia(accountTrip.id, previewSharedMedia); setPreviewSharedMediaId(""); } }} aria-label="Delete memory"><span>♲</span><small>Delete</small></button>}</footer>
           </section>
         </div>
       )}
