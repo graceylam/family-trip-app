@@ -1170,7 +1170,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     id: photo.fileId,
     mediaType: photo.mediaType,
     thumbnailUrl: photo.thumbnailUrl || photo.downloadUrl,
-    originalUrl: photo.downloadUrl,
+    originalUrl: photo.displayUrl || photo.downloadUrl,
     alt: photo.caption || photo.name,
   }));
   const pendingQueuePhotos = queuedPhotos.filter(

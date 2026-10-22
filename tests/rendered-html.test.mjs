@@ -82,7 +82,10 @@ test("uses Firebase for trip sync and private R2 photo and video storage", async
   assert.match(firebaseMedia, /getFamilyIdToken/);
   assert.match(firebaseMedia, /observeTripMedia/);
   assert.match(firebaseMedia, /thumbnailPath/);
+  assert.match(firebaseMedia, /displayPath/);
+  assert.match(firebaseMedia, /resizeImage\(image, 1920, \.86\)/);
   assert.match(r2Worker, /MEDIA_BUCKET/);
+  assert.match(r2Worker, /original\|display\|thumbnail/);
   assert.match(r2Worker, /100_000_000_000/);
   assert.match(r2Worker, /firestore\.googleapis\.com/);
   assert.match(storageRules, /tripMember/);

@@ -26,8 +26,10 @@ export type TripMedia = {
   hiddenBy: string[];
   storagePath: string;
   thumbnailPath?: string;
+  displayPath?: string;
   downloadUrl: string;
   thumbnailUrl?: string;
+  displayUrl?: string;
   storageProvider: "r2" | "firebase";
 };
 
@@ -57,8 +59,10 @@ function cleanMedia(id: string, value: Partial<TripMedia>): TripMedia {
     hiddenBy: Array.isArray(value.hiddenBy) ? value.hiddenBy.map(String) : [],
     storagePath: String(value.storagePath || ""),
     ...(value.thumbnailPath ? { thumbnailPath: String(value.thumbnailPath) } : {}),
+    ...(value.displayPath ? { displayPath: String(value.displayPath) } : {}),
     downloadUrl: String(value.downloadUrl || ""),
     ...(value.thumbnailUrl ? { thumbnailUrl: String(value.thumbnailUrl) } : {}),
+    ...(value.displayUrl ? { displayUrl: String(value.displayUrl) } : {}),
     storageProvider: value.storageProvider === "firebase" ? "firebase" : "r2",
   };
 }
@@ -79,17 +83,27 @@ function loadImage(source: Blob): Promise<HTMLImageElement> {
   });
 }
 
-async function imageThumbnail(blob: Blob): Promise<Blob | null> {
-  if (!blob.type.startsWith("image/")) return null;
+async function resizeImage(image: HTMLImageElement, maxEdge: number, quality: number): Promise<Blob | null> {
+  const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+}
+
+async function imageRenditions(blob: Blob): Promise<{ thumbnail: Blob | null; display: Blob | null }> {
+  if (!blob.type.startsWith("image/")) return { thumbnail: null, display: null };
   try {
     const image = await loadImage(blob);
-    const scale = Math.min(1, 720 / Math.max(image.naturalWidth, image.naturalHeight));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-    canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
-    return await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", .78));
-  } catch { return null; }
+    const [thumbnail, display] = await Promise.all([
+      resizeImage(image, 600, .76),
+      resizeImage(image, 1920, .86),
+    ]);
+    return { thumbnail, display };
+  } catch {
+    return { thumbnail: null, display: null };
+  }
 }
 
 function requireMediaApi(): string {
@@ -127,10 +141,13 @@ export async function uploadTripMedia(account: FamilyAccount, tripId: string, re
   const id = record.id;
   const accessKey = `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, "");
   const originalPath = `/v1/media/${encodeURIComponent(tripId)}/${encodeURIComponent(id)}/original`;
-  const thumbnail = await imageThumbnail(record.blob);
+  const { thumbnail, display } = await imageRenditions(record.blob);
   const thumbnailPath = thumbnail ? `/v1/media/${encodeURIComponent(tripId)}/${encodeURIComponent(id)}/thumbnail` : undefined;
-  await uploadBlob(originalPath, record.blob, record.name, accessKey, (progress) => onProgress?.(progress * (thumbnail ? .9 : 1)));
-  if (thumbnail && thumbnailPath) await uploadBlob(thumbnailPath, thumbnail, "thumbnail.jpg", accessKey, (progress) => onProgress?.(.9 + progress * .1));
+  const displayPath = display ? `/v1/media/${encodeURIComponent(tripId)}/${encodeURIComponent(id)}/display` : undefined;
+  const originalWeight = display ? .75 : thumbnail ? .9 : 1;
+  await uploadBlob(originalPath, record.blob, record.name, accessKey, (progress) => onProgress?.(progress * originalWeight));
+  if (display && displayPath) await uploadBlob(displayPath, display, "display.jpg", accessKey, (progress) => onProgress?.(.75 + progress * .2));
+  if (thumbnail && thumbnailPath) await uploadBlob(thumbnailPath, thumbnail, "thumbnail.jpg", accessKey, (progress) => onProgress?.((display ? .95 : .9) + progress * (display ? .05 : .1)));
   const media: TripMedia = {
     fileId: id, photoId: id, name: record.name, mimeType: record.mimeType,
     mediaType: record.mimeType.startsWith("video/") ? "video" : "photo",
@@ -140,14 +157,16 @@ export async function uploadTripMedia(account: FamilyAccount, tripId: string, re
     caption: "", favoriteBy: [], hiddenBy: [],
     storagePath: originalPath,
     ...(thumbnailPath ? { thumbnailPath } : {}),
+    ...(displayPath ? { displayPath } : {}),
     downloadUrl: objectUrl(originalPath, accessKey),
     ...(thumbnailPath ? { thumbnailUrl: objectUrl(thumbnailPath, accessKey) } : {}),
+    ...(displayPath ? { displayUrl: objectUrl(displayPath, accessKey) } : {}),
     storageProvider: "r2",
   };
   try {
     await setDoc(doc(getFamilyFirestore(), "trips", tripId, "media", id), { ...media, uploadedAtServer: serverTimestamp() });
   } catch (error) {
-    await Promise.allSettled([removeObject(originalPath), thumbnailPath ? removeObject(thumbnailPath) : Promise.resolve()]);
+    await Promise.allSettled([removeObject(originalPath), displayPath ? removeObject(displayPath) : Promise.resolve(), thumbnailPath ? removeObject(thumbnailPath) : Promise.resolve()]);
     throw error;
   }
   return media;
@@ -172,6 +191,7 @@ export async function deleteTripMedia(tripId: string, media: TripMedia): Promise
   // visible and the user can retry instead of silently orphaning paid storage.
   await Promise.all([
     media.storagePath ? removeObject(media.storagePath) : Promise.resolve(),
+    media.displayPath ? removeObject(media.displayPath) : Promise.resolve(),
     media.thumbnailPath ? removeObject(media.thumbnailPath) : Promise.resolve(),
   ]);
   await deleteDoc(doc(getFamilyFirestore(), "trips", tripId, "media", media.fileId));

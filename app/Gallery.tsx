@@ -23,8 +23,8 @@ function prettyDate(value: string) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short" });
 }
 
-function mediaUrl(item: TripMedia, original = false) {
-  return original ? item.downloadUrl : item.thumbnailUrl || item.downloadUrl;
+function mediaUrl(item: TripMedia, display = false) {
+  return display ? item.displayUrl || item.downloadUrl : item.thumbnailUrl || item.displayUrl || item.downloadUrl;
 }
 
 export default function Gallery({ tripId, days, media, currentUid, isAdmin, state, error, onUpdate, onDelete }: GalleryProps) {

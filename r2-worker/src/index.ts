@@ -68,7 +68,7 @@ function mediaKey(tripId: string, mediaId: string, variant: string): string {
 }
 
 function routeParts(pathname: string): { tripId: string; mediaId: string; variant: string } | null {
-  const match = pathname.match(/^\/v1\/media\/([^/]+)\/([^/]+)\/(original|thumbnail)$/);
+  const match = pathname.match(/^\/v1\/media\/([^/]+)\/([^/]+)\/(original|display|thumbnail)$/);
   if (!match) return null;
   const [, tripId, mediaId, variant] = match.map((part) => decodeURIComponent(part));
   return ID_PATTERN.test(tripId) && ID_PATTERN.test(mediaId) ? { tripId, mediaId, variant } : null;
@@ -142,4 +142,3 @@ export default {
     return json(request, { error: "Method not allowed." }, 405);
   },
 };
-
