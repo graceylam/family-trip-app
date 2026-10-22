@@ -8,7 +8,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         guard let windowScene = scene as? UIWindowScene else { return }
 
         let paper = UIColor(red: 247 / 255, green: 243 / 255, blue: 234 / 255, alpha: 1)
-        let bridgeViewController = CAPBridgeViewController()
+        // Use the app's bridge subclass so local native plugins (including
+        // direct saving to Apple Photos) are registered before the web UI loads.
+        let bridgeViewController = FamilyBridgeViewController()
         bridgeViewController.view.backgroundColor = paper
         bridgeViewController.webView?.backgroundColor = paper
         bridgeViewController.webView?.scrollView.backgroundColor = paper
