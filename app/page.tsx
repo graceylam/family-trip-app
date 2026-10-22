@@ -4,6 +4,7 @@ import { ChangeEvent, FormEvent, Fragment, type ReactNode, useCallback, useEffec
 import { createPortal } from "react-dom";
 import AccountPortal from "./AccountPortal";
 import Gallery from "./Gallery";
+import MediaSwipeStage from "./MediaSwipeStage";
 import MemoryLane from "./MemoryLane";
 import StopsBank from "./StopsBank";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -1135,6 +1136,20 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const sharedOnlyPhotos = selectedSharedPhotos.filter((photo) => !selectedLocalMediaIds.has(photo.fileId));
   const previewQueuedPhoto = queuedPhotos.find((photo) => photo.id === previewQueuedPhotoId) ?? null;
   const previewSharedMedia = sharedPhotos.find((photo) => photo.fileId === previewSharedMediaId) ?? null;
+  const queuedPreviewItems = selectedPhotos.map((photo) => ({
+    id: photo.id,
+    mediaType: photo.mimeType.startsWith("video/") ? "video" as const : "photo" as const,
+    thumbnailUrl: photo.previewUrl,
+    originalUrl: photo.previewUrl,
+    alt: photo.name,
+  }));
+  const sharedPreviewItems = selectedSharedPhotos.map((photo) => ({
+    id: photo.fileId,
+    mediaType: photo.mediaType,
+    thumbnailUrl: photo.thumbnailUrl || photo.downloadUrl,
+    originalUrl: photo.downloadUrl,
+    alt: photo.caption || photo.name,
+  }));
   const pendingQueuePhotos = queuedPhotos.filter(
     (photo) =>
       (!photo.isPrivate && photo.status !== "uploaded") ||
@@ -3228,12 +3243,10 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
       {previewQueuedPhoto && (
         <div className="media-preview-backdrop" role="presentation" onMouseDown={() => setPreviewQueuedPhotoId("")}>
-          <section className="media-preview" role="dialog" aria-modal="true" aria-label={`Preview ${previewQueuedPhoto.name}`} onMouseDown={(event) => event.stopPropagation()} onTouchStart={(event) => { mediaSwipeStartRef.current = { x: event.touches[0]?.clientX ?? 0, y: event.touches[0]?.clientY ?? 0 }; }} onTouchEnd={(event) => { const start = mediaSwipeStartRef.current; if (!start) return; const x = event.changedTouches[0]?.clientX ?? start.x; const y = event.changedTouches[0]?.clientY ?? start.y; const dx = x - start.x; const dy = y - start.y; mediaSwipeStartRef.current = null; if (Math.abs(dy) > 90 && Math.abs(dy) > Math.abs(dx)) { setPreviewQueuedPhotoId(""); return; } if (Math.abs(dx) > 55) { const index = selectedPhotos.findIndex((photo) => photo.id === previewQueuedPhoto.id); setPreviewQueuedPhotoId(selectedPhotos[(index + (dx > 0 ? -1 : 1) + selectedPhotos.length) % selectedPhotos.length]?.id ?? ""); } }}>
+          <section className="media-preview" role="dialog" aria-modal="true" aria-label={`Preview ${previewQueuedPhoto.name}`} onMouseDown={(event) => event.stopPropagation()} onTouchStart={(event) => { mediaSwipeStartRef.current = { x: event.touches[0]?.clientX ?? 0, y: event.touches[0]?.clientY ?? 0 }; }} onTouchEnd={(event) => { const start = mediaSwipeStartRef.current; if (!start) return; const x = event.changedTouches[0]?.clientX ?? start.x; const y = event.changedTouches[0]?.clientY ?? start.y; const dx = x - start.x; const dy = y - start.y; mediaSwipeStartRef.current = null; if (Math.abs(dy) > 105 && Math.abs(dy) > Math.abs(dx) * 1.25) setPreviewQueuedPhotoId(""); }}>
             <header><button className="media-icon-button close" onClick={() => setPreviewQueuedPhotoId("")} aria-label="Close">×</button><div><strong>{previewQueuedPhoto.name}</strong><small>{statusLabel(previewQueuedPhoto)} · {previewQueuedPhoto.memberName}</small></div><span /></header>
             <div className="media-preview-stage">
-              {previewQueuedPhoto.mimeType.startsWith("video/")
-                ? <video src={previewQueuedPhoto.previewUrl} controls autoPlay playsInline />
-                : <img src={previewQueuedPhoto.previewUrl} alt={previewQueuedPhoto.name} />}
+              <MediaSwipeStage items={queuedPreviewItems} currentId={previewQueuedPhoto.id} onChange={setPreviewQueuedPhotoId} />
             </div>
             <footer className="media-native-toolbar">
               <button className="media-icon-action" onClick={() => void saveQueuedMemoryToPhotos(previewQueuedPhoto)} aria-label="Save to Photos"><span>↓</span><small>Save</small></button>
@@ -3248,12 +3261,10 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
       {previewSharedMedia && (
         <div className="media-preview-backdrop" role="presentation" onMouseDown={() => setPreviewSharedMediaId("")}>
-          <section className="media-preview" role="dialog" aria-modal="true" aria-label={`Shared by ${previewSharedMedia.memberName}`} onMouseDown={(event) => event.stopPropagation()} onTouchStart={(event) => { mediaSwipeStartRef.current = { x: event.touches[0]?.clientX ?? 0, y: event.touches[0]?.clientY ?? 0 }; }} onTouchEnd={(event) => { const start = mediaSwipeStartRef.current; if (!start) return; const x = event.changedTouches[0]?.clientX ?? start.x; const y = event.changedTouches[0]?.clientY ?? start.y; const dx = x - start.x; const dy = y - start.y; mediaSwipeStartRef.current = null; if (Math.abs(dy) > 90 && Math.abs(dy) > Math.abs(dx)) { setPreviewSharedMediaId(""); return; } if (Math.abs(dx) > 55) { const index = selectedSharedPhotos.findIndex((photo) => photo.fileId === previewSharedMedia.fileId); setPreviewSharedMediaId(selectedSharedPhotos[(index + (dx > 0 ? -1 : 1) + selectedSharedPhotos.length) % selectedSharedPhotos.length]?.fileId ?? ""); } }}>
+          <section className="media-preview" role="dialog" aria-modal="true" aria-label={`Shared by ${previewSharedMedia.memberName}`} onMouseDown={(event) => event.stopPropagation()} onTouchStart={(event) => { mediaSwipeStartRef.current = { x: event.touches[0]?.clientX ?? 0, y: event.touches[0]?.clientY ?? 0 }; }} onTouchEnd={(event) => { const start = mediaSwipeStartRef.current; if (!start) return; const x = event.changedTouches[0]?.clientX ?? start.x; const y = event.changedTouches[0]?.clientY ?? start.y; const dx = x - start.x; const dy = y - start.y; mediaSwipeStartRef.current = null; if (Math.abs(dy) > 105 && Math.abs(dy) > Math.abs(dx) * 1.25) setPreviewSharedMediaId(""); }}>
             <header><button className="media-icon-button close" onClick={() => setPreviewSharedMediaId("")} aria-label="Close">×</button><div><strong>{previewSharedMedia.caption || previewSharedMedia.name}</strong><small>Shared by {previewSharedMedia.memberName}</small></div><span /></header>
             <div className="media-preview-stage">
-              {previewSharedMedia.mediaType === "video"
-                ? <video src={previewSharedMedia.downloadUrl} controls autoPlay playsInline />
-                : <img src={previewSharedMedia.downloadUrl} alt={previewSharedMedia.caption || previewSharedMedia.name} />}
+              <MediaSwipeStage items={sharedPreviewItems} currentId={previewSharedMedia.fileId} onChange={setPreviewSharedMediaId} />
             </div>
             <footer className="media-native-toolbar"><button className="media-icon-action" onClick={() => void saveSharedMemoryToPhotos(previewSharedMedia)} aria-label="Save to Photos"><span>↓</span><small>Save</small></button><button className="media-icon-action" onClick={() => void shareSharedMemory(previewSharedMedia)} aria-label="Share"><span>↥</span><small>Share</small></button>{previewSharedMedia.memberId === currentMember?.id && <button className="media-icon-action danger" onClick={() => { if (window.confirm("Delete this memory for everyone? Your original remains in Apple Photos.")) { void deleteTripMedia(accountTrip.id, previewSharedMedia); setPreviewSharedMediaId(""); } }} aria-label="Delete memory"><span>♲</span><small>Delete</small></button>}</footer>
             {photoActionMessage && <div className="media-action-toast" role="status">{photoActionMessage}</div>}
