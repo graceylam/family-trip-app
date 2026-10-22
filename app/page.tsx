@@ -444,6 +444,10 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [queuedPhotos, setQueuedPhotos] = useState<QueuedPhotoView[]>([]);
   const [previewQueuedPhotoId, setPreviewQueuedPhotoId] = useState("");
   const [previewSharedMediaId, setPreviewSharedMediaId] = useState("");
+  const [stopMediaSelectionMode, setStopMediaSelectionMode] = useState(false);
+  const [selectedStopMediaIds, setSelectedStopMediaIds] = useState<string[]>([]);
+  const [stopMediaBulkState, setStopMediaBulkState] = useState<"idle" | "saving" | "unsharing" | "deleting">("idle");
+  const [stopMediaBulkProgress, setStopMediaBulkProgress] = useState({ completed: 0, total: 0 });
   const [queueState, setQueueState] = useState<"loading" | "ready" | "saving" | "unavailable">("loading");
   const [queueError, setQueueError] = useState<string | null>(null);
   const [photoActionMessage, setPhotoActionMessage] = useState("");
@@ -1149,6 +1153,10 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const selectedSharedPhotos = sharedPhotos.filter((photo) => photo.stopId === selectedStop?.id);
   const selectedLocalMediaIds = new Set(selectedPhotos.map((photo) => photo.firebaseMediaId).filter(Boolean));
   const sharedOnlyPhotos = selectedSharedPhotos.filter((photo) => !selectedLocalMediaIds.has(photo.fileId));
+  const selectedLocalStopPhotos = selectedPhotos.filter((photo) => selectedStopMediaIds.includes(`local:${photo.id}`));
+  const selectedRemoteStopPhotos = sharedOnlyPhotos.filter((photo) => selectedStopMediaIds.includes(`shared:${photo.fileId}`));
+  const selectedStopMediaCount = selectedLocalStopPhotos.length + selectedRemoteStopPhotos.length;
+  const removableRemoteStopPhotos = selectedRemoteStopPhotos.filter((photo) => isAdmin || photo.memberId === currentMember?.id);
   const previewQueuedPhoto = queuedPhotos.find((photo) => photo.id === previewQueuedPhotoId) ?? null;
   const previewSharedMedia = sharedPhotos.find((photo) => photo.fileId === previewSharedMediaId) ?? null;
   const queuedPreviewItems = selectedPhotos.map((photo) => ({
@@ -1228,6 +1236,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     clearPlaceSearch();
     setDocumentsExpanded(false);
     setDocumentNavigationTarget(null);
+    setStopMediaSelectionMode(false);
+    setSelectedStopMediaIds([]);
     setSelectedStopId(stopId);
   }
 
@@ -1426,6 +1436,83 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     const response = await fetch(media.downloadUrl);
     if (!response.ok) throw new Error("The shared original could not be downloaded.");
     await shareBlob(await response.blob(), media.name, media.mimeType);
+  }
+
+  function toggleStopMediaSelection(id: string) {
+    setSelectedStopMediaIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
+
+  async function saveSelectedStopMedia() {
+    if (!selectedStopMediaCount) return;
+    const total = selectedStopMediaCount;
+    setStopMediaBulkState("saving"); setStopMediaBulkProgress({ completed: 0, total }); setQueueError(null);
+    try {
+      for (const photo of selectedLocalStopPhotos) {
+        const record = await getQueuedPhoto(photo.id);
+        if (!record) throw new Error(`${photo.name} is no longer stored on this device.`);
+        if (canSaveDirectlyToPhotos()) await saveBlobToNativePhotos(record.blob, record.mimeType);
+        else await shareBlob(record.blob, record.name, record.mimeType);
+        setStopMediaBulkProgress((current) => ({ ...current, completed: current.completed + 1 }));
+      }
+      for (const media of selectedRemoteStopPhotos) {
+        if (canSaveDirectlyToPhotos()) await saveUrlToPhotos(media.downloadUrl, media.mimeType);
+        else {
+          const response = await fetch(media.downloadUrl);
+          if (!response.ok) throw new Error(`Could not download ${media.name}.`);
+          await shareBlob(await response.blob(), media.name, media.mimeType);
+        }
+        setStopMediaBulkProgress((current) => ({ ...current, completed: current.completed + 1 }));
+      }
+      setPhotoActionMessage(`${total} ${total === 1 ? "memory" : "memories"} saved to Photos`);
+      window.setTimeout(() => setPhotoActionMessage(""), 2200);
+    } catch (error) {
+      setQueueError(error instanceof Error ? error.message : "The selected memories could not all be saved.");
+    } finally {
+      setStopMediaBulkState("idle"); setStopMediaBulkProgress({ completed: 0, total: 0 });
+    }
+  }
+
+  async function unshareSelectedStopMedia() {
+    const localToUnshare = selectedLocalStopPhotos.filter((photo) => !photo.isPrivate);
+    const total = localToUnshare.length + removableRemoteStopPhotos.length;
+    if (!total || !window.confirm(`Remove ${total} selected ${total === 1 ? "memory" : "memories"} from the shared trip? Copies on this device and originals in Apple Photos stay private.`)) return;
+    setStopMediaBulkState("unsharing"); setStopMediaBulkProgress({ completed: 0, total }); setQueueError(null);
+    try {
+      for (const photo of localToUnshare) {
+        await togglePrivacy(photo.id);
+        setStopMediaBulkProgress((current) => ({ ...current, completed: current.completed + 1 }));
+      }
+      for (const media of removableRemoteStopPhotos) {
+        await deleteTripMedia(accountTrip.id, media);
+        setStopMediaBulkProgress((current) => ({ ...current, completed: current.completed + 1 }));
+      }
+      setSelectedStopMediaIds([]);
+    } catch (error) {
+      setQueueError(error instanceof Error ? error.message : "The selected memories could not all be removed from sharing.");
+    } finally {
+      setStopMediaBulkState("idle"); setStopMediaBulkProgress({ completed: 0, total: 0 });
+    }
+  }
+
+  async function deleteSelectedStopMedia() {
+    const total = selectedLocalStopPhotos.length + removableRemoteStopPhotos.length;
+    if (!total || !window.confirm(`Delete ${total} selected ${total === 1 ? "memory" : "memories"} from the trip? Originals in Apple Photos are not affected.`)) return;
+    setStopMediaBulkState("deleting"); setStopMediaBulkProgress({ completed: 0, total }); setQueueError(null);
+    try {
+      for (const photo of selectedLocalStopPhotos) {
+        await removePhoto(photo.id);
+        setStopMediaBulkProgress((current) => ({ ...current, completed: current.completed + 1 }));
+      }
+      for (const media of removableRemoteStopPhotos) {
+        await deleteTripMedia(accountTrip.id, media);
+        setStopMediaBulkProgress((current) => ({ ...current, completed: current.completed + 1 }));
+      }
+      setSelectedStopMediaIds([]);
+    } catch (error) {
+      setQueueError(error instanceof Error ? error.message : "The selected memories could not all be deleted.");
+    } finally {
+      setStopMediaBulkState("idle"); setStopMediaBulkProgress({ completed: 0, total: 0 });
+    }
   }
 
   async function handleCoverSelection(event: ChangeEvent<HTMLInputElement>) {
@@ -2791,7 +2878,10 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                   <p className="eyebrow">Memories from this stop</p>
                   <h3 id="add-photos-title">Photos & videos</h3>
                 </div>
-                <button className="media-add-button" onClick={() => fileInputRef.current?.click()} disabled={queueState !== "ready"} aria-label="Add photos or videos">＋</button>
+                <div className="photo-panel-heading-actions">
+                  {(selectedPhotos.length + sharedOnlyPhotos.length) > 0 && <button className={`photo-select-button ${stopMediaSelectionMode ? "active" : ""}`} onClick={() => { setStopMediaSelectionMode((value) => !value); setSelectedStopMediaIds([]); }}>{stopMediaSelectionMode ? "Done" : "Select"}</button>}
+                  <button className="media-add-button" onClick={() => fileInputRef.current?.click()} disabled={queueState !== "ready"} aria-label="Add photos or videos">＋</button>
+                </div>
               </div>
               <div className="photo-actions">
               <input
@@ -2830,6 +2920,15 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
               <span>{selectedPhotos.length + sharedOnlyPhotos.length} memories</span>
               </div>
 
+              {stopMediaSelectionMode && <div className="stop-media-selection-bar">
+                <div><strong>{selectedStopMediaCount} selected</strong><button className="text-button" disabled={stopMediaBulkState !== "idle"} onClick={() => { const allIds = [...selectedPhotos.map((photo) => `local:${photo.id}`), ...sharedOnlyPhotos.map((photo) => `shared:${photo.fileId}`)]; setSelectedStopMediaIds(selectedStopMediaCount === allIds.length ? [] : allIds); }}>{selectedStopMediaCount === selectedPhotos.length + sharedOnlyPhotos.length ? "Deselect all" : "Select all"}</button></div>
+                <div className="stop-media-selection-actions">
+                  <button className="primary-button" disabled={!selectedStopMediaCount || stopMediaBulkState !== "idle"} onClick={() => void saveSelectedStopMedia()}>{stopMediaBulkState === "saving" ? `Saving ${stopMediaBulkProgress.completed}/${stopMediaBulkProgress.total}` : "Save"}</button>
+                  <button className="secondary-button" disabled={(!selectedLocalStopPhotos.some((photo) => !photo.isPrivate) && !removableRemoteStopPhotos.length) || stopMediaBulkState !== "idle"} onClick={() => void unshareSelectedStopMedia()}>{stopMediaBulkState === "unsharing" ? `Removing ${stopMediaBulkProgress.completed}/${stopMediaBulkProgress.total}` : "Remove from sharing"}</button>
+                  <button className="secondary-button danger-button" disabled={(!selectedLocalStopPhotos.length && !removableRemoteStopPhotos.length) || stopMediaBulkState !== "idle"} onClick={() => void deleteSelectedStopMedia()}>{stopMediaBulkState === "deleting" ? `Deleting ${stopMediaBulkProgress.completed}/${stopMediaBulkProgress.total}` : "Delete"}</button>
+                </div>
+              </div>}
+
               {selectedPhotos.length === 0 && sharedOnlyPhotos.length === 0 ? (
               <div className="empty-gallery">
                 <div className="empty-icon">＋</div>
@@ -2839,8 +2938,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
             ) : (
               <div className="photo-grid camera-roll-grid">
                 {selectedPhotos.map((photo) => (
-                  <figure key={photo.id} className="camera-roll-tile">
-                    <button className="camera-roll-preview" onClick={() => setPreviewQueuedPhotoId(photo.id)} aria-label={`Preview ${photo.name}`}>
+                  <figure key={photo.id} className={`camera-roll-tile ${selectedStopMediaIds.includes(`local:${photo.id}`) ? "selected" : ""}`}>
+                    <button className="camera-roll-preview" onClick={() => stopMediaSelectionMode ? toggleStopMediaSelection(`local:${photo.id}`) : setPreviewQueuedPhotoId(photo.id)} aria-label={stopMediaSelectionMode ? `Select ${photo.name}` : `Preview ${photo.name}`} aria-pressed={stopMediaSelectionMode ? selectedStopMediaIds.includes(`local:${photo.id}`) : undefined}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     {photo.mimeType.startsWith("video/")
                       ? <video src={photo.previewUrl} muted playsInline preload="metadata" />
@@ -2850,6 +2949,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                     </span>
                     {photo.mimeType.startsWith("video/") && <span className="camera-roll-video">▶ Video</span>}
                     <span className="camera-roll-name">{photo.name}</span>
+                    {stopMediaSelectionMode && <span className="camera-roll-select-mark">{selectedStopMediaIds.includes(`local:${photo.id}`) ? "✓" : ""}</span>}
                     </button>
                     <button
                       className="camera-roll-remove"
@@ -2859,10 +2959,11 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                   </figure>
                 ))}
                   {sharedOnlyPhotos.map((photo) => (
-                    <button key={photo.fileId} className="camera-roll-tile shared" onClick={() => setPreviewSharedMediaId(photo.fileId)} aria-label={`Open ${photo.memberName}'s ${photo.mediaType}`}>
+                    <button key={photo.fileId} className={`camera-roll-tile shared ${selectedStopMediaIds.includes(`shared:${photo.fileId}`) ? "selected" : ""}`} onClick={() => stopMediaSelectionMode ? toggleStopMediaSelection(`shared:${photo.fileId}`) : setPreviewSharedMediaId(photo.fileId)} aria-label={stopMediaSelectionMode ? `Select ${photo.memberName}'s ${photo.mediaType}` : `Open ${photo.memberName}'s ${photo.mediaType}`} aria-pressed={stopMediaSelectionMode ? selectedStopMediaIds.includes(`shared:${photo.fileId}`) : undefined}>
                       {photo.mediaType === "video" ? <video src={photo.thumbnailUrl || photo.downloadUrl} muted playsInline preload="metadata" /> : <img src={photo.thumbnailUrl || photo.downloadUrl} alt={photo.caption || photo.name} loading="lazy" />}
                       {photo.mediaType === "video" && <span className="camera-roll-video">▶ Video</span>}
                       <span className="camera-roll-person">{photo.memberName}</span>
+                      {stopMediaSelectionMode && <span className="camera-roll-select-mark">{selectedStopMediaIds.includes(`shared:${photo.fileId}`) ? "✓" : ""}</span>}
                     </button>
                   ))}
                 </div>
@@ -3274,7 +3375,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
             <footer className="media-native-toolbar">
               <button className="media-icon-action" onClick={() => void saveQueuedMemoryToPhotos(previewQueuedPhoto)} aria-label="Save to Photos"><span>↓</span><small>Save</small></button>
               <button className="media-icon-action" onClick={() => void shareQueuedMemory(previewQueuedPhoto)} aria-label="Share"><span>↥</span><small>Share</small></button>
-              <button className="media-icon-action" onClick={() => void togglePrivacy(previewQueuedPhoto.id)} disabled={previewQueuedPhoto.pendingLocalRemoval} aria-label={previewQueuedPhoto.isPrivate ? "Share with trip" : "Keep private"}><span>{previewQueuedPhoto.isPrivate ? "☁" : "◉"}</span><small>{previewQueuedPhoto.isPrivate ? "Share" : "Private"}</small></button>
+              <button className="media-icon-action" onClick={() => void togglePrivacy(previewQueuedPhoto.id)} disabled={previewQueuedPhoto.pendingLocalRemoval} aria-label={previewQueuedPhoto.isPrivate ? "Share with trip" : "Keep private"}><span>{previewQueuedPhoto.isPrivate ? "↑" : "◉"}</span><small>{previewQueuedPhoto.isPrivate ? "Share" : "Private"}</small></button>
               <button className="media-icon-action danger" onClick={() => { if (window.confirm("Remove this memory? Your original remains in Apple Photos.")) { void removePhoto(previewQueuedPhoto.id); setPreviewQueuedPhotoId(""); } }} aria-label="Delete memory"><span>♲</span><small>Delete</small></button>
             </footer>
             {photoActionMessage && <div className="media-action-toast" role="status">{photoActionMessage}</div>}
