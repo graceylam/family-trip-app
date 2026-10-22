@@ -99,7 +99,9 @@ test("uses Firebase for trip sync and private R2 photo and video storage", async
   assert.match(gallery, /Favourites/);
   assert.match(gallery, /Save All Shared/);
   assert.match(gallery, /Save Selected to Photos/);
-  assert.match(gallery, /Share or save/);
+  assert.match(gallery, /Save to Photos/);
+  assert.match(gallery, /saveUrlToPhotos/);
+  assert.match(page, /saveBlobToNativePhotos/);
   assert.match(gallery, /gallery-lightbox/);
   assert.match(service, /"Day " \+ dayNumber \+ " - " \+ dayName/);
   assert.match(service, /file\.moveTo\(getPhotoFolder_\(payload\)\)/);

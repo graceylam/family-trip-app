@@ -17,6 +17,7 @@ import {
   saveFirebaseTripState,
 } from "../lib/firebaseTripState";
 import { deleteTripMedia, observeTripMedia, updateTripMedia, uploadTripMedia, type TripMedia } from "../lib/firebaseMedia";
+import { canSaveDirectlyToPhotos, saveBlobToNativePhotos, saveUrlToPhotos } from "../lib/nativePhotos";
 import { sortItineraryChronologically } from "../lib/chronology";
 import { convertedAmount, getLatestExchangeRate } from "../lib/exchangeRates";
 import {
@@ -429,6 +430,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [previewSharedMediaId, setPreviewSharedMediaId] = useState("");
   const [queueState, setQueueState] = useState<"loading" | "ready" | "saving" | "unavailable">("loading");
   const [queueError, setQueueError] = useState<string | null>(null);
+  const [photoActionMessage, setPhotoActionMessage] = useState("");
   const [uploadProgress, setUploadProgress] = useState<{ completed: number; total: number } | null>(null);
   const [storageHealth, setStorageHealth] = useState<StorageHealth | null>(null);
   const [isOffline, setIsOffline] = useState(false);
@@ -1332,7 +1334,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     }
   }
 
-  async function saveBlobToPhotos(blob: Blob, name: string, mimeType: string) {
+  async function shareBlob(blob: Blob, name: string, mimeType: string) {
     const file = new File([blob], name, { type: mimeType || blob.type || "application/octet-stream" });
     if (navigator.share && navigator.canShare?.({ files: [file] })) {
       await navigator.share({ files: [file], title: name });
@@ -1351,23 +1353,42 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     try {
       const record = await getQueuedPhoto(photo.id);
       if (!record) throw new Error("This temporary copy is no longer on this device.");
-      await saveBlobToPhotos(record.blob, record.name, record.mimeType);
+      if (canSaveDirectlyToPhotos()) await saveBlobToNativePhotos(record.blob, record.mimeType);
+      else await shareBlob(record.blob, record.name, record.mimeType);
+      setPhotoActionMessage(canSaveDirectlyToPhotos() ? "Saved to Photos" : "Opened Share Sheet");
+      window.setTimeout(() => setPhotoActionMessage(""), 1800);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
-      setQueueError(error instanceof Error ? error.message : "This memory could not be opened in the Share Sheet.");
+      setPhotoActionMessage(error instanceof Error ? error.message : "This memory could not be saved.");
     }
   }
 
   async function saveSharedMemoryToPhotos(media: TripMedia) {
     setQueueError(null);
     try {
-      const response = await fetch(media.downloadUrl);
-      if (!response.ok) throw new Error("The shared original could not be downloaded.");
-      await saveBlobToPhotos(await response.blob(), media.name, media.mimeType);
+      if (canSaveDirectlyToPhotos()) await saveUrlToPhotos(media.downloadUrl, media.mimeType);
+      else {
+        const response = await fetch(media.downloadUrl);
+        if (!response.ok) throw new Error("The shared original could not be downloaded.");
+        await shareBlob(await response.blob(), media.name, media.mimeType);
+      }
+      setPhotoActionMessage(canSaveDirectlyToPhotos() ? "Saved to Photos" : "Opened Share Sheet");
+      window.setTimeout(() => setPhotoActionMessage(""), 1800);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
-      setQueueError(error instanceof Error ? error.message : "This memory could not be opened in the Share Sheet.");
+      setPhotoActionMessage(error instanceof Error ? error.message : "This memory could not be saved.");
     }
+  }
+
+  async function shareQueuedMemory(photo: QueuedPhotoView) {
+    const record = await getQueuedPhoto(photo.id);
+    if (record) await shareBlob(record.blob, record.name, record.mimeType);
+  }
+
+  async function shareSharedMemory(media: TripMedia) {
+    const response = await fetch(media.downloadUrl);
+    if (!response.ok) throw new Error("The shared original could not be downloaded.");
+    await shareBlob(await response.blob(), media.name, media.mimeType);
   }
 
   async function handleCoverSelection(event: ChangeEvent<HTMLInputElement>) {
@@ -3215,10 +3236,12 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                 : <img src={previewQueuedPhoto.previewUrl} alt={previewQueuedPhoto.name} />}
             </div>
             <footer className="media-native-toolbar">
-              <button className="media-icon-action" onClick={() => void saveQueuedMemoryToPhotos(previewQueuedPhoto)} aria-label="Share or save to Photos"><span>↥</span><small>Share</small></button>
+              <button className="media-icon-action" onClick={() => void saveQueuedMemoryToPhotos(previewQueuedPhoto)} aria-label="Save to Photos"><span>↓</span><small>Save</small></button>
+              <button className="media-icon-action" onClick={() => void shareQueuedMemory(previewQueuedPhoto)} aria-label="Share"><span>↥</span><small>Share</small></button>
               <button className="media-icon-action" onClick={() => void togglePrivacy(previewQueuedPhoto.id)} disabled={previewQueuedPhoto.pendingLocalRemoval} aria-label={previewQueuedPhoto.isPrivate ? "Share with trip" : "Keep private"}><span>{previewQueuedPhoto.isPrivate ? "☁" : "◉"}</span><small>{previewQueuedPhoto.isPrivate ? "Share" : "Private"}</small></button>
               <button className="media-icon-action danger" onClick={() => { if (window.confirm("Remove this memory? Your original remains in Apple Photos.")) { void removePhoto(previewQueuedPhoto.id); setPreviewQueuedPhotoId(""); } }} aria-label="Delete memory"><span>♲</span><small>Delete</small></button>
             </footer>
+            {photoActionMessage && <div className="media-action-toast" role="status">{photoActionMessage}</div>}
           </section>
         </div>
       )}
@@ -3232,7 +3255,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                 ? <video src={previewSharedMedia.downloadUrl} controls autoPlay playsInline />
                 : <img src={previewSharedMedia.downloadUrl} alt={previewSharedMedia.caption || previewSharedMedia.name} />}
             </div>
-            <footer className="media-native-toolbar"><button className="media-icon-action" onClick={() => void saveSharedMemoryToPhotos(previewSharedMedia)} aria-label="Share or save to Photos"><span>↥</span><small>Share</small></button>{previewSharedMedia.memberId === currentMember?.id && <button className="media-icon-action danger" onClick={() => { if (window.confirm("Delete this memory for everyone? Your original remains in Apple Photos.")) { void deleteTripMedia(accountTrip.id, previewSharedMedia); setPreviewSharedMediaId(""); } }} aria-label="Delete memory"><span>♲</span><small>Delete</small></button>}</footer>
+            <footer className="media-native-toolbar"><button className="media-icon-action" onClick={() => void saveSharedMemoryToPhotos(previewSharedMedia)} aria-label="Save to Photos"><span>↓</span><small>Save</small></button><button className="media-icon-action" onClick={() => void shareSharedMemory(previewSharedMedia)} aria-label="Share"><span>↥</span><small>Share</small></button>{previewSharedMedia.memberId === currentMember?.id && <button className="media-icon-action danger" onClick={() => { if (window.confirm("Delete this memory for everyone? Your original remains in Apple Photos.")) { void deleteTripMedia(accountTrip.id, previewSharedMedia); setPreviewSharedMediaId(""); } }} aria-label="Delete memory"><span>♲</span><small>Delete</small></button>}</footer>
+            {photoActionMessage && <div className="media-action-toast" role="status">{photoActionMessage}</div>}
           </section>
         </div>
       )}
