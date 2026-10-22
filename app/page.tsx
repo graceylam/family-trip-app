@@ -2889,6 +2889,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           days={days}
           media={sharedPhotos}
           currentUid={account.uid}
+          isAdmin={isAdmin}
           state={galleryState}
           error={galleryError}
           onUpdate={async (item, changes) => updateTripMedia(accountTrip.id, item.fileId, changes)}

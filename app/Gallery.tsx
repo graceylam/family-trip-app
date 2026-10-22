@@ -11,6 +11,7 @@ type GalleryProps = {
   days: TripDay[];
   media: TripMedia[];
   currentUid: string;
+  isAdmin: boolean;
   state: "idle" | "loading" | "ready" | "offline" | "error";
   error: string | null;
   onUpdate: (media: TripMedia, changes: Partial<Pick<TripMedia, "caption" | "favoriteBy" | "hiddenBy">>) => Promise<void>;
@@ -26,7 +27,7 @@ function mediaUrl(item: TripMedia, original = false) {
   return original ? item.downloadUrl : item.thumbnailUrl || item.downloadUrl;
 }
 
-export default function Gallery({ tripId, days, media, currentUid, state, error, onUpdate, onDelete }: GalleryProps) {
+export default function Gallery({ tripId, days, media, currentUid, isAdmin, state, error, onUpdate, onDelete }: GalleryProps) {
   const [dayFilter, setDayFilter] = useState("");
   const [personFilter, setPersonFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState<"" | "photo" | "video" | "favorite">("");
@@ -35,7 +36,7 @@ export default function Gallery({ tripId, days, media, currentUid, state, error,
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [captionDraft, setCaptionDraft] = useState("");
   const [showDetails, setShowDetails] = useState(false);
-  const [shareState, setShareState] = useState<"idle" | "sharing">("idle");
+  const [shareState, setShareState] = useState<"idle" | "sharing" | "saving" | "deleting">("idle");
   const [shareProgress, setShareProgress] = useState({ completed: 0, total: 0 });
   const [actionError, setActionError] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
@@ -106,6 +107,27 @@ export default function Gallery({ tripId, days, media, currentUid, state, error,
     } finally { setShareState("idle"); setShareProgress({ completed: 0, total: 0 }); }
   }
 
+  async function saveItemsToPhotos(items: TripMedia[]) {
+    if (!items.length) return;
+    if (!canSaveDirectlyToPhotos()) {
+      await shareItems(items);
+      return;
+    }
+    setShareState("saving"); setShareProgress({ completed: 0, total: items.length }); setActionError("");
+    try {
+      for (const item of items) {
+        await saveUrlToPhotos(item.downloadUrl, item.mimeType);
+        setShareProgress((current) => ({ ...current, completed: current.completed + 1 }));
+      }
+      setSaveMessage(`${items.length} ${items.length === 1 ? "memory" : "memories"} saved to Photos`);
+      window.setTimeout(() => setSaveMessage(""), 2200);
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "These memories could not be saved.");
+    } finally {
+      setShareState("idle"); setShareProgress({ completed: 0, total: 0 });
+    }
+  }
+
   async function saveCaption() {
     if (!viewer) return;
     await onUpdate(viewer, { caption: captionDraft.trim() });
@@ -137,10 +159,38 @@ export default function Gallery({ tripId, days, media, currentUid, state, error,
     setViewerId("");
   }
 
-  const selected = media.filter((item) => selectedIds.includes(item.fileId));
+  const selected = visible.filter((item) => selectedIds.includes(item.fileId));
+  const deletableSelected = selected.filter((item) => isAdmin || item.memberId === currentUid);
+  const allVisibleSelected = visible.length > 0 && visible.every((item) => selectedIds.includes(item.fileId));
+
+  function toggleSelectAll() {
+    const visibleIds = new Set(visible.map((item) => item.fileId));
+    setSelectedIds((current) => allVisibleSelected
+      ? current.filter((id) => !visibleIds.has(id))
+      : Array.from(new Set([...current, ...visibleIds])));
+  }
+
+  async function deleteSelected() {
+    if (!deletableSelected.length) return;
+    const count = deletableSelected.length;
+    if (!window.confirm(`Delete ${count} selected ${count === 1 ? "memory" : "memories"} for everyone? Originals in Apple Photos are not affected.`)) return;
+    setShareState("deleting"); setShareProgress({ completed: 0, total: count }); setActionError("");
+    try {
+      for (const item of deletableSelected) {
+        await onDelete(item);
+        setShareProgress((current) => ({ ...current, completed: current.completed + 1 }));
+      }
+      const deletedIds = new Set(deletableSelected.map((item) => item.fileId));
+      setSelectedIds((current) => current.filter((id) => !deletedIds.has(id)));
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "The selected memories could not all be deleted.");
+    } finally {
+      setShareState("idle"); setShareProgress({ completed: 0, total: 0 });
+    }
+  }
 
   return <section className="gallery-page gallery-v2" aria-labelledby="gallery-title">
-    <header className="gallery-page-heading"><div><p className="eyebrow">Seen through all of our eyes</p><h1 id="gallery-title">Our Snapshots</h1><p>Photos and videos from every stop, ready as soon as the family shares them.</p></div><div className="gallery-heading-actions"><button className="primary-button" disabled={!allShared.length || shareState === "sharing"} onClick={() => void shareItems(allShared)}>{shareState === "sharing" ? `Preparing ${shareProgress.completed}/${shareProgress.total}` : `Save All Shared (${allShared.length})`}</button><button className={`secondary-button ${selectionMode ? "active" : ""}`} onClick={() => { setSelectionMode((value) => !value); setSelectedIds([]); }}>{selectionMode ? "Done selecting" : "Select"}</button></div></header>
+    <header className="gallery-page-heading"><div><p className="eyebrow">Seen through all of our eyes</p><h1 id="gallery-title">Our Snapshots</h1><p>Photos and videos from every stop, ready as soon as the family shares them.</p></div><div className="gallery-heading-actions"><button className="primary-button" disabled={!allShared.length || shareState !== "idle"} onClick={() => void saveItemsToPhotos(allShared)}>{shareState === "saving" ? `Saving ${shareProgress.completed}/${shareProgress.total}` : `Save All Shared (${allShared.length})`}</button><button className={`secondary-button ${selectionMode ? "active" : ""}`} onClick={() => { setSelectionMode((value) => !value); setSelectedIds([]); }}>{selectionMode ? "Done selecting" : "Select"}</button></div></header>
     {error && <p className="gallery-alert" role="alert">{error}</p>}
     {actionError && <p className="gallery-alert" role="alert">{actionError}</p>}
     {state === "offline" && <p className="gallery-alert">Previously opened thumbnails remain available. New family uploads will appear when you reconnect.</p>}
@@ -149,7 +199,7 @@ export default function Gallery({ tripId, days, media, currentUid, state, error,
     <div className="gallery-day-tabs"><button className={!dayFilter ? "active" : ""} onClick={() => setDayFilter("")}>All days</button>{days.map((day, index) => <button className={dayFilter === day.id ? "active" : ""} onClick={() => setDayFilter(day.id)} key={day.id}><b>Day {index + 1}</b><small>{prettyDate(day.date)}</small></button>)}</div>
     <div className="gallery-filter-bar"><label><span>Person</span><select value={personFilter} onChange={(event) => setPersonFilter(event.target.value)}><option value="">Everyone</option>{people.map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select></label><div className="gallery-type-filter"><button className={!typeFilter ? "active" : ""} onClick={() => setTypeFilter("")}>All</button><button className={typeFilter === "photo" ? "active" : ""} onClick={() => setTypeFilter("photo")}>Photos</button><button className={typeFilter === "video" ? "active" : ""} onClick={() => setTypeFilter("video")}>Videos</button><button className={typeFilter === "favorite" ? "active" : ""} onClick={() => setTypeFilter("favorite")}>♥ Favourites</button></div></div>
 
-    {selectionMode && <div className="gallery-selection-bar"><strong>{selected.length} selected</strong><button className="primary-button" disabled={!selected.length || shareState === "sharing"} onClick={() => void shareItems(selected)}>{shareState === "sharing" ? `Preparing ${shareProgress.completed}/${shareProgress.total}` : "Save Selected to Photos"}</button></div>}
+    {selectionMode && <div className="gallery-selection-bar"><strong>{selected.length} selected</strong><div className="gallery-selection-actions"><button className="secondary-button" disabled={!visible.length || shareState !== "idle"} onClick={toggleSelectAll}>{allVisibleSelected ? "Deselect All" : `Select All (${visible.length})`}</button><button className="primary-button" disabled={!selected.length || shareState !== "idle"} onClick={() => void saveItemsToPhotos(selected)}>{shareState === "saving" ? `Saving ${shareProgress.completed}/${shareProgress.total}` : "Save Selected to Photos"}</button><button className="secondary-button danger-button" disabled={!deletableSelected.length || shareState !== "idle"} onClick={() => void deleteSelected()}>{shareState === "deleting" ? `Deleting ${shareProgress.completed}/${shareProgress.total}` : `Delete Selected (${deletableSelected.length})`}</button></div></div>}
 
     {state === "loading" && !media.length ? <div className="gallery-v2-empty">Opening the family gallery…</div> : visible.length === 0 ? <div className="gallery-v2-empty"><strong>No matching memories yet</strong><p>Add photos or videos from an itinerary stop.</p></div> : <div className="gallery-v2-days">{days.filter((day) => !dayFilter || day.id === dayFilter).map((day, dayIndex) => {
       const dayItems = visible.filter((item) => item.dayId === day.id);
