@@ -33,6 +33,7 @@ export default function Gallery({ tripId, days, media, currentUid, state, error,
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [captionDraft, setCaptionDraft] = useState("");
   const [shareState, setShareState] = useState<"idle" | "sharing">("idle");
+  const [shareProgress, setShareProgress] = useState({ completed: 0, total: 0 });
   const [actionError, setActionError] = useState("");
   const [lastVisit, setLastVisit] = useState("");
   const touchStart = useRef<number | null>(null);
@@ -53,6 +54,7 @@ export default function Gallery({ tripId, days, media, currentUid, state, error,
     && (!typeFilter || (typeFilter === "favorite" ? item.favoriteBy.includes(currentUid) : item.mediaType === typeFilter)),
   ), [currentUid, dayFilter, media, personFilter, typeFilter]);
   const newItems = useMemo(() => lastVisit ? media.filter((item) => item.uploadedAt > lastVisit).length : 0, [lastVisit, media]);
+  const allShared = useMemo(() => media.filter((item) => !item.hiddenBy.includes(currentUid)), [currentUid, media]);
   const viewerIndex = visible.findIndex((item) => item.fileId === viewerId);
   const viewer = viewerIndex >= 0 ? visible[viewerIndex] : null;
 
@@ -73,18 +75,20 @@ export default function Gallery({ tripId, days, media, currentUid, state, error,
 
   async function shareItems(items: TripMedia[]) {
     if (!items.length) return;
-    setShareState("sharing"); setActionError("");
+    setShareState("sharing"); setShareProgress({ completed: 0, total: items.length }); setActionError("");
     try {
-      const files = await Promise.all(items.map(async (item) => {
+      const files: File[] = [];
+      for (const item of items) {
         const response = await fetch(item.downloadUrl);
         if (!response.ok) throw new Error(`Could not prepare ${item.name}.`);
-        return new File([await response.blob()], item.name, { type: item.mimeType });
-      }));
+        files.push(new File([await response.blob()], item.name, { type: item.mimeType }));
+        setShareProgress((current) => ({ ...current, completed: current.completed + 1 }));
+      }
       if (navigator.share && navigator.canShare?.({ files })) await navigator.share({ files, title: "Trip memories" });
       else items.forEach((item) => { const link = document.createElement("a"); link.href = item.downloadUrl; link.download = item.name; link.click(); });
     } catch (cause) {
       if (!(cause instanceof DOMException && cause.name === "AbortError")) setActionError(cause instanceof Error ? cause.message : "These memories could not be shared.");
-    } finally { setShareState("idle"); }
+    } finally { setShareState("idle"); setShareProgress({ completed: 0, total: 0 }); }
   }
 
   async function saveCaption() {
@@ -105,7 +109,7 @@ export default function Gallery({ tripId, days, media, currentUid, state, error,
   const selected = media.filter((item) => selectedIds.includes(item.fileId));
 
   return <section className="gallery-page gallery-v2" aria-labelledby="gallery-title">
-    <header className="gallery-page-heading"><div><p className="eyebrow">Seen through all of our eyes</p><h1 id="gallery-title">Our Snapshots</h1><p>Photos and videos from every stop, ready as soon as the family shares them.</p></div><button className={`secondary-button ${selectionMode ? "active" : ""}`} onClick={() => { setSelectionMode((value) => !value); setSelectedIds([]); }}>{selectionMode ? "Done selecting" : "Select"}</button></header>
+    <header className="gallery-page-heading"><div><p className="eyebrow">Seen through all of our eyes</p><h1 id="gallery-title">Our Snapshots</h1><p>Photos and videos from every stop, ready as soon as the family shares them.</p></div><div className="gallery-heading-actions"><button className="primary-button" disabled={!allShared.length || shareState === "sharing"} onClick={() => void shareItems(allShared)}>{shareState === "sharing" ? `Preparing ${shareProgress.completed}/${shareProgress.total}` : `Save All Shared (${allShared.length})`}</button><button className={`secondary-button ${selectionMode ? "active" : ""}`} onClick={() => { setSelectionMode((value) => !value); setSelectedIds([]); }}>{selectionMode ? "Done selecting" : "Select"}</button></div></header>
     {error && <p className="gallery-alert" role="alert">{error}</p>}
     {actionError && <p className="gallery-alert" role="alert">{actionError}</p>}
     {state === "offline" && <p className="gallery-alert">Previously opened thumbnails remain available. New family uploads will appear when you reconnect.</p>}
@@ -114,7 +118,7 @@ export default function Gallery({ tripId, days, media, currentUid, state, error,
     <div className="gallery-day-tabs"><button className={!dayFilter ? "active" : ""} onClick={() => setDayFilter("")}>All days</button>{days.map((day, index) => <button className={dayFilter === day.id ? "active" : ""} onClick={() => setDayFilter(day.id)} key={day.id}><b>Day {index + 1}</b><small>{prettyDate(day.date)}</small></button>)}</div>
     <div className="gallery-filter-bar"><label><span>Person</span><select value={personFilter} onChange={(event) => setPersonFilter(event.target.value)}><option value="">Everyone</option>{people.map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select></label><div className="gallery-type-filter"><button className={!typeFilter ? "active" : ""} onClick={() => setTypeFilter("")}>All</button><button className={typeFilter === "photo" ? "active" : ""} onClick={() => setTypeFilter("photo")}>Photos</button><button className={typeFilter === "video" ? "active" : ""} onClick={() => setTypeFilter("video")}>Videos</button><button className={typeFilter === "favorite" ? "active" : ""} onClick={() => setTypeFilter("favorite")}>♥ Favourites</button></div></div>
 
-    {selectionMode && <div className="gallery-selection-bar"><strong>{selected.length} selected</strong><button className="primary-button" disabled={!selected.length || shareState === "sharing"} onClick={() => void shareItems(selected)}>{shareState === "sharing" ? "Preparing…" : "Save / Share originals"}</button></div>}
+    {selectionMode && <div className="gallery-selection-bar"><strong>{selected.length} selected</strong><button className="primary-button" disabled={!selected.length || shareState === "sharing"} onClick={() => void shareItems(selected)}>{shareState === "sharing" ? `Preparing ${shareProgress.completed}/${shareProgress.total}` : "Save Selected to Photos"}</button></div>}
 
     {state === "loading" && !media.length ? <div className="gallery-v2-empty">Opening the family gallery…</div> : visible.length === 0 ? <div className="gallery-v2-empty"><strong>No matching memories yet</strong><p>Add photos or videos from an itinerary stop.</p></div> : <div className="gallery-v2-days">{days.filter((day) => !dayFilter || day.id === dayFilter).map((day, dayIndex) => {
       const dayItems = visible.filter((item) => item.dayId === day.id);
@@ -122,6 +126,6 @@ export default function Gallery({ tripId, days, media, currentUid, state, error,
       return <section className="gallery-v2-day" key={day.id}><header><div><p>Day {days.indexOf(day) + 1}</p><h2>{day.label}</h2><time>{prettyDate(day.date)}</time></div><span>{dayItems.length} memories</span></header>{day.stops.map((stop, stopIndex) => { const items = dayItems.filter((item) => item.stopId === stop.id); if (!items.length) return null; return <article className="gallery-v2-stop" key={stop.id}><div className="gallery-v2-stop-title"><div><small>Stop {stopIndex + 1}</small><h3>{stop.title}</h3></div>{stop.time && <time>{stop.time}</time>}</div><div className="gallery-v2-grid">{items.map((item) => <button className={`gallery-v2-tile ${selectedIds.includes(item.fileId) ? "selected" : ""}`} onClick={() => open(item)} key={item.fileId}>{item.mediaType === "video" ? <video src={mediaUrl(item)} muted preload="metadata" playsInline /> : <img src={mediaUrl(item)} alt={item.caption || `${item.memberName}'s photo at ${stop.title}`} loading="lazy" />}<span className="gallery-tile-overlay"><b className="member-avatar">{item.memberName.slice(0, 1).toUpperCase()}</b>{item.mediaType === "video" && <i>▶ Video</i>}{item.favoriteBy.length > 0 && <i>♥ {item.favoriteBy.length}</i>}</span>{selectionMode && <span className="gallery-select-mark">{selectedIds.includes(item.fileId) ? "✓" : ""}</span>}</button>)}</div></article>; })}</section>;
     })}</div>}
 
-    {viewer && <div className="gallery-lightbox" role="dialog" aria-modal="true" aria-label={viewer.name} onTouchStart={(event) => { touchStart.current = event.touches[0]?.clientX ?? null; }} onTouchEnd={(event) => { if (touchStart.current === null) return; const delta = (event.changedTouches[0]?.clientX ?? touchStart.current) - touchStart.current; if (Math.abs(delta) > 55) stepViewer(delta > 0 ? -1 : 1); touchStart.current = null; }}><header><button onClick={() => setViewerId("")}>Done</button><div><strong>{viewer.name}</strong><small>{viewerIndex + 1} of {visible.length} · {viewer.memberName}</small></div><button onClick={() => void shareItems([viewer])}>Share</button></header><div className="gallery-lightbox-stage">{viewer.mediaType === "video" ? <video src={mediaUrl(viewer, true)} controls autoPlay playsInline /> : <img src={mediaUrl(viewer, true)} alt={viewer.caption || viewer.name} />}{visible.length > 1 && <><button className="gallery-lightbox-prev" onClick={() => stepViewer(-1)} aria-label="Previous memory">‹</button><button className="gallery-lightbox-next" onClick={() => stepViewer(1)} aria-label="Next memory">›</button></>}</div><footer><div className="gallery-lightbox-actions"><button className={viewer.favoriteBy.includes(currentUid) ? "active" : ""} onClick={() => void toggleFavorite(viewer)}>♥ {viewer.favoriteBy.includes(currentUid) ? "Favourited" : "Favourite"}</button><button onClick={() => void hideForMe(viewer)}>Hide for me</button>{viewer.memberId === currentUid && <button className="danger" onClick={() => { if (window.confirm("Remove this shared memory? Your original remains in Apple Photos.")) { void onDelete(viewer); setViewerId(""); } }}>Remove</button>}</div><label><span>Caption</span><div><input value={captionDraft} onChange={(event) => setCaptionDraft(event.target.value)} placeholder="What was happening here?" /><button onClick={() => void saveCaption()} disabled={captionDraft.trim() === viewer.caption}>Save</button></div></label></footer></div>}
+    {viewer && <div className="gallery-lightbox" role="dialog" aria-modal="true" aria-label={viewer.name} onTouchStart={(event) => { touchStart.current = event.touches[0]?.clientX ?? null; }} onTouchEnd={(event) => { if (touchStart.current === null) return; const delta = (event.changedTouches[0]?.clientX ?? touchStart.current) - touchStart.current; if (Math.abs(delta) > 55) stepViewer(delta > 0 ? -1 : 1); touchStart.current = null; }}><header><button onClick={() => setViewerId("")}>Done</button><div><strong>{viewer.name}</strong><small>{viewerIndex + 1} of {visible.length} · {viewer.memberName}</small></div><button disabled={shareState === "sharing"} onClick={() => void shareItems([viewer])}>{shareState === "sharing" ? "Preparing…" : "Save to Photos"}</button></header><div className="gallery-lightbox-stage">{viewer.mediaType === "video" ? <video src={mediaUrl(viewer, true)} controls autoPlay playsInline /> : <img src={mediaUrl(viewer, true)} alt={viewer.caption || viewer.name} />}{visible.length > 1 && <><button className="gallery-lightbox-prev" onClick={() => stepViewer(-1)} aria-label="Previous memory">‹</button><button className="gallery-lightbox-next" onClick={() => stepViewer(1)} aria-label="Next memory">›</button></>}</div><footer><div className="gallery-lightbox-actions"><button className={viewer.favoriteBy.includes(currentUid) ? "active" : ""} onClick={() => void toggleFavorite(viewer)}>♥ {viewer.favoriteBy.includes(currentUid) ? "Favourited" : "Favourite"}</button><button onClick={() => void hideForMe(viewer)}>Hide for me</button>{viewer.memberId === currentUid && <button className="danger" onClick={() => { if (window.confirm("Remove this shared memory? Your original remains in Apple Photos.")) { void onDelete(viewer); setViewerId(""); } }}>Remove</button>}</div><label><span>Caption</span><div><input value={captionDraft} onChange={(event) => setCaptionDraft(event.target.value)} placeholder="What was happening here?" /><button onClick={() => void saveCaption()} disabled={captionDraft.trim() === viewer.caption}>Save</button></div></label></footer></div>}
   </section>;
 }

@@ -88,8 +88,8 @@ test("uses Firebase for trip sync and private R2 photo and video storage", async
   assert.match(storageRules, /tripMember/);
   assert.match(page, /accept="image\/\*,video\/\*"/);
   assert.match(page, /uploadTripMedia/);
-  assert.match(page, /Share to Trip/);
-  assert.match(page, /Adds these memories to this stop for everyone in the trip/);
+  assert.match(page, /Upload All Waiting/);
+  assert.match(page, /Uploads every waiting memory to its assigned stop/);
   assert.match(page, /Shared at this stop/);
   assert.match(page, /selectedSharedPhotos/);
   assert.match(styles, /camera-roll-grid/);
@@ -97,7 +97,9 @@ test("uses Firebase for trip sync and private R2 photo and video storage", async
   assert.doesNotMatch(page, /Refresh Drive folders|Drive connected|Drive offline|Checking Drive/);
   assert.match(gallery, /Photos and videos/);
   assert.match(gallery, /Favourites/);
-  assert.match(gallery, /Save \/ Share originals/);
+  assert.match(gallery, /Save All Shared/);
+  assert.match(gallery, /Save Selected to Photos/);
+  assert.match(gallery, /Save to Photos/);
   assert.match(gallery, /gallery-lightbox/);
   assert.match(service, /"Day " \+ dayNumber \+ " - " \+ dayName/);
   assert.match(service, /file\.moveTo\(getPhotoFolder_\(payload\)\)/);
@@ -192,7 +194,7 @@ test("uses Firebase for trip sync and private R2 photo and video storage", async
   assert.ok(memoryLane.includes("navigator.share"));
   assert.match(memoryLane, /generated video stays on your device/);
   assert.match(gallery, /navigator\.canShare/);
-  assert.match(gallery, /Save \/ Share originals/);
+  assert.match(gallery, /Save All Shared/);
   assert.match(gallery, /new .*memories.*since your last visit/);
   assert.match(page, /uploadCandidates\.slice\(start, start \+ 2\)/);
   assert.match(page, /Expenses/);
@@ -237,15 +239,14 @@ test("uses Firebase for trip sync and private R2 photo and video storage", async
   assert.match(page, /className="photo-panel"/);
   assert.doesNotMatch(page, /className=\{`connection-card/);
   assert.doesNotMatch(page, /Ready for the trip|Travelling offline/);
-  assert.match(page, /Photo Upload Status/);
+  assert.doesNotMatch(page, /Photo Upload Status/);
   assert.match(page, /Photo upload progress/);
   assert.match(page, /All selected memories are uploaded/);
   assert.match(page, /could not be uploaded after three attempts/);
   assert.match(page, /pendingQueuePhotos/);
-  assert.match(page, /\{waitingCount\} memories · \{formatBytes\(queuedBytes\)\}/);
+  assert.match(page, /Upload All Waiting/);
   assert.match(page, /Cloud offline/);
   assert.match(page, /Shared gallery ready/);
-  assert.match(page, /photo-safety-note/);
   assert.match(page, /id="selected-stop-title">Selected stop/);
   assert.match(page, /id="add-photos-title">Add photos or videos/);
   assert.match(page, /<p>Day \{dayIndex \+ 1\}<\/p>/);
@@ -268,7 +269,7 @@ test("uses Firebase for trip sync and private R2 photo and video storage", async
   assert.match(driveClient, /uploadTripCoverToDrive/);
   assert.match(service, /uploadCoverPhoto_/);
   assert.match(gallery, /Our Snapshots/);
-  assert.match(gallery, /Save \/ Share originals/);
+  assert.match(gallery, /Save Selected to Photos/);
   assert.match(mapbox, /searchMapboxPlaces/);
   assert.match(mapbox, /directions\/v5\/mapbox/);
   assert.match(mapbox, /inferMapPinCategory/);

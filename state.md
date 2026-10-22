@@ -1,6 +1,6 @@
 # Family Trip development state
 
-Last updated: 20 October 2026
+Last updated: 22 October 2026
 
 ## Current checkpoint
 
@@ -14,7 +14,9 @@ Last updated: 20 October 2026
 - Uploads authenticate with Firebase ID tokens and verify trip membership through Firestore rules.
 - Originals and thumbnails are uploaded directly from the device; Firestore stores their metadata and access-key URLs.
 - Failed uploads remain in the existing IndexedDB retry queue. Failed deletions keep their Firestore record so they stay visible and retryable.
-- The itinerary media picker uses a camera-roll grid with photo/video previews, per-item states and a clear `Share to Trip` action. Shared media is visible both at its assigned stop and in Photo Gallery for every trip member.
+- The itinerary media picker uses a camera-roll grid with photo/video previews and per-item states. One `Upload All Waiting` action uploads every queued memory across the trip to its assigned stop.
+- Photo Gallery has one `Save All Shared` action. It includes only successfully uploaded/shared media, never items that are still in the local offline queue.
+- Individual queued and shared previews have `Save to Photos`; on iPhone this opens Apple's Share Sheet so the person can choose Save Image or Save Video. Shared media remains visible both at its assigned stop and in Photo Gallery for every trip member.
 - Mapbox is verified for place autocomplete, the Standard visual map style and walking routes. Web builds now receive `VITE_MAPBOX_ACCESS_TOKEN` from the GitHub Actions repository variable/secret and fail deployment instead of silently shipping maps without a token.
 
 ## Verification

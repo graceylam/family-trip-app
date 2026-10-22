@@ -432,7 +432,6 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [uploadProgress, setUploadProgress] = useState<{ completed: number; total: number } | null>(null);
   const [storageHealth, setStorageHealth] = useState<StorageHealth | null>(null);
   const [isOffline, setIsOffline] = useState(false);
-  const [showSafety, setShowSafety] = useState(false);
   const [showAddStop, setShowAddStop] = useState(false);
   const [showAddDay, setShowAddDay] = useState(false);
   const [showEditDay, setShowEditDay] = useState(false);
@@ -1128,9 +1127,6 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
 
   const selectedPhotos = queuedPhotos.filter((photo) => photo.stopId === selectedStop?.id);
-  const selectedPendingPhotos = selectedPhotos.filter((photo) =>
-    !photo.isPrivate && !photo.pendingCloudDeletion && photo.status !== "uploaded",
-  );
   const selectedSharedPhotos = sharedPhotos.filter((photo) => photo.stopId === selectedStop?.id);
   const selectedLocalMediaIds = new Set(selectedPhotos.map((photo) => photo.firebaseMediaId).filter(Boolean));
   const sharedOnlyPhotos = selectedSharedPhotos.filter((photo) => !selectedLocalMediaIds.has(photo.fileId));
@@ -1142,7 +1138,6 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       photo.pendingCloudDeletion,
   );
   const waitingCount = pendingQueuePhotos.length;
-  const queuedBytes = pendingQueuePhotos.reduce((total, photo) => total + photo.size, 0);
   const uploadProgressPercent = uploadProgress?.total
     ? Math.round((uploadProgress.completed / uploadProgress.total) * 100)
     : 0;
@@ -1326,6 +1321,44 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
             : "The photos could not be added to the offline queue. The originals remain safe in Apple Photos.",
       );
       setQueueState("ready");
+    }
+  }
+
+  async function saveBlobToPhotos(blob: Blob, name: string, mimeType: string) {
+    const file = new File([blob], name, { type: mimeType || blob.type || "application/octet-stream" });
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: name });
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function saveQueuedMemoryToPhotos(photo: QueuedPhotoView) {
+    setQueueError(null);
+    try {
+      const record = await getQueuedPhoto(photo.id);
+      if (!record) throw new Error("This temporary copy is no longer on this device.");
+      await saveBlobToPhotos(record.blob, record.name, record.mimeType);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setQueueError(error instanceof Error ? error.message : "This memory could not be opened in the Share Sheet.");
+    }
+  }
+
+  async function saveSharedMemoryToPhotos(media: TripMedia) {
+    setQueueError(null);
+    try {
+      const response = await fetch(media.downloadUrl);
+      if (!response.ok) throw new Error("The shared original could not be downloaded.");
+      await saveBlobToPhotos(await response.blob(), media.name, media.mimeType);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setQueueError(error instanceof Error ? error.message : "This memory could not be opened in the Share Sheet.");
     }
   }
 
@@ -2694,8 +2727,6 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                 </div>
                 {isOffline ? (
                   <button className="sync-button" disabled>Cloud offline</button>
-                ) : googleState === "connected" && waitingCount > 0 ? (
-                  <button className="sync-button" onClick={() => void uploadQueuedPhotos()}>Upload waiting memories</button>
                 ) : googleState === "uploading" ? (
                   <button className="sync-button" disabled>Uploading…</button>
                 ) : googleState === "connected" ? (
@@ -2724,18 +2755,15 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
               </button>
               <button
                 className="share-trip-button"
-                onClick={() => selectedStop && void uploadQueuedPhotos(selectedStop.id)}
-                disabled={selectedPendingPhotos.length === 0 || googleState === "uploading" || isOffline}
+                onClick={() => void uploadQueuedPhotos()}
+                disabled={waitingCount === 0 || googleState === "uploading" || isOffline}
               >
                 {googleState === "uploading"
-                  ? "Sharing…"
-                  : `Share to Trip${selectedPendingPhotos.length ? ` (${selectedPendingPhotos.length})` : ""}`}
+                  ? "Uploading all…"
+                  : `Upload All Waiting${waitingCount ? ` (${waitingCount})` : ""}`}
               </button>
-              <small className="share-trip-explainer">Adds these memories to this stop for everyone in the trip.</small>
-              <button className="photo-status-button" onClick={() => setShowSafety((value) => !value)} aria-expanded={showSafety}>
-                Photo Upload Status
-              </button>
-              <div className={`photo-upload-feedback ${googleError ? "error" : ""}`} role={googleError ? "alert" : "status"} aria-live="polite">
+              <small className="share-trip-explainer">Uploads every waiting memory to its assigned stop for everyone in the trip.</small>
+              {(googleError || googleState === "uploading" || isOffline) && <div className={`photo-upload-feedback ${googleError ? "error" : ""}`} role={googleError ? "alert" : "status"} aria-live="polite">
                 <strong>
                   {googleError
                     ? googleError
@@ -2753,35 +2781,11 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                     <small>{uploadProgressPercent}% complete</small>
                   </>
                 )}
-              </div>
+              </div>}
               <p>Take photos with the iPhone Camera first, then choose them here.</p>
               {queueState === "loading" && <p className="queue-message">Opening your offline photo queue…</p>}
               {queueError && <p className="queue-message error" role="alert">{queueError}</p>}
               </div>
-
-              {showSafety && (
-                <aside className="safety-note photo-safety-note">
-                  <strong>Your originals stay in Apple Photos.</strong>
-                  <p>
-                    This app only holds temporary upload copies. If its offline queue is ever cleared,
-                    select the originals from Apple Photos again—your memories remain safe.
-                  </p>
-                  <dl className="storage-facts">
-                    <div>
-                      <dt>Offline queue</dt>
-                      <dd>{waitingCount} memories · {formatBytes(queuedBytes)}</dd>
-                    </div>
-                    <div>
-                      <dt>Storage protection</dt>
-                      <dd>{storageHealth?.persistent ? "Persistent" : "Best effort"}</dd>
-                    </div>
-                    <div>
-                      <dt>Browser storage</dt>
-                      <dd>{formatBytes(storageHealth?.usage ?? null)} of {formatBytes(storageHealth?.quota ?? null)}</dd>
-                    </div>
-                  </dl>
-                </aside>
-              )}
 
               <div className="gallery-heading">
               <h3>Selected for this stop</h3>
@@ -3249,6 +3253,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                 : <img src={previewQueuedPhoto.previewUrl} alt={previewQueuedPhoto.name} />}
             </div>
             <footer>
+              <button className="secondary-button" onClick={() => void saveQueuedMemoryToPhotos(previewQueuedPhoto)}>Save to Photos</button>
               <button className="secondary-button" onClick={() => void togglePrivacy(previewQueuedPhoto.id)} disabled={previewQueuedPhoto.pendingLocalRemoval}>
                 {previewQueuedPhoto.isPrivate ? "Share with trip" : "Keep private"}
               </button>
@@ -3269,6 +3274,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                 ? <video src={previewSharedMedia.downloadUrl} controls autoPlay playsInline />
                 : <img src={previewSharedMedia.downloadUrl} alt={previewSharedMedia.caption || previewSharedMedia.name} />}
             </div>
+            <footer><button className="secondary-button" onClick={() => void saveSharedMemoryToPhotos(previewSharedMedia)}>Save to Photos</button></footer>
           </section>
         </div>
       )}
