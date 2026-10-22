@@ -279,6 +279,21 @@ function expenseMoney(amount: number | null, currency: string): string {
   }
 }
 
+function mediaFileExtension(file: File): string {
+  const existing = /\.([a-z0-9]{2,5})$/i.exec(file.name)?.[1]?.toLowerCase();
+  if (existing) return existing === "jpeg" ? "jpg" : existing;
+  if (file.type === "image/png") return "png";
+  if (file.type === "image/heic" || file.type === "image/heif") return "heic";
+  if (file.type === "video/quicktime") return "mov";
+  if (file.type.startsWith("video/")) return "mp4";
+  return "jpg";
+}
+
+function friendlyMediaName(stopName: string, personName: string, file: File, sequence: number): string {
+  const kind = file.type.startsWith("video/") ? "Video" : "Photo";
+  return `${stopName.trim()} ${personName.trim()} ${kind} ${sequence}.${mediaFileExtension(file)}`;
+}
+
 function FittedDayTitle({ children }: { children: string }) {
   const titleRef = useRef<HTMLHeadingElement>(null);
 
@@ -1304,10 +1319,17 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     setQueueState("saving");
     setQueueError(null);
 
-    const additions: StoredQueuedPhoto[] = files.map((file) => ({
+    let nextPhotoNumber = sharedPhotos.filter((photo) => photo.stopId === selectedStop.id && photo.memberName === currentMember.name && photo.mediaType === "photo").length
+      + queuedPhotos.filter((photo) => photo.stopId === selectedStop.id && photo.memberName === currentMember.name && !photo.mimeType.startsWith("video/") && photo.status !== "uploaded").length;
+    let nextVideoNumber = sharedPhotos.filter((photo) => photo.stopId === selectedStop.id && photo.memberName === currentMember.name && photo.mediaType === "video").length
+      + queuedPhotos.filter((photo) => photo.stopId === selectedStop.id && photo.memberName === currentMember.name && photo.mimeType.startsWith("video/") && photo.status !== "uploaded").length;
+
+    const additions: StoredQueuedPhoto[] = files.map((file) => {
+      const sequence = file.type.startsWith("video/") ? ++nextVideoNumber : ++nextPhotoNumber;
+      return {
       id: crypto.randomUUID(),
       stopId: selectedStop.id,
-      name: file.name || "Trip photo",
+      name: friendlyMediaName(selectedStop.title, currentMember.name, file, sequence),
       mimeType: file.type || "image/jpeg",
       size: file.size,
       createdAt: new Date().toISOString(),
@@ -1322,7 +1344,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       memberId: currentMember.id,
       memberName: currentMember.name,
       blob: file,
-    }));
+    }; });
 
     try {
       setStorageHealth(await requestPersistentStorage());

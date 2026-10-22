@@ -87,6 +87,8 @@ test("uses Firebase for trip sync and private R2 photo and video storage", async
   assert.match(r2Worker, /firestore\.googleapis\.com/);
   assert.match(storageRules, /tripMember/);
   assert.match(page, /accept="image\/\*,video\/\*"/);
+  assert.match(page, /friendlyMediaName/);
+  assert.match(page, /\$\{stopName\.trim\(\)\} \$\{personName\.trim\(\)\} \$\{kind\} \$\{sequence\}/);
   assert.match(page, /uploadTripMedia/);
   assert.match(page, /autoUploadCount/);
   assert.match(page, /Sharing \$\{uploadProgress/);
