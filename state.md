@@ -24,6 +24,7 @@ Last updated: 22 October 2026
 - New photo uploads now include three R2 objects: a compact grid thumbnail, a 1920px screen-quality display copy, and the untouched original. Full-screen swiping uses the display copy while Save/Download still uses the original; older photos fall back safely to their originals. The temporary thumbnail blur is reduced from 10px to 2px.
 - Both itinerary and Gallery photo viewers now lock the full dynamic viewport and paint the iPhone bottom safe area opaque dark, preventing the underlying cream/white page from appearing as a strip beneath the viewer.
 - Gallery’s former `More` action is now an explicit `Caption` control. Saved captions are displayed beneath the full-screen photo above its action toolbar, and saving closes the editor to reveal the caption immediately.
+- Gallery captions now use the app’s main sans-serif typography. Opening either photo viewer locks the body at its current scroll offset and restores that exact position on close. Gallery’s `Save All Shared (n)` count and action now follow the active day, person and media-type filters. The Gallery footer also paints beyond the iPhone bottom edge to prevent safe-area background bleed.
 - Mapbox is verified for place autocomplete, the Standard visual map style and walking routes. Web builds now receive `VITE_MAPBOX_ACCESS_TOKEN` from the GitHub Actions repository variable/secret and fail deployment instead of silently shipping maps without a token.
 
 ## Verification

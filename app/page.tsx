@@ -1159,6 +1159,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const removableRemoteStopPhotos = selectedRemoteStopPhotos.filter((photo) => isAdmin || photo.memberId === currentMember?.id);
   const previewQueuedPhoto = queuedPhotos.find((photo) => photo.id === previewQueuedPhotoId) ?? null;
   const previewSharedMedia = sharedPhotos.find((photo) => photo.fileId === previewSharedMediaId) ?? null;
+  const stopMediaViewerOpen = Boolean(previewQueuedPhoto || previewSharedMedia);
   const queuedPreviewItems = selectedPhotos.map((photo) => ({
     id: photo.id,
     mediaType: photo.mimeType.startsWith("video/") ? "video" as const : "photo" as const,
@@ -1185,10 +1186,22 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     : 0;
 
   useEffect(() => {
-    if (!previewQueuedPhoto && !previewSharedMedia) return;
+    if (!stopMediaViewerOpen) return;
+    const scrollY = window.scrollY;
+    const body = document.body;
+    const previous = { position: body.style.position, top: body.style.top, width: body.style.width };
     document.documentElement.classList.add("media-viewer-open");
-    return () => document.documentElement.classList.remove("media-viewer-open");
-  }, [previewQueuedPhoto, previewSharedMedia]);
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+    return () => {
+      document.documentElement.classList.remove("media-viewer-open");
+      body.style.position = previous.position;
+      body.style.top = previous.top;
+      body.style.width = previous.width;
+      window.scrollTo(0, scrollY);
+    };
+  }, [stopMediaViewerOpen]);
 
   useEffect(() => {
     if (autoUploadCount > 0 && queueState === "ready" && googleState !== "uploading" && !isOffline && currentMember && tripId) {
