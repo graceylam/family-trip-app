@@ -255,6 +255,10 @@ export function observeAccountTrips(account: FamilyAccount, listener: (trips: Ac
       id: tripDocument.id,
       ...(tripDocument.data() as TripReferenceDocument),
     }));
+    references.sort((left, right) => left.startDate.localeCompare(right.startDate) || left.name.localeCompare(right.name));
+    // Render the trip references immediately. Cover presentation can be
+    // enriched without holding up the bookshelf.
+    listener(references);
     void Promise.all(references.map(async (trip) => {
       try {
         const shared = await getDoc(doc(db, "trips", trip.id));

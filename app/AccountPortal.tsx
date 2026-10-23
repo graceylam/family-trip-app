@@ -29,6 +29,26 @@ type AccountPortalProps = {
 
 type AccountMode = "sign-in" | "create";
 const legacyViennaTripId = "vienna-2026-family-trip";
+const tripShelfCacheVersion = 1;
+
+function tripShelfCacheKey(uid: string): string {
+  return `family-trip-shelf-v${tripShelfCacheVersion}:${uid}`;
+}
+
+function readTripShelf(uid: string): AccountTrip[] {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(tripShelfCacheKey(uid)) || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((trip): trip is AccountTrip => Boolean(
+      trip && typeof trip.id === "string" && typeof trip.name === "string" && (trip.role === "admin" || trip.role === "contributor"),
+    ));
+  } catch { return []; }
+}
+
+function writeTripShelf(uid: string, trips: AccountTrip[]): void {
+  try { window.localStorage.setItem(tripShelfCacheKey(uid), JSON.stringify(trips)); }
+  catch { /* The live Firebase shelf still works if device storage is unavailable. */ }
+}
 
 function dateLabel(value: string): string {
   if (!value) return "Dates to be planned";
@@ -73,6 +93,7 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
   }, []);
   const [account, setAccount] = useState<FamilyAccount | null | undefined>(undefined);
   const [trips, setTrips] = useState<AccountTrip[]>([]);
+  const [tripsReady, setTripsReady] = useState(false);
   const [activeTrip, setActiveTrip] = useState<AccountTrip | null>(null);
   const [accountMode, setAccountMode] = useState<AccountMode>("sign-in");
   const [displayName, setDisplayName] = useState("");
@@ -168,7 +189,14 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
 
   useEffect(() => {
     if (!account) return;
-    return observeAccountTrips(account, setTrips);
+    const cached = readTripShelf(account.uid);
+    setTrips(cached);
+    setTripsReady(cached.length > 0);
+    return observeAccountTrips(account, (nextTrips) => {
+      setTrips(nextTrips);
+      setTripsReady(true);
+      writeTripShelf(account.uid, nextTrips);
+    });
   }, [account]);
 
   useEffect(() => {
@@ -384,7 +412,9 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
 
       <section className="trip-library" aria-labelledby="trip-library-title">
         <div className="trip-library-heading"><p className="eyebrow">Your travel shelf</p><h2 id="trip-library-title">Trips you belong to</h2></div>
-        {trips.length === 0 ? (
+        {!tripsReady ? (
+          <div className="empty-trip-library trip-library-loading" role="status"><span aria-hidden="true">✈︎</span><h3>Bringing your adventures up to date…</h3></div>
+        ) : trips.length === 0 ? (
           <div className="empty-trip-library">
             <span aria-hidden="true">🧳</span><h3>Your first adventure belongs here</h3><p>Create a trip, or connect the Vienna trip you already built.</p>
             <button className="secondary-button" onClick={() => void connectVienna()} disabled={tripActionState === "working"}>{tripActionState === "working" ? "Connecting…" : "Connect my 2026 Vienna Trip"}</button>

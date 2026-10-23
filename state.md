@@ -61,8 +61,8 @@ The previous Google Drive implementation is preserved in Git history. Roll back 
 
 ## Pre-TestFlight product roadmap agreed 24 October 2026
 
-1. Improve perceived bookshelf startup speed by rendering cached trip summaries immediately and refreshing Firebase data in the background.
-2. Improve Gallery feedback: expose captions outside the full-screen viewer and show a brief `Already downloaded` message for media previously saved by this app on the same device.
+1. Improve perceived bookshelf startup speed by rendering cached trip summaries immediately and refreshing Firebase data in the background. Implemented 24 October 2026: the shelf is cached per signed-in account, Firebase trip references render before cover enrichment, and live data refreshes the cache silently.
+2. Improve Gallery feedback: expose captions outside the full-screen viewer. Duplicate-download detection was deliberately dropped; users may save the same media more than once.
 3. Choose the product name and visual identity, then apply the icon/logo to the iPhone home screen, launch experience and appropriate in-app surfaces.
 4. Give Trip Settings a cosmetic cleanup.
 5. Leave the larger Memory Lane revision until last: repair highlight-video duration/export, add an editable Instagram-style Story builder, and persist completed stories.
