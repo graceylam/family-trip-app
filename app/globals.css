@@ -187,6 +187,8 @@ button { cursor: pointer; }
 .vote-copy > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .place-votes button small { position: relative; min-width: 0; overflow: hidden; color: var(--muted); font-size: .54rem; font-weight: 650; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
 .schedule-place-button { box-sizing: border-box; height: 42px; min-height: 42px; max-height: 42px; padding: 9px 10px; border: 1px solid var(--forest); border-radius: 10px; color: var(--forest); background: transparent; font-size: .72rem; font-weight: 850; }
+.delete-saved-place-button { display: block; margin: 2px 13px 13px; padding: 6px 0; border: 0; color: #9a3f31; background: transparent; font-size: .66rem; font-weight: 800; text-align: left; }
+.delete-saved-place-button.detail { margin: 0 0 0 auto; padding: 9px 3px; }
 .place-scheduler { display: grid; box-sizing: border-box; grid-template-columns: repeat(2, minmax(0, 170px)); justify-content: start; gap: 8px; max-width: calc(100% - 26px); padding: 10px; border-radius: 12px; background: #f3f7f5; }
 .place-scheduler label { display: grid; min-width: 0; gap: 5px; }
 .place-scheduler label span { color: var(--muted); font-size: .58rem; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }

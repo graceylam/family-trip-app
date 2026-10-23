@@ -69,3 +69,8 @@ The previous Google Drive implementation is preserved in Git history. Roll back 
 6. Distribute privately to family through TestFlight after the above pass; their phones should not need Developer Mode.
 
 The laptop experience remains the web/PWA build backed by the same Firebase, R2 and Mapbox services, so it shares accounts and trip data with the iPhone app.
+
+## Saved Places ownership (2026-10-24)
+
+- A Saved Places entry can be deleted only by the family member who originally added it. Other members do not see a delete action.
+- Deleting a saved entry does not remove a stop that was already added to the itinerary; that remains a separate deliberate action.
