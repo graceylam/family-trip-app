@@ -222,14 +222,19 @@ function mergeDays(current: TripDay[], submitted: TripDay[], base: TripDay[], co
   return result.filter((day) => !removable.has(day.id));
 }
 
-function mergeMembers(current: TripMember[], submitted: TripMember[]): TripMember[] {
+function mergeMembers(current: TripMember[], submitted: TripMember[], base: TripMember[]): TripMember[] {
   const result = current.map(clone);
   submitted.forEach((member) => {
     const index = result.findIndex((currentMember) => currentMember.id === member.id);
     if (index < 0) result.push(clone(member));
     else result[index] = clone(member);
   });
-  return result;
+  const submittedIds = new Set(submitted.map((member) => member.id));
+  const removable = new Set(base.filter((baseMember) => {
+    if (submittedIds.has(baseMember.id)) return false;
+    return json(current.find((member) => member.id === baseMember.id)) === json(baseMember);
+  }).map((member) => member.id));
+  return result.filter((member) => !removable.has(member.id));
 }
 
 function restrictContributorChanges(submitted: SharedTripState, current: SharedTripState): SharedTripState {
@@ -255,14 +260,14 @@ export function mergeTripState(
 ): SharedTripState {
   const authorized = isAdmin ? submitted : restrictContributorChanges(submitted, current);
   if (authorized.revision === current.revision) {
-    return { ...clone(authorized), members: isAdmin ? mergeMembers(current.members, authorized.members) : current.members };
+    return { ...clone(authorized), members: isAdmin ? mergeMembers(current.members, authorized.members, base.members) : current.members };
   }
   return {
     tripId: current.tripId,
     tripName: isAdmin ? mergeValue(current.tripName, authorized.tripName, base.tripName) : current.tripName,
     coverPhotoId: isAdmin ? mergeValue(current.coverPhotoId, authorized.coverPhotoId, base.coverPhotoId) : current.coverPhotoId,
     days: mergeDays(current.days, authorized.days, base.days, contributorName, isAdmin),
-    members: isAdmin ? mergeMembers(current.members, authorized.members) : current.members,
+    members: isAdmin ? mergeMembers(current.members, authorized.members, base.members) : current.members,
     revision: current.revision,
     updatedAt: current.updatedAt,
   };

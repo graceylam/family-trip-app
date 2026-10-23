@@ -115,7 +115,6 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
   const [inviteTrip, setInviteTrip] = useState<AccountTrip | null>(null);
   const [invite, setInvite] = useState<TripInvite | null>(null);
   const [inviteQr, setInviteQr] = useState("");
-  const [copiedInvite, setCopiedInvite] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [profileName, setProfileName] = useState("");
   const [profileCurrency, setProfileCurrency] = useState("AUD");
@@ -322,21 +321,10 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
     try {
       const next = await rotateTripInvite(account, inviteTrip, invite.groupName);
       setInvite({ ...invite, id: next.inviteId, inviteCode: next.inviteCode });
-      setCopiedInvite(false);
     } catch (error) {
       setTripActionError(firebaseErrorMessage(error));
     } finally {
       setTripActionState("idle");
-    }
-  }
-
-  async function copyInvitation() {
-    if (!inviteLink) return;
-    try {
-      await navigator.clipboard.writeText(inviteLink);
-      setCopiedInvite(true);
-    } catch {
-      setTripActionError("The invitation link could not be copied on this device.");
     }
   }
 
@@ -425,6 +413,7 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
               <article className="account-trip-card" key={trip.id}>
                 <button className={`trip-card-open ${trip.coverThumbnailDataUrl ? "has-cover" : ""}`} onClick={() => setActiveTrip(trip)} style={trip.coverThumbnailDataUrl ? { backgroundImage: `linear-gradient(180deg, rgba(17,39,49,.08), rgba(17,39,49,.78)), url(${trip.coverThumbnailDataUrl})`, backgroundPosition: `center, ${trip.coverPositionX ?? 50}% ${trip.coverPositionY ?? 50}%` } : undefined}>
                   <span className="trip-role">{trip.role === "admin" ? "Admin" : "Contributor"}</span>
+                  <span className="trip-shelf-icon" style={{ background: trip.iconColor || "#5f91aa" }} aria-hidden="true">{trip.iconEmoji || "✈️"}</span>
                   <h3>{trip.name}</h3>
                   <p>{dateLabel(trip.startDate)}{trip.endDate && trip.endDate !== trip.startDate ? ` — ${dateLabel(trip.endDate)}` : ""}</p>
                   <strong>Open trip <span aria-hidden="true">→</span></strong>
@@ -496,8 +485,7 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={inviteQr} alt={`QR invitation for ${inviteTrip.name}`} />
               ) : <span>Making QR code…</span>}</div>
-              <p className="invite-instruction">They can scan this code, or open the private link while creating or signing into their own account.</p>
-              <button className="primary-button invite-copy-button" onClick={() => void copyInvitation()}>{copiedInvite ? "Invitation copied" : "Copy private invitation link"}</button>
+              <p className="invite-instruction">They can scan this QR code, or join with the private group name and invite code below.</p>
               <div className="manual-invite-details"><p><span>Private group name</span><strong>{invite.groupName}</strong></p><p><span>Private invite code</span><strong className="invite-code">{invite.inviteCode || "Generate a new code"}</strong></p></div>
               <p className="invite-security-note">Anyone with either invitation method can join. Replace the code if it is shared outside your group.</p>
               <div className="modal-actions"><button className="text-button" onClick={() => void replaceInvite()} disabled={tripActionState === "working"}>{tripActionState === "working" ? "Replacing…" : "Replace invite code"}</button><button className="secondary-button" onClick={() => { setInviteTrip(null); setInvite(null); }}>Done</button></div>

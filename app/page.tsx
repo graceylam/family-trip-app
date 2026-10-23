@@ -10,7 +10,7 @@ import StopsBank from "./StopsBank";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { createFamilyMap, getMapboxPlace, searchMapboxPlaces, type FamilyMapTravelMode } from "../lib/mapbox";
 import type { SavedPlace } from "../lib/firebaseSavedPlaces";
-import { deleteAccountTrip, observeTripAccountMembers, promoteTripMemberToAdmin, updateTripCoverPresentation, type AccountTrip, type FamilyAccount, type TripAccountMember } from "../lib/firebaseAccounts";
+import { deleteAccountTrip, observeTripAccountMembers, promoteTripMemberToAdmin, updateTripCoverPresentation, updateTripIconPresentation, type AccountTrip, type FamilyAccount, type TripAccountMember } from "../lib/firebaseAccounts";
 import {
   getFirebaseTripState,
   initializeFirebaseTripState,
@@ -420,6 +420,9 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [tripCoverThumbnail, setTripCoverThumbnail] = useState(accountTrip.coverThumbnailDataUrl || "");
   const [coverUploadState, setCoverUploadState] = useState<"idle" | "uploading" | "error">("idle");
   const [coverUploadError, setCoverUploadError] = useState<string | null>(null);
+  const [tripIconEmoji, setTripIconEmoji] = useState(accountTrip.iconEmoji || "✈️");
+  const [tripIconColor, setTripIconColor] = useState(accountTrip.iconColor || "#5f91aa");
+  const [tripIconState, setTripIconState] = useState<"idle" | "saving" | "error">("idle");
   const tripId = sharedTripId;
   const [previousTripId, setPreviousTripId] = useState("");
   const [adminSecret, setAdminSecret] = useState("");
@@ -481,8 +484,6 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [editDayName, setEditDayName] = useState("");
   const [editDayDate, setEditDayDate] = useState("");
   const [editDayStoryTitle, setEditDayStoryTitle] = useState("");
-  const [newMemberName, setNewMemberName] = useState("");
-  const [copiedMemberId, setCopiedMemberId] = useState("");
   const [placeSuggestions, setPlaceSuggestions] = useState<PlaceSuggestion[]>([]);
   const [placeSearchState, setPlaceSearchState] = useState<"idle" | "searching" | "choosing">("idle");
   const [placeSearchError, setPlaceSearchError] = useState<string | null>(null);
@@ -960,6 +961,13 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   useEffect(() => observeTripAccountMembers(accountTrip.id, setTripAccountMembers), [accountTrip.id]);
 
   useEffect(() => {
+    if (!isAdmin || !sharedStateReady || !tripAccountMembers.length) return;
+    const joinedMembers = tripAccountMembers.map((member) => ({ id: member.userId, name: member.displayName }));
+    setMembers((current) => JSON.stringify(current) === JSON.stringify(joinedMembers) ? current : joinedMembers);
+    if (tripAccountMembers.some((member) => member.userId === account.uid)) setCurrentMemberId(account.uid);
+  }, [account.uid, isAdmin, sharedStateReady, tripAccountMembers]);
+
+  useEffect(() => {
     if (!showOverview || !navigator.onLine) return;
     let cancelled = false;
     const parameters = new URLSearchParams({
@@ -1290,31 +1298,6 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     return () => { window.cancelAnimationFrame(frame); window.clearTimeout(timer); };
   }, [activeTab, documentNavigationTarget, inlineStopContainer]);
 
-  function addFamilyMember() {
-    const name = newMemberName.trim();
-    if (!isAdmin || !name) return;
-    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "member";
-    const member = { id: `${slug}-${crypto.randomUUID().slice(0, 6)}`, name };
-    setMembers((current) => [...current, member]);
-    setNewMemberName("");
-  }
-
-  async function copyMemberLink(member: TripMember) {
-    const link = new URL(window.location.href);
-    link.search = "";
-    link.hash = "";
-    link.searchParams.set("member", member.id);
-    if (tripAccessKey) link.searchParams.set("key", tripAccessKey);
-    if (member.id === currentMember?.id && adminSecret) link.searchParams.set("admin", adminSecret);
-    try {
-      await navigator.clipboard.writeText(link.toString());
-      setCopiedMemberId(member.id);
-      window.setTimeout(() => setCopiedMemberId(""), 1600);
-    } catch {
-      setGoogleError("The personal profile link could not be copied on this device.");
-    }
-  }
-
   async function refreshStorageHealth() {
     try {
       setStorageHealth(await getStorageHealth());
@@ -1598,6 +1581,17 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     } catch (error) {
       setCoverUploadState("error");
       setCoverUploadError(error instanceof Error ? error.message : "The cover position could not be saved.");
+    }
+  }
+
+  async function saveTripIcon(emoji: string, color: string) {
+    if (!isAdmin) return;
+    setTripIconEmoji(emoji); setTripIconColor(color); setTripIconState("saving");
+    try {
+      await updateTripIconPresentation(account, accountTrip, { iconEmoji: emoji, iconColor: color });
+      setTripIconState("idle");
+    } catch {
+      setTripIconState("error");
     }
   }
 
@@ -3265,57 +3259,38 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowSettings(false)}>
           <section className="modal trip-settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" onMouseDown={(event) => event.stopPropagation()}>
             <div className="trip-settings-heading"><div><p className="eyebrow">Admin controls</p><h2 id="settings-title">Trip Settings</h2></div><button className="overview-close" aria-label="Close trip settings" onClick={() => setShowSettings(false)}>×</button></div>
-            <section className="cover-settings" aria-labelledby="cover-settings-title">
-              <div className={`cover-settings-preview ${tripCoverDisplayUrl ? "has-image" : ""}`} style={tripCoverDisplayUrl ? { backgroundImage: `url(${tripCoverDisplayUrl})`, backgroundPosition: `${tripCoverPositionX}% ${tripCoverPositionY}%` } : undefined}>
-                {!tripCoverDisplayUrl && <span aria-hidden="true">🏛️</span>}
-              </div>
-              <div>
-                <h3 id="cover-settings-title">Trip cover photo</h3>
-                <p>Choose one landscape photo for the shared app header. A lightweight copy is saved with the trip and appears for everyone.</p>
-                <input ref={coverInputRef} className="visually-hidden" type="file" accept="image/*" onChange={handleCoverSelection} />
-                <button className="secondary-button" onClick={() => coverInputRef.current?.click()} disabled={coverUploadState === "uploading"}>
-                  {coverUploadState === "uploading" ? "Uploading cover…" : tripCoverPhotoId ? "Replace cover photo" : "Upload cover photo"}
-                </button>
-                {tripCoverDisplayUrl && <div className="cover-focal-controls focal-controls"><label><span>Move left or right</span><input type="range" min="0" max="100" value={tripCoverPositionX} onChange={(event) => setTripCoverPositionX(Number(event.target.value))} /></label><label><span>Move up or down</span><input type="range" min="0" max="100" value={tripCoverPositionY} onChange={(event) => setTripCoverPositionY(Number(event.target.value))} /></label><button className="text-button" onClick={() => void saveCoverPosition()} disabled={coverUploadState === "uploading"}>Save framing</button></div>}
-                {coverUploadError && <small className="cover-upload-error" role="alert">{coverUploadError}</small>}
-              </div>
+            <details className="settings-collapsible cover-settings-collapsible">
+              <summary><span className="settings-summary-icon" style={{ background: tripIconColor }}>{tripIconEmoji}</span><span><strong>Trip cover photo</strong><small>{tripCoverDisplayUrl ? "Cover added · tap to edit" : "No cover yet · tap to add"}</small></span><b aria-hidden="true">⌄</b></summary>
+              <section className="cover-settings" aria-labelledby="cover-settings-title">
+                <div className={`cover-settings-preview ${tripCoverDisplayUrl ? "has-image" : ""}`} style={tripCoverDisplayUrl ? { backgroundImage: `url(${tripCoverDisplayUrl})`, backgroundPosition: `${tripCoverPositionX}% ${tripCoverPositionY}%` } : undefined}>
+                  {!tripCoverDisplayUrl && <span aria-hidden="true">🏛️</span>}
+                </div>
+                <div>
+                  <h3 id="cover-settings-title">Trip cover photo</h3>
+                  <p>Choose one landscape photo for the shared app header.</p>
+                  <input ref={coverInputRef} className="visually-hidden" type="file" accept="image/*" onChange={handleCoverSelection} />
+                  <button className="secondary-button" onClick={() => coverInputRef.current?.click()} disabled={coverUploadState === "uploading"}>
+                    {coverUploadState === "uploading" ? "Uploading cover…" : tripCoverDisplayUrl ? "Replace cover photo" : "Upload cover photo"}
+                  </button>
+                  {tripCoverDisplayUrl && <div className="cover-focal-controls focal-controls"><label><span>Move left or right</span><input type="range" min="0" max="100" value={tripCoverPositionX} onChange={(event) => setTripCoverPositionX(Number(event.target.value))} /></label><label><span>Move up or down</span><input type="range" min="0" max="100" value={tripCoverPositionY} onChange={(event) => setTripCoverPositionY(Number(event.target.value))} /></label><button className="text-button" onClick={() => void saveCoverPosition()} disabled={coverUploadState === "uploading"}>Save framing</button></div>}
+                  {coverUploadError && <small className="cover-upload-error" role="alert">{coverUploadError}</small>}
+                </div>
+              </section>
+            </details>
+            <section className="trip-icon-settings" aria-labelledby="trip-icon-title">
+              <div className="trip-icon-heading"><span className="trip-icon-preview" style={{ background: tripIconColor }}>{tripIconEmoji}</span><div><h3 id="trip-icon-title">Trip icon</h3><small>Choose an emoji and colour for this trip.</small></div>{tripIconState === "saving" && <em>Saving…</em>}</div>
+              <div className="trip-emoji-options" aria-label="Trip emoji">{["✈️","🧳","🏛️","🏖️","🌏","🚗","⛺","🎡"].map((emoji) => <button className={tripIconEmoji === emoji ? "active" : ""} onClick={() => void saveTripIcon(emoji, tripIconColor)} key={emoji} aria-label={`Use ${emoji} as the trip icon`}>{emoji}</button>)}</div>
+              <div className="trip-color-options" aria-label="Trip icon colour">{["#5f91aa","#49745f","#d27c68","#c59a46","#816f9f","#3f6f89","#9a6673","#667a45"].map((color) => <button className={tripIconColor === color ? "active" : ""} style={{ background: color }} onClick={() => void saveTripIcon(tripIconEmoji, color)} key={color} aria-label="Choose this trip icon colour" />)}</div>
+              {tripIconState === "error" && <small className="cover-upload-error" role="alert">The trip icon could not be saved. Please try again.</small>}
             </section>
             <h3 className="settings-section-title">Family profiles</h3>
-            <p className="modal-copy">
-              Grace manages the family profiles and their private links. Contributor links stay locked to their assigned person on each browser.
-            </p>
             <div className="member-list">
-              {members.map((member) => (
-                <div className={`member-row ${member.id === currentMember?.id ? "active" : ""}`} key={member.id}>
-                  <span className="member-avatar">{member.name.slice(0, 1).toUpperCase()}</span>
-                  <strong>{member.name}</strong>
-                  <span className="member-role">{member.id === currentMember?.id ? "Admin" : "Contributor"}</span>
-                  <button className="member-action" onClick={() => void copyMemberLink(member)}>
-                    {copiedMemberId === member.id ? "Copied" : "Copy link"}
-                  </button>
-                </div>
-              ))}
-            </div>
-            {isAdmin && (
-              <div className="add-member-row">
-                <input
-                  value={newMemberName}
-                  onChange={(event) => setNewMemberName(event.target.value)}
-                  placeholder="Family member name"
-                  aria-label="New family member name"
-                />
-                <button className="secondary-button" onClick={addFamilyMember} disabled={!newMemberName.trim()}>Add</button>
-              </div>
-            )}
-            <h3 className="settings-section-title admin-section-title">Trip administrators</h3>
-            <p className="modal-copy admin-copy">Admins can rename the trip, edit day names, manage profiles and promote another signed-in member.</p>
-            <div className="member-list admin-member-list">
               {tripAccountMembers.map((member) => (
-                <div className="member-row" key={member.userId}>
+                <div className={`member-row ${member.userId === account.uid ? "active" : ""}`} key={member.userId}>
                   <span className="member-avatar">{member.displayName.slice(0, 1).toUpperCase()}</span>
                   <strong>{member.displayName}</strong>
                   <span className={`member-role ${member.role}`}>{member.role === "admin" ? "Admin" : "Contributor"}</span>
-                  {member.role === "admin" ? <span className="admin-confirmed">Admin</span> : <button className="member-action" onClick={() => void makeTripAdmin(member)} disabled={Boolean(adminUpdateUid)}>{adminUpdateUid === member.userId ? "Updating…" : "Make admin"}</button>}
+                  {member.role === "admin" ? <span className="admin-confirmed">Joined</span> : <button className="member-action" onClick={() => void makeTripAdmin(member)} disabled={Boolean(adminUpdateUid)}>{adminUpdateUid === member.userId ? "Updating…" : "Make admin"}</button>}
                 </div>
               ))}
             </div>
@@ -3327,7 +3302,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
               </button>
             </div>
             <details className="admin-technical-details">
-              <summary>Connection details</summary>
+              <summary><span>Connection details</span><small>Synced · Mapbox active</small><b aria-hidden="true">⌄</b></summary>
               <p className="settings-note">
                 This device is <strong>{currentMember?.name || "not assigned"}</strong> in {isAdmin ? "admin" : "contributor"} mode, with its profile locked to this device. If two people change the same item before syncing, both versions are preserved.
               </p>

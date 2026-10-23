@@ -79,3 +79,11 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 
 - The `Add to Itinerary` Day and Time controls now share a contained two-column grid with equal widths.
 - The scheduler uses its card margins as its width boundary, and the iOS time control no longer pushes beyond the right edge on narrow phones.
+
+## Trip Settings cleanup (2026-10-24)
+
+- Cover-photo controls are collapsed by default and show a compact status row.
+- Admins can choose a shared trip emoji and colour; the icon appears on the trip shelf and is saved for all joined travellers.
+- Family profiles now come only from real Firebase trip memberships. Legacy placeholder profiles and personal copy-link controls were removed.
+- Invitations use only the QR code or private group name and invite code; the copy-link button was removed.
+- Connection details remain collapsed by default and show a complete one-line status summary.

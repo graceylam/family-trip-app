@@ -118,6 +118,8 @@ export type AccountTrip = {
   coverThumbnailDataUrl?: string;
   coverPositionX?: number;
   coverPositionY?: number;
+  iconEmoji?: string;
+  iconColor?: string;
 };
 
 export type CreatedTrip = {
@@ -230,6 +232,25 @@ export async function updateTripCoverPresentation(
   await batch.commit();
 }
 
+export async function updateTripIconPresentation(
+  account: FamilyAccount,
+  trip: AccountTrip,
+  icon: { iconEmoji: string; iconColor: string },
+): Promise<void> {
+  const { db } = services();
+  if (trip.role !== "admin") throw new Error("Only a trip admin can change the trip icon.");
+  const memberSnapshot = await getDocs(collection(db, "trips", trip.id, "members"));
+  const values = { ...icon, updatedAt: serverTimestamp() };
+  const batch = writeBatch(db);
+  batch.set(doc(db, "trips", trip.id), values, { merge: true });
+  memberSnapshot.docs.forEach((memberDocument) => {
+    const memberUid = String(memberDocument.data().userId || memberDocument.id);
+    batch.set(doc(db, "users", memberUid, "trips", trip.id), values, { merge: true });
+  });
+  if (memberSnapshot.empty) batch.set(doc(db, "users", account.uid, "trips", trip.id), values, { merge: true });
+  await batch.commit();
+}
+
 export async function signOutOfFamilyAccount(): Promise<void> {
   const { auth } = services();
   await signOut(auth);
@@ -268,6 +289,8 @@ export function observeAccountTrips(account: FamilyAccount, listener: (trips: Ac
           ...(data.coverThumbnailDataUrl ? { coverThumbnailDataUrl: String(data.coverThumbnailDataUrl) } : {}),
           coverPositionX: Number(data.coverPositionX ?? trip.coverPositionX ?? 50),
           coverPositionY: Number(data.coverPositionY ?? trip.coverPositionY ?? 50),
+          iconEmoji: String(data.iconEmoji || trip.iconEmoji || "✈️"),
+          iconColor: String(data.iconColor || trip.iconColor || "#5f91aa"),
         };
       } catch { return trip; }
     })).then((trips) => {

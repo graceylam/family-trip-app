@@ -120,11 +120,13 @@ test("uses Firebase for trip sync and private R2 photo and video storage", async
   assert.match(driveClient, /baseTrip/);
   assert.match(service, /previousTripId/);
   assert.match(page, /Private invitation needed/);
-  assert.match(page, /Copy link/);
+  assert.doesNotMatch(page, /Copy link/);
+  assert.match(page, /updateTripIconPresentation/);
+  assert.match(page, /tripAccountMembers\.map/);
   assert.match(page, /memberIdKey/);
   assert.match(page, /storedMemberId \|\| queryMemberId/);
   assert.match(page, /profile locked to this device/);
-  assert.match(page, /member\.id === currentMember\?\.id && adminSecret/);
+  assert.doesNotMatch(page, /copyMemberLink/);
   assert.doesNotMatch(page, /Use here/);
   assert.match(page, /readOnly=\{!isAdmin\}/);
   assert.match(page, /Mapbox location/);
