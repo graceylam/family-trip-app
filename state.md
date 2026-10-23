@@ -74,3 +74,8 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 
 - A Saved Places entry can be deleted only by the family member who originally added it. Other members do not see a delete action.
 - Deleting a saved entry does not remove a stop that was already added to the itinerary; that remains a separate deliberate action.
+
+## Saved Places scheduler sizing (2026-10-24)
+
+- The `Add to Itinerary` Day and Time controls now share a contained two-column grid with equal widths.
+- The scheduler uses its card margins as its width boundary, and the iOS time control no longer pushes beyond the right edge on narrow phones.
