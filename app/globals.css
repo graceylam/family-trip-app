@@ -906,6 +906,7 @@ button { cursor: pointer; }
 
 @media (max-width: 760px) {
   .expenses-add-card > header { align-items: start; flex-direction: column; }
+  .expenses-add-card.collapsed > header { align-items: flex-start; }
   .expenses-add-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .expenses-add-grid label:nth-child(3), .expenses-add-grid .primary-button { grid-column: 1 / -1; }
   .expenses-add-grid .primary-button { width: 100%; }
