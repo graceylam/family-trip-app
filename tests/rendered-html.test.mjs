@@ -125,6 +125,8 @@ test("uses Firebase for trip sync and private R2 photo and video storage", async
   assert.match(page, /tripAccountMembers\.map/);
   assert.match(firebaseAccounts, /avatarEmoji/);
   assert.match(firebaseAccounts, /avatarColor/);
+  assert.match(firebaseAccounts, /updateTripDefaultCurrency/);
+  assert.match(page, /Default trip currency/);
   assert.match(page, /memberIdKey/);
   assert.match(page, /storedMemberId \|\| queryMemberId/);
   assert.match(page, /profile locked to this device/);

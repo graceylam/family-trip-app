@@ -810,6 +810,12 @@ button { cursor: pointer; }
 .settings-collapsible[open] > summary > b { transform: rotate(180deg); }
 .settings-summary-icon { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 50%; color: white; background: #8bb8cf; font-size: 1.05rem; }
 .settings-collapsible .cover-settings { margin: 0 10px 10px !important; }
+.trip-currency-setting { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 10px; margin-bottom: 17px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 14px; background: white; }
+.trip-currency-setting > div { display: grid; gap: 2px; }
+.trip-currency-setting h3 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 1rem; }
+.trip-currency-setting small, .trip-currency-setting span { color: var(--muted); font-size: .61rem; }
+.trip-currency-setting select { min-width: 82px; min-height: 38px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: #faf9f5; font: inherit; font-size: .72rem; font-weight: 800; }
+.trip-currency-setting .currency-setting-error { color: #9a3f31; }
 .settings-section-title { margin-top: 3px; font-size: 1.1rem; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
 .trip-settings-modal { width: min(620px, 100%); max-height: min(820px, calc(100dvh - 32px)); padding: 22px; }
@@ -826,10 +832,12 @@ button { cursor: pointer; }
 .member-role.admin { color: var(--forest); }
 .admin-confirmed { color: var(--forest); font-size: .64rem; font-weight: 900; }
 .admin-technical-details { margin-top: 16px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 14px; background: #f7f8f5; }
-.admin-technical-details summary { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 8px; color: var(--forest); cursor: pointer; font-size: .69rem; font-weight: 850; list-style: none; }
+.admin-technical-details summary { position: relative; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 8px; min-width: 0; padding-right: 18px; color: var(--forest); cursor: pointer; font-size: .69rem; font-weight: 850; list-style: none; }
 .admin-technical-details summary::-webkit-details-marker { display: none; }
-.admin-technical-details summary small { color: var(--muted); font-size: .59rem; font-weight: 700; }
-.admin-technical-details summary b { color: var(--muted); transition: transform .18s ease; }
+.admin-technical-details summary > span { display: grid; min-width: 0; gap: 2px; }
+.admin-technical-details summary small { overflow: hidden; color: var(--muted); font-size: .57rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.admin-technical-details summary em { color: #4e775e; font-size: .57rem; font-style: normal; font-weight: 800; white-space: nowrap; }
+.admin-technical-details summary b { position: absolute; right: 0; color: var(--muted); transition: transform .18s ease; }
 .admin-technical-details[open] summary b { transform: rotate(180deg); }
 .admin-technical-details[open] summary { margin-bottom: 10px; }
 .admin-technical-details .settings-note { margin-top: 0; }
@@ -1250,6 +1258,10 @@ button { cursor: pointer; }
   .trip-settings-modal { width: 100%; max-height: min(88dvh, 760px); padding: 17px 16px max(18px, env(safe-area-inset-bottom)); border-radius: 20px 20px 0 0; }
   .trip-settings-modal .cover-settings { grid-template-columns: 112px minmax(0, 1fr); gap: 11px; padding: 11px; }
   .trip-settings-modal .cover-settings-preview { min-height: 108px; }
+  .trip-currency-setting { grid-template-columns: minmax(0,1fr) auto; }
+  .trip-currency-setting > span { grid-column: 1 / -1; }
+  .admin-technical-details summary { grid-template-columns: minmax(0,1fr); gap: 4px; }
+  .admin-technical-details summary em { justify-self: start; white-space: normal; }
   .trip-settings-modal .cover-settings h3 { font-size: 1rem; }
   .trip-settings-modal .cover-settings p { margin-block: 4px 7px; line-height: 1.35; }
   .trip-settings-modal .focal-controls { grid-template-columns: 1fr; gap: 7px; padding: 8px; }

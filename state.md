@@ -88,3 +88,5 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 - Family profiles now come only from real Firebase trip memberships. Legacy placeholder profiles and personal copy-link controls were removed.
 - Invitations use only the QR code or private group name and invite code; the copy-link button was removed.
 - Connection details remain collapsed by default and show a complete one-line status summary.
+- Connection details use a fully contained two-line summary on narrow phones so neither the account mode nor sync/Mapbox status is clipped.
+- Trip Settings includes a shared default trip currency. Changing it updates every joined traveller and preselects that currency for new expenses.

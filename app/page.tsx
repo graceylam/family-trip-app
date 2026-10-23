@@ -10,7 +10,7 @@ import StopsBank from "./StopsBank";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { createFamilyMap, getMapboxPlace, searchMapboxPlaces, type FamilyMapTravelMode } from "../lib/mapbox";
 import type { SavedPlace } from "../lib/firebaseSavedPlaces";
-import { deleteAccountTrip, observeTripAccountMembers, promoteTripMemberToAdmin, updateTripCoverPresentation, type AccountTrip, type FamilyAccount, type TripAccountMember } from "../lib/firebaseAccounts";
+import { deleteAccountTrip, observeTripAccountMembers, promoteTripMemberToAdmin, updateTripCoverPresentation, updateTripDefaultCurrency, type AccountTrip, type FamilyAccount, type TripAccountMember } from "../lib/firebaseAccounts";
 import {
   getFirebaseTripState,
   initializeFirebaseTripState,
@@ -420,6 +420,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [tripCoverThumbnail, setTripCoverThumbnail] = useState(accountTrip.coverThumbnailDataUrl || "");
   const [coverUploadState, setCoverUploadState] = useState<"idle" | "uploading" | "error">("idle");
   const [coverUploadError, setCoverUploadError] = useState<string | null>(null);
+  const [tripDefaultCurrency, setTripDefaultCurrency] = useState(accountTrip.defaultCurrency || "EUR");
+  const [tripCurrencyState, setTripCurrencyState] = useState<"idle" | "saving" | "error">("idle");
   const tripId = sharedTripId;
   const [previousTripId, setPreviousTripId] = useState("");
   const [adminSecret, setAdminSecret] = useState("");
@@ -491,7 +493,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [newExpenseItem, setNewExpenseItem] = useState("");
   const [newExpenseAmount, setNewExpenseAmount] = useState("");
   const [newExpenseCategory, setNewExpenseCategory] = useState(expenseCategories[0]);
-  const [newExpenseLocalCurrency, setNewExpenseLocalCurrency] = useState("EUR");
+  const [newExpenseLocalCurrency, setNewExpenseLocalCurrency] = useState(accountTrip.defaultCurrency || "EUR");
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [expenseEditDraft, setExpenseEditDraft] = useState({ item: "", amount: "", category: expenseCategories[0], localCurrency: "EUR" });
   const [expenseConversionState, setExpenseConversionState] = useState<"idle" | "converting">("idle");
@@ -1578,6 +1580,17 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     } catch (error) {
       setCoverUploadState("error");
       setCoverUploadError(error instanceof Error ? error.message : "The cover position could not be saved.");
+    }
+  }
+
+  async function saveTripDefaultCurrency(value: string) {
+    if (!isAdmin) return;
+    setTripDefaultCurrency(value); setNewExpenseLocalCurrency(value); setTripCurrencyState("saving");
+    try {
+      await updateTripDefaultCurrency(account, accountTrip, value);
+      setTripCurrencyState("idle");
+    } catch {
+      setTripCurrencyState("error");
     }
   }
 
@@ -3263,6 +3276,14 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                 </div>
               </section>
             </details>
+            <section className="trip-currency-setting" aria-labelledby="trip-currency-title">
+              <div><h3 id="trip-currency-title">Default trip currency</h3><small>Used automatically for new expenses.</small></div>
+              <select value={tripDefaultCurrency} onChange={(event) => void saveTripDefaultCurrency(event.target.value)} disabled={tripCurrencyState === "saving"} aria-label="Default trip currency">
+                {currencyOptions.map((currency) => <option value={currency} key={currency}>{currency}</option>)}
+              </select>
+              {tripCurrencyState === "saving" && <span>Saving…</span>}
+              {tripCurrencyState === "error" && <span className="currency-setting-error">Try again</span>}
+            </section>
             <h3 className="settings-section-title">Family profiles</h3>
             <div className="member-list">
               {tripAccountMembers.map((member) => (
@@ -3282,7 +3303,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
               </button>
             </div>
             <details className="admin-technical-details">
-              <summary><span>Connection details</span><small>Synced · Mapbox active</small><b aria-hidden="true">⌄</b></summary>
+              <summary><span><strong>Connection details</strong><small>{currentMember?.name || "Account"} · {isAdmin ? "Admin" : "Contributor"}</small></span><em>Synced · Mapbox active</em><b aria-hidden="true">⌄</b></summary>
               <p className="settings-note">
                 This device is <strong>{currentMember?.name || "not assigned"}</strong> in {isAdmin ? "admin" : "contributor"} mode, with its profile locked to this device. If two people change the same item before syncing, both versions are preserved.
               </p>
