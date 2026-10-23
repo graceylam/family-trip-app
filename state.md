@@ -44,3 +44,9 @@ Last updated: 22 October 2026
 ## Rollback
 
 The previous Google Drive implementation is preserved in Git history. Roll back to the commit immediately before the R2 migration if required; do not delete the old Drive files until the R2 phone test has passed.
+# Gallery viewer refinements (2026-10-23)
+
+- Full-screen gallery viewer now paints through the iPhone bottom safe area to prevent the white strip from reappearing.
+- Gallery captions use the app's regular typeface.
+- Closing a photo restores the exact Gallery scroll position, including an iOS-safe second-frame restoration.
+- The bulk save action is explicitly scoped to the active Day, Person, and media-type filters; its label changes to `Save Filtered (n)` whenever a filter is active.

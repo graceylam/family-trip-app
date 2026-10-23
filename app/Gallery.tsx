@@ -42,6 +42,7 @@ export default function Gallery({ tripId, days, media, currentUid, isAdmin, stat
   const [saveMessage, setSaveMessage] = useState("");
   const [lastVisit, setLastVisit] = useState("");
   const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const galleryScrollY = useRef(0);
   const visitKey = `family-trip-gallery-last-visit-v1:${tripId}`;
 
   useEffect(() => {
@@ -79,6 +80,7 @@ export default function Gallery({ tripId, days, media, currentUid, isAdmin, stat
   useEffect(() => {
     if (!viewerOpen) return;
     const scrollY = window.scrollY;
+    galleryScrollY.current = scrollY;
     const body = document.body;
     const previous = { position: body.style.position, top: body.style.top, width: body.style.width };
     document.documentElement.classList.add("media-viewer-open");
@@ -90,7 +92,10 @@ export default function Gallery({ tripId, days, media, currentUid, isAdmin, stat
       body.style.position = previous.position;
       body.style.top = previous.top;
       body.style.width = previous.width;
-      window.scrollTo(0, scrollY);
+      window.requestAnimationFrame(() => {
+        window.scrollTo({ top: galleryScrollY.current, left: 0, behavior: "instant" });
+        window.requestAnimationFrame(() => window.scrollTo({ top: galleryScrollY.current, left: 0, behavior: "instant" }));
+      });
     };
   }, [viewerOpen]);
 
@@ -179,6 +184,7 @@ export default function Gallery({ tripId, days, media, currentUid, isAdmin, stat
   }
 
   const selected = visible.filter((item) => selectedIds.includes(item.fileId));
+  const hasActiveFilters = Boolean(dayFilter || personFilter || typeFilter);
   const deletableSelected = selected.filter((item) => isAdmin || item.memberId === currentUid);
   const allVisibleSelected = visible.length > 0 && visible.every((item) => selectedIds.includes(item.fileId));
 
@@ -217,7 +223,7 @@ export default function Gallery({ tripId, days, media, currentUid, isAdmin, stat
 
     <div className="gallery-day-tabs"><button className={!dayFilter ? "active" : ""} onClick={() => setDayFilter("")}>All days</button>{days.map((day, index) => <button className={dayFilter === day.id ? "active" : ""} onClick={() => setDayFilter(day.id)} key={day.id}><b>Day {index + 1}</b><small>{prettyDate(day.date)}</small></button>)}</div>
     <div className="gallery-filter-bar"><label><span>Person</span><select value={personFilter} onChange={(event) => setPersonFilter(event.target.value)}><option value="">Everyone</option>{people.map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select></label><div className="gallery-type-filter"><button className={!typeFilter ? "active" : ""} onClick={() => setTypeFilter("")}>All</button><button className={typeFilter === "photo" ? "active" : ""} onClick={() => setTypeFilter("photo")}>Photos</button><button className={typeFilter === "video" ? "active" : ""} onClick={() => setTypeFilter("video")}>Videos</button><button className={typeFilter === "favorite" ? "active" : ""} onClick={() => setTypeFilter("favorite")}>♥ Favourites</button></div></div>
-    <div className="gallery-heading-actions gallery-bulk-actions"><button className="primary-button" disabled={!visible.length || shareState !== "idle"} onClick={() => void saveItemsToPhotos(visible)}>{shareState === "saving" ? `Saving ${shareProgress.completed}/${shareProgress.total}` : `Save All Shared (${visible.length})`}</button><button className={`secondary-button ${selectionMode ? "active" : ""}`} onClick={() => { setSelectionMode((value) => !value); setSelectedIds([]); }}>{selectionMode ? "Done selecting" : "Select"}</button></div>
+    <div className="gallery-heading-actions gallery-bulk-actions"><button className="primary-button" disabled={!visible.length || shareState !== "idle"} onClick={() => void saveItemsToPhotos([...visible])}>{shareState === "saving" ? `Saving ${shareProgress.completed}/${shareProgress.total}` : `${hasActiveFilters ? "Save Filtered" : "Save All Shared"} (${visible.length})`}</button><button className={`secondary-button ${selectionMode ? "active" : ""}`} onClick={() => { setSelectionMode((value) => !value); setSelectedIds([]); }}>{selectionMode ? "Done selecting" : "Select"}</button></div>
 
     {selectionMode && <div className="gallery-selection-bar"><strong>{selected.length} selected</strong><div className="gallery-selection-actions"><button className="secondary-button" disabled={!visible.length || shareState !== "idle"} onClick={toggleSelectAll}>{allVisibleSelected ? "Deselect All" : `Select All (${visible.length})`}</button><button className="primary-button" disabled={!selected.length || shareState !== "idle"} onClick={() => void saveItemsToPhotos(selected)}>{shareState === "saving" ? `Saving ${shareProgress.completed}/${shareProgress.total}` : "Save Selected to Photos"}</button><button className="secondary-button danger-button" disabled={!deletableSelected.length || shareState !== "idle"} onClick={() => void deleteSelected()}>{shareState === "deleting" ? `Deleting ${shareProgress.completed}/${shareProgress.total}` : `Delete Selected (${deletableSelected.length})`}</button></div></div>}
 

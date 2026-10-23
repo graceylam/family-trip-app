@@ -15,7 +15,7 @@
 * { box-sizing: border-box; }
 html { min-height: 100%; background: var(--paper); color: var(--ink); }
 body { min-height: 100dvh; margin: 0; background: radial-gradient(circle at 92% 4%, rgba(173,211,233,.36), transparent 26rem), var(--paper); background-attachment: fixed; font-family: Arial, Helvetica, sans-serif; }
-html.media-viewer-open, html.media-viewer-open body { height: 100%; overflow: hidden; background: #080b0d; overscroll-behavior: none; }
+html.media-viewer-open, html.media-viewer-open body, html.media-viewer-open #root { height: 100%; min-height: 100%; overflow: hidden; background: #080b0d; overscroll-behavior: none; }
 button, input { font: inherit; }
 button { cursor: pointer; }
 
@@ -1632,7 +1632,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .gallery-select-mark { position: absolute; top: 7px; right: 7px; display: grid; width: 24px; height: 24px; place-items: center; border: 2px solid white; border-radius: 50%; color: white; background: rgba(31,49,61,.45); font-weight: 900; }
 .gallery-v2-tile.selected .gallery-select-mark { background: #397c9c; }
 .gallery-v2-empty { display: grid; min-height: 220px; place-items: center; align-content: center; gap: 6px; padding: 30px; border: 1px dashed #bfd0d7; border-radius: 20px; color: var(--muted); text-align: center; }
-.gallery-lightbox { position: fixed; z-index: 7000; inset: 0; display: grid; grid-template-rows: auto minmax(0,1fr) auto; width: 100vw; height: 100dvh; overflow: hidden; color: white; background: #080b0d; touch-action: pan-y pinch-zoom; }
+.gallery-lightbox { position: fixed; z-index: 7000; top: 0; right: 0; bottom: -2px; left: 0; display: grid; grid-template-rows: auto minmax(0,1fr) auto; width: 100%; height: calc(100dvh + 2px); min-height: calc(100% + 2px); overflow: hidden; color: white; background: #080b0d; touch-action: pan-y pinch-zoom; transform: translateZ(0); }
 .gallery-lightbox > header { display: grid; grid-template-columns: 44px minmax(0,1fr) 44px; align-items: center; gap: 8px; padding: max(10px, env(safe-area-inset-top)) 14px 9px; text-align: center; }
 .gallery-lightbox > header button, .gallery-lightbox footer button { border: 0; color: white; background: transparent; font-weight: 800; }
 .gallery-lightbox > header button:first-child { text-align: left; }.gallery-lightbox > header button:last-child { text-align: right; }
@@ -1641,7 +1641,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .gallery-lightbox-stage > img, .gallery-lightbox-stage > video { width: 100%; height: 100%; object-fit: contain; }
 .gallery-lightbox-prev, .gallery-lightbox-next { position: absolute; top: 50%; width: 42px; height: 52px; border: 0; border-radius: 12px; color: white; background: rgba(0,0,0,.34); font-size: 2rem; transform: translateY(-50%); }.gallery-lightbox-prev { left: 9px; }.gallery-lightbox-next { right: 9px; }
 .gallery-lightbox > footer { display: grid; gap: 10px; padding: 8px 14px max(10px, env(safe-area-inset-bottom)); background: #12191d; box-shadow: 0 40px 0 40px #12191d; }
-.gallery-caption-display { max-width: 680px; margin: 2px auto 0; padding: 0 12px; color: #f4f1e9; font-family: Arial, Helvetica, sans-serif; font-size: .8rem; line-height: 1.4; text-align: center; }
+.gallery-caption-display { max-width: 680px; margin: 2px auto 0; padding: 0 12px; color: #f4f1e9; font-family: inherit; font-size: .8rem; font-weight: 500; line-height: 1.4; text-align: center; }
 .gallery-lightbox-actions { display: flex; justify-content: center; gap: 7px; }.gallery-lightbox-actions button { color: white; background: #26363e; border-color: #42535b; }.gallery-lightbox-actions button.danger { color: #ffaaa0; }
 .gallery-lightbox footer label { display: grid; gap: 5px; }.gallery-lightbox footer label > span { color: #b8c5ca; font-size: .62rem; font-weight: 850; text-transform: uppercase; }.gallery-lightbox footer label > div { display: grid; grid-template-columns: 1fr auto; gap: 7px; }.gallery-lightbox footer input { min-width: 0; min-height: 40px; padding: 8px 11px; border: 1px solid #405159; border-radius: 10px; color: white; background: #202d33; font: inherit; }
 .gallery-native-toolbar button.active { color: #ff8b8b; }.gallery-media-details { display: grid; gap: 8px; padding: 10px; border-radius: 14px; background: #172126; }.hide-memory-button { justify-self: start; padding: 5px 0; border: 0; color: #c1d0d5; background: transparent; font-size: .68rem; font-weight: 750; }
