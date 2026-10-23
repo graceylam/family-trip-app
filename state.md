@@ -50,3 +50,8 @@ The previous Google Drive implementation is preserved in Git history. Roll back 
 - Gallery captions use the app's regular typeface.
 - Closing a photo restores the exact Gallery scroll position, including an iOS-safe second-frame restoration.
 - The bulk save action is explicitly scoped to the active Day, Person, and media-type filters; its label changes to `Save Filtered (n)` whenever a filter is active.
+
+# Native gallery and expense entry (2026-10-24)
+
+- The iOS web view now extends beneath both safe areas; existing CSS safe-area padding continues to protect normal screens while the Gallery viewer can paint fully edge-to-edge.
+- Expenses can now be added directly from the Expenses tab by choosing a day and stop, with the current member recorded automatically.

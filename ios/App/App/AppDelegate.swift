@@ -118,6 +118,13 @@ public class NativePhotosPlugin: CAPPlugin, CAPBridgedPlugin {
 
 @objc(FamilyBridgeViewController)
 public class FamilyBridgeViewController: CAPBridgeViewController {
+    override public func viewDidLoad() {
+        super.viewDidLoad()
+        edgesForExtendedLayout = .all
+        extendedLayoutIncludesOpaqueBars = true
+        webView?.scrollView.contentInsetAdjustmentBehavior = .never
+    }
+
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(NativePhotosPlugin())
     }

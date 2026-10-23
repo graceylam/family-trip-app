@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: "Family Trip",
   webDir: "pages-dist",
   ios: {
-    contentInset: "automatic",
+    contentInset: "never",
     preferredContentMode: "mobile",
   },
 };

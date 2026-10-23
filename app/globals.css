@@ -516,6 +516,14 @@ button { cursor: pointer; }
 .expenses-page-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 8px 2px 2px; }
 .expenses-page-heading h1 { margin: 5px 0 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(2rem, 5vw, 3.1rem); font-weight: 500; letter-spacing: -.03em; }
 .expenses-page-heading p:last-child { margin: 7px 0 0; color: var(--muted); font-size: .86rem; }
+.expenses-add-card { display: grid; gap: 14px; padding: 18px; border: 1px solid #c9dce5; border-radius: 18px; background: linear-gradient(145deg, rgba(239,248,251,.96), rgba(255,253,248,.96)); box-shadow: 0 9px 28px rgba(31,49,61,.06); }
+.expenses-add-card > header { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+.expenses-add-card h2 { margin: 3px 0 0; font-family: Georgia, "Times New Roman", serif; font-size: 1.35rem; font-weight: 500; }
+.expenses-add-card header small { color: var(--muted); font-size: .68rem; font-weight: 750; }
+.expenses-add-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)) auto; align-items: end; gap: 9px; }
+.expenses-add-grid label { display: grid; min-width: 0; gap: 5px; color: var(--muted); font-size: .62rem; font-weight: 850; letter-spacing: .05em; text-transform: uppercase; }
+.expenses-add-grid input, .expenses-add-grid select { min-width: 0; width: 100%; min-height: 40px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: white; }
+.expenses-add-grid .primary-button { min-height: 40px; white-space: nowrap; }
 .expense-filters { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,253,248,.9); }
 .expense-filters label { display: grid; min-width: 150px; flex: 1 1 160px; gap: 5px; color: var(--muted); font-size: .65rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
 .expense-filters .text-button { padding: 10px; }
@@ -892,6 +900,10 @@ button { cursor: pointer; }
 .back-to-trips { justify-self: start; margin: 0 0 12px; padding: 7px 10px; border: 1px solid rgba(45, 84, 102, .16); border-radius: 99px; color: var(--forest); background: rgba(255, 253, 247, .74); font-size: .68rem; font-weight: 850; backdrop-filter: blur(8px); }
 
 @media (max-width: 760px) {
+  .expenses-add-card > header { align-items: start; flex-direction: column; }
+  .expenses-add-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .expenses-add-grid label:nth-child(3), .expenses-add-grid .primary-button { grid-column: 1 / -1; }
+  .expenses-add-grid .primary-button { width: 100%; }
   .account-shell { padding: max(28px, env(safe-area-inset-top)) 16px max(100px, env(safe-area-inset-bottom)); }
   .account-welcome { grid-template-columns: 1fr; align-content: start; min-height: auto; }
   .account-welcome-copy h1 { font-size: clamp(3rem, 15vw, 4.7rem); }

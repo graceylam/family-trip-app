@@ -501,6 +501,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [expensePersonFilter, setExpensePersonFilter] = useState("");
   const [expenseDayFilter, setExpenseDayFilter] = useState("");
   const [expenseCategoryFilter, setExpenseCategoryFilter] = useState("");
+  const [expenseEntryDayId, setExpenseEntryDayId] = useState(workspaceInitialDays[0]?.id || "");
+  const [expenseEntryStopId, setExpenseEntryStopId] = useState("");
   const [sharedPhotos, setSharedPhotos] = useState<TripMedia[]>([]);
   const [sharedPhotoUrls, setSharedPhotoUrls] = useState<Record<string, string>>({});
   const [galleryState, setGalleryState] = useState<"idle" | "loading" | "ready" | "offline" | "error">("idle");
@@ -1109,6 +1111,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     (!expenseDayFilter || day.id === expenseDayFilter) &&
     (!expenseCategoryFilter || expense.category === expenseCategoryFilter),
   ), [expenseCategoryFilter, expenseDayFilter, expensePersonFilter, expenseRows]);
+  const expenseEntryDay = days.find((day) => day.id === expenseEntryDayId) ?? days[0];
+  const expenseEntryStop = expenseEntryDay?.stops.find((stop) => stop.id === expenseEntryStopId) ?? expenseEntryDay?.stops[0];
   const downloadDay = useMemo(() => days.find((day) => day.id === downloadDayId), [days, downloadDayId]);
   const expenseTotals = useMemo(() => {
     const localByCurrency = new Map<string, number>();
@@ -1786,8 +1790,10 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     } : day)));
   }
 
-  async function addExpense() {
-    if (!currentMember || !selectedStop) return;
+  async function addExpense(dayId = selectedDay?.id, stopId = selectedStop?.id) {
+    if (!currentMember || !dayId || !stopId) return;
+    const targetStop = days.find((day) => day.id === dayId)?.stops.find((stop) => stop.id === stopId);
+    if (!targetStop) return;
     const item = newExpenseItem.trim();
     const localAmount = Number(newExpenseAmount);
     if (!item || !Number.isFinite(localAmount) || localAmount <= 0) return;
@@ -1820,7 +1826,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       exchangeRateDate,
       createdAt: new Date().toISOString(),
     };
-    updateSelectedStop({ expenses: [...(selectedStop.expenses ?? []), expense] });
+    updateStopInDay(dayId, stopId, { expenses: [...(targetStop.expenses ?? []), expense] });
     setNewExpenseItem("");
     setNewExpenseAmount("");
     setExpenseConversionState("idle");
@@ -3108,6 +3114,21 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
           {expenseConversionError && <p className="gallery-alert" role="alert">{expenseConversionError}</p>}
 
+          <section className="expenses-add-card" aria-labelledby="expenses-add-title">
+            <header>
+              <div><p className="eyebrow">Quick entry</p><h2 id="expenses-add-title">Add an expense</h2></div>
+              <small>Logged as {currentMember?.name ?? "you"}</small>
+            </header>
+            <div className="expenses-add-grid">
+              <label><span>Day</span><select value={expenseEntryDay?.id ?? ""} onChange={(event) => { const day = days.find((item) => item.id === event.target.value); setExpenseEntryDayId(event.target.value); setExpenseEntryStopId(day?.stops[0]?.id ?? ""); }}>{days.map((day, index) => <option value={day.id} key={day.id}>Day {index + 1}: {day.label}</option>)}</select></label>
+              <label><span>Stop</span><select value={expenseEntryStop?.id ?? ""} onChange={(event) => setExpenseEntryStopId(event.target.value)} disabled={!expenseEntryDay?.stops.length}><option value="" disabled>{expenseEntryDay?.stops.length ? "Choose a stop" : "No stops on this day"}</option>{expenseEntryDay?.stops.map((stop, index) => <option value={stop.id} key={stop.id}>Stop {index + 1}: {stop.title}</option>)}</select></label>
+              <label><span>Item</span><input value={newExpenseItem} onChange={(event) => setNewExpenseItem(event.target.value)} placeholder="Dinner, tickets, taxi…" /></label>
+              <label><span>Amount</span><div className="money-input"><select value={newExpenseLocalCurrency} onChange={(event) => setNewExpenseLocalCurrency(event.target.value)} aria-label="Local currency">{currencyOptions.map((currency) => <option value={currency} key={currency}>{currency}</option>)}</select><input type="number" inputMode="decimal" min="0" step="0.01" value={newExpenseAmount} onChange={(event) => setNewExpenseAmount(event.target.value)} placeholder="0.00" aria-label="Local amount" /></div></label>
+              <label><span>Category</span><select value={newExpenseCategory} onChange={(event) => setNewExpenseCategory(event.target.value)}>{expenseCategories.map((category) => <option value={category} key={category}>{category}</option>)}</select></label>
+              <button className="primary-button" onClick={() => void addExpense(expenseEntryDay?.id, expenseEntryStop?.id)} disabled={!expenseEntryStop || !currentMember || !newExpenseItem.trim() || !(Number(newExpenseAmount) > 0) || expenseConversionState === "converting"}>{expenseConversionState === "converting" ? "Converting…" : "Add expense"}</button>
+            </div>
+          </section>
+
           <div className="expense-filters" aria-label="Expense filters">
             <label>
               <span>Person</span>
@@ -3173,7 +3194,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
               <div className="expenses-empty">
                 <span aria-hidden="true">$</span>
                 <strong>{expenseRows.length === 0 ? "No expenses yet" : "No expenses match these filters"}</strong>
-                <p>{expenseRows.length === 0 ? "Open an itinerary stop to add the first shared expense." : "Clear or change the filters to see more expenses."}</p>
+                <p>{expenseRows.length === 0 ? "Use Add an expense above to record the first shared expense." : "Clear or change the filters to see more expenses."}</p>
               </div>
             )}
           </div>
