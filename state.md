@@ -1,6 +1,6 @@
 # Family Trip development state
 
-Last updated: 22 October 2026
+Last updated: 24 October 2026
 
 ## Current checkpoint
 
@@ -58,3 +58,14 @@ The previous Google Drive implementation is preserved in Git history. Roll back 
 - Quick expense entry is collapsed by default and expands only when the user taps `Add expense`; it collapses again after saving or when requested.
 - Its collapsed presentation is intentionally minimal: only `QUICK ENTRY` and `+ Add expense` are shown.
 - On phone layouts, the `+ Add expense` button is left-aligned beneath `QUICK ENTRY` rather than centred.
+
+## Pre-TestFlight product roadmap agreed 24 October 2026
+
+1. Improve perceived bookshelf startup speed by rendering cached trip summaries immediately and refreshing Firebase data in the background.
+2. Improve Gallery feedback: expose captions outside the full-screen viewer and show a brief `Already downloaded` message for media previously saved by this app on the same device.
+3. Choose the product name and visual identity, then apply the icon/logo to the iPhone home screen, launch experience and appropriate in-app surfaces.
+4. Give Trip Settings a cosmetic cleanup.
+5. Leave the larger Memory Lane revision until last: repair highlight-video duration/export, add an editable Instagram-style Story builder, and persist completed stories.
+6. Distribute privately to family through TestFlight after the above pass; their phones should not need Developer Mode.
+
+The laptop experience remains the web/PWA build backed by the same Firebase, R2 and Mapbox services, so it shares accounts and trip data with the iPhone app.
