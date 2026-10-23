@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TripDay } from "../lib/googleDrive";
 import type { TripMedia } from "../lib/firebaseMedia";
+import type { TripAccountMember } from "../lib/firebaseAccounts";
 import { canSaveDirectlyToPhotos, saveUrlToPhotos } from "../lib/nativePhotos";
 import MediaSwipeStage from "./MediaSwipeStage";
 
@@ -10,6 +11,7 @@ type GalleryProps = {
   tripId: string;
   days: TripDay[];
   media: TripMedia[];
+  memberProfiles: TripAccountMember[];
   currentUid: string;
   isAdmin: boolean;
   state: "idle" | "loading" | "ready" | "offline" | "error";
@@ -27,7 +29,7 @@ function mediaUrl(item: TripMedia, display = false) {
   return display ? item.displayUrl || item.downloadUrl : item.thumbnailUrl || item.displayUrl || item.downloadUrl;
 }
 
-export default function Gallery({ tripId, days, media, currentUid, isAdmin, state, error, onUpdate, onDelete }: GalleryProps) {
+export default function Gallery({ tripId, days, media, memberProfiles, currentUid, isAdmin, state, error, onUpdate, onDelete }: GalleryProps) {
   const [dayFilter, setDayFilter] = useState("");
   const [personFilter, setPersonFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState<"" | "photo" | "video" | "favorite">("");
@@ -44,6 +46,7 @@ export default function Gallery({ tripId, days, media, currentUid, isAdmin, stat
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const galleryScrollY = useRef(0);
   const visitKey = `family-trip-gallery-last-visit-v1:${tripId}`;
+  const memberProfilesByUid = useMemo(() => new Map(memberProfiles.map((member) => [member.userId, member])), [memberProfiles]);
 
   useEffect(() => {
     const previous = window.localStorage.getItem(visitKey) || "";
@@ -230,7 +233,7 @@ export default function Gallery({ tripId, days, media, currentUid, isAdmin, stat
     {state === "loading" && !media.length ? <div className="gallery-v2-empty">Opening the group gallery…</div> : visible.length === 0 ? <div className="gallery-v2-empty"><strong>No matching memories yet</strong><p>Add photos or videos from an itinerary stop.</p></div> : <div className="gallery-v2-days">{days.filter((day) => !dayFilter || day.id === dayFilter).map((day, dayIndex) => {
       const dayItems = visible.filter((item) => item.dayId === day.id);
       if (!dayItems.length) return null;
-      return <section className="gallery-v2-day" key={day.id}><header><div><p>Day {days.indexOf(day) + 1}</p><h2>{day.label}</h2><time>{prettyDate(day.date)}</time></div><span>{dayItems.length} memories</span></header>{day.stops.map((stop, stopIndex) => { const items = dayItems.filter((item) => item.stopId === stop.id); if (!items.length) return null; return <article className="gallery-v2-stop" key={stop.id}><div className="gallery-v2-stop-title"><div><small>Stop {stopIndex + 1}</small><h3>{stop.title}</h3></div>{stop.time && <time>{stop.time}</time>}</div><div className="gallery-v2-grid">{items.map((item) => <button className={`gallery-v2-tile ${selectedIds.includes(item.fileId) ? "selected" : ""}`} onClick={() => open(item)} key={item.fileId}>{item.mediaType === "video" ? <video src={mediaUrl(item)} muted preload="metadata" playsInline /> : <img src={mediaUrl(item)} alt={item.caption || `${item.memberName}'s photo at ${stop.title}`} loading="lazy" />}<span className="gallery-tile-overlay"><b className="member-avatar">{item.memberName.slice(0, 1).toUpperCase()}</b>{item.mediaType === "video" && <i>▶ Video</i>}{item.favoriteBy.length > 0 && <i>♥ {item.favoriteBy.length}</i>}</span>{selectionMode && <span className="gallery-select-mark">{selectedIds.includes(item.fileId) ? "✓" : ""}</span>}</button>)}</div></article>; })}</section>;
+      return <section className="gallery-v2-day" key={day.id}><header><div><p>Day {days.indexOf(day) + 1}</p><h2>{day.label}</h2><time>{prettyDate(day.date)}</time></div><span>{dayItems.length} memories</span></header>{day.stops.map((stop, stopIndex) => { const items = dayItems.filter((item) => item.stopId === stop.id); if (!items.length) return null; return <article className="gallery-v2-stop" key={stop.id}><div className="gallery-v2-stop-title"><div><small>Stop {stopIndex + 1}</small><h3>{stop.title}</h3></div>{stop.time && <time>{stop.time}</time>}</div><div className="gallery-v2-grid">{items.map((item) => <button className={`gallery-v2-tile ${selectedIds.includes(item.fileId) ? "selected" : ""}`} onClick={() => open(item)} key={item.fileId}>{item.mediaType === "video" ? <video src={mediaUrl(item)} muted preload="metadata" playsInline /> : <img src={mediaUrl(item)} alt={item.caption || `${item.memberName}'s photo at ${stop.title}`} loading="lazy" />}<span className="gallery-tile-overlay"><b className="member-avatar" style={{ background: memberProfilesByUid.get(item.memberId)?.avatarColor || "#8bb8cf" }}>{memberProfilesByUid.get(item.memberId)?.avatarEmoji || (memberProfilesByUid.get(item.memberId)?.displayName || item.memberName).slice(0, 1).toUpperCase()}</b>{item.mediaType === "video" && <i>▶ Video</i>}{item.favoriteBy.length > 0 && <i>♥ {item.favoriteBy.length}</i>}</span>{selectionMode && <span className="gallery-select-mark">{selectedIds.includes(item.fileId) ? "✓" : ""}</span>}</button>)}</div></article>; })}</section>;
     })}</div>}
 
     {viewer && <div className="gallery-lightbox" role="dialog" aria-modal="true" aria-label={viewer.name} onTouchStart={(event) => { touchStart.current = { x: event.touches[0]?.clientX ?? 0, y: event.touches[0]?.clientY ?? 0 }; }} onTouchEnd={(event) => { const start = touchStart.current; if (!start) return; const x = event.changedTouches[0]?.clientX ?? start.x; const y = event.changedTouches[0]?.clientY ?? start.y; const dx = x - start.x; const dy = y - start.y; touchStart.current = null; if (Math.abs(dy) > 105 && Math.abs(dy) > Math.abs(dx) * 1.25) setViewerId(""); }}><header><button className="lightbox-circle-button" onClick={() => setViewerId("")} aria-label="Close">×</button><div><strong>{viewerIndex + 1} of {visible.length}</strong><small>{viewer.memberName}</small></div><span /></header><div className="gallery-lightbox-stage"><MediaSwipeStage items={viewerItems} currentId={viewer.fileId} onChange={setViewerId} />{visible.length > 1 && <><button className="gallery-lightbox-prev" onClick={() => stepViewer(-1)} aria-label="Previous memory">‹</button><button className="gallery-lightbox-next" onClick={() => stepViewer(1)} aria-label="Next memory">›</button></>}</div><footer>{viewer.caption && !showDetails && <p className="gallery-caption-display">{viewer.caption}</p>}<div className="gallery-native-toolbar"><button onClick={() => void saveViewerToPhotos()} aria-label="Save to Photos"><span>↓</span><small>Save</small></button><button disabled={shareState === "sharing"} onClick={() => void shareItems([viewer])} aria-label="Share"><span>↥</span><small>Share</small></button><button className={viewer.favoriteBy.includes(currentUid) ? "active" : ""} onClick={() => void toggleFavorite(viewer)} aria-label="Favourite"><span>♥</span><small>Favourite</small></button><button className={showDetails ? "active" : ""} onClick={() => setShowDetails((value) => !value)} aria-label="Edit caption"><span>✎</span><small>Caption</small></button>{viewer.memberId === currentUid && <button className="danger" onClick={() => { if (window.confirm("Delete this memory for everyone? Your original remains in Apple Photos.")) { void onDelete(viewer); setViewerId(""); } }} aria-label="Delete"><span>⌫</span><small>Delete</small></button>}</div>{showDetails && <div className="gallery-media-details"><label><span>Caption</span><div><input value={captionDraft} onChange={(event) => setCaptionDraft(event.target.value)} placeholder="What was happening here?" /><button onClick={() => void saveCaption()} disabled={captionDraft.trim() === viewer.caption}>Save</button></div></label><button className="hide-memory-button" onClick={() => void hideForMe(viewer)}>Hide this memory for me</button></div>}</footer>{saveMessage && <div className="media-action-toast" role="status">{saveMessage}</div>}</div>}

@@ -1269,7 +1269,8 @@ button { cursor: pointer; }
   .trip-settings-modal .member-row .member-action:last-child { grid-column: 2 / -1; }
   .trip-settings-modal .settings-note { font-size: .65rem; line-height: 1.35; }
   .trip-settings-modal .places-usage { padding: 11px; }
-  .trip-settings-modal .modal-actions { position: sticky; bottom: calc(-1 * max(18px, env(safe-area-inset-bottom))); margin: 12px -16px calc(-1 * max(18px, env(safe-area-inset-bottom))); padding: 10px 16px max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: rgba(255,253,248,.96); }
+  .trip-settings-modal .modal-actions { position: static; margin: 12px 0 0; padding: 10px 0 0; border-top: 1px solid var(--line); background: transparent; }
+  .trip-settings-modal .admin-technical-details { clear: both; margin-top: 36px; }
   .selected-stop-panel .stop-editor-row { grid-template-columns: 118px minmax(0, 1fr); }
 }
 

@@ -3015,6 +3015,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           tripId={accountTrip.id}
           days={days}
           media={sharedPhotos}
+          memberProfiles={tripAccountMembers}
           currentUid={account.uid}
           isAdmin={isAdmin}
           state={galleryState}

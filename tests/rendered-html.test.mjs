@@ -282,6 +282,9 @@ test("uses Firebase for trip sync and private R2 photo and video storage", async
   assert.match(driveClient, /uploadTripCoverToDrive/);
   assert.match(service, /uploadCoverPhoto_/);
   assert.match(gallery, /Our Snapshots/);
+  assert.match(gallery, /memberProfilesByUid/);
+  assert.match(gallery, /avatarEmoji/);
+  assert.match(gallery, /avatarColor/);
   assert.match(gallery, /Save Selected to Photos/);
   assert.match(mapbox, /searchMapboxPlaces/);
   assert.match(mapbox, /directions\/v5\/mapbox/);

@@ -93,3 +93,5 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 - The redundant `Refresh shared trip` button was removed: Firebase already refreshes shared trip data live, and the button only checked connectivity before closing Settings.
 - Visible product wording now uses `group` and `group members` instead of assuming every trip is a family trip.
 - Connection Details sits farther below the settings actions and the mobile sheet has extra bottom scroll clearance.
+- Gallery upload bubbles resolve against the live group-member profile, so existing photos immediately adopt a person’s latest display name initial, emoji and pastel colour.
+- The mobile Settings close action is no longer sticky over the content; Connection Details now has a clear protected gap above its full top border.
