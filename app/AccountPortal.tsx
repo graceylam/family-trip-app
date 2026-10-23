@@ -336,8 +336,8 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
     return (
       <main className="account-shell">
         <section className="account-card setup-card">
-          <p className="eyebrow">A safer family space is on its way</p>
-          <h1>Connecting family accounts</h1>
+          <p className="eyebrow">A safer group space is on its way</p>
+          <h1>Connecting group accounts</h1>
           <p>The existing Vienna trip is still safe. Account setup needs to be completed before this screen is published.</p>
         </section>
       </main>
@@ -354,7 +354,7 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
         <section className="account-welcome">
           <div className="account-welcome-copy">
             <p className="eyebrow">Plan it together. Remember it forever.</p>
-            <h1>Your family adventures, all in one place.</h1>
+            <h1>Your group adventures, all in one place.</h1>
             <p>Sign in on your phone, iPad or laptop and every trip you belong to will be waiting for you.</p>
           </div>
           <section className="account-card auth-card" aria-labelledby="account-title">
@@ -439,7 +439,7 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
               </div>
               {profilePhoto && <div className="focal-controls"><label><span>Move photo left or right</span><input type="range" min="0" max="100" value={profileX} onChange={(event) => setProfileX(Number(event.target.value))} /></label><label><span>Move photo up or down</span><input type="range" min="0" max="100" value={profileY} onChange={(event) => setProfileY(Number(event.target.value))} /></label></div>}
               <section className="profile-bubble-editor" aria-labelledby="profile-bubble-title">
-                <div className="profile-bubble-heading"><span className="profile-bubble-preview" style={{ background: profileColor }}>{profileEmoji || profileName.slice(0, 1).toUpperCase()}</span><div><strong id="profile-bubble-title">Your family bubble</strong><small>Use your initial or choose any emoji and colour.</small></div></div>
+                <div className="profile-bubble-heading"><span className="profile-bubble-preview" style={{ background: profileColor }}>{profileEmoji || profileName.slice(0, 1).toUpperCase()}</span><div><strong id="profile-bubble-title">Your group bubble</strong><small>Use your initial or choose any emoji and colour.</small></div></div>
                 <div className="profile-emoji-options"><button type="button" className={!profileEmoji ? "active" : ""} onClick={() => { setProfileEmoji(""); setProfilePhoto(""); }}>Initial</button>{["😊","🌸","🌞","🦋","🍓","🌿","🐨","✨"].map((emoji) => <button type="button" className={profileEmoji === emoji ? "active" : ""} onClick={() => { setProfileEmoji(emoji); setProfilePhoto(""); }} key={emoji}>{emoji}</button>)}</div>
                 <label className="custom-emoji-field"><span>Or type any emoji</span><input value={profileEmoji} onChange={(event) => { setProfileEmoji(Array.from(event.target.value).slice(0, 2).join("")); setProfilePhoto(""); }} placeholder="🎨" /></label>
                 <div className="profile-color-options" aria-label="Bubble background colour">{["#f3a6b8","#d7afe8","#f5a27d","#f6c96b","#9dcf9f","#8bb8cf","#9faee8","#78c7c0","#c8a6d9","#aacb78"].map((color) => <button type="button" className={profileColor === color ? "active" : ""} style={{ background: color }} onClick={() => setProfileColor(color)} key={color} aria-label="Choose this pastel colour" />)}</div>

@@ -7,8 +7,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = requestHeaders.get("x-forwarded-host") || requestHeaders.get("host");
   const protocol = requestHeaders.get("x-forwarded-proto") || "https";
   const imageUrl = host ? `${protocol}://${host}/og-fun.jpg` : undefined;
-  const title = "Our Family Adventure";
-  const description = "Plan the adventure together and keep every family memory in one place.";
+  const title = "Our Shared Adventure";
+  const description = "Plan the adventure together and keep every group memory in one place.";
   return {
     title,
     description,
@@ -18,7 +18,7 @@ export async function generateMetadata(): Promise<Metadata> {
       title,
       description,
       type: "website",
-      images: imageUrl ? [{ url: imageUrl, width: 1536, height: 803, alt: "Our Family Adventure Vienna travel journal" }] : undefined,
+      images: imageUrl ? [{ url: imageUrl, width: 1536, height: 803, alt: "Our Shared Adventure Vienna travel journal" }] : undefined,
     },
     twitter: {
       card: "summary_large_image",

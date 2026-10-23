@@ -29,7 +29,7 @@ test("server-renders the Family Trip app", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>Our Family Adventure<\/title>/i);
+  assert.match(html, /<title>Our Shared Adventure<\/title>/i);
   assert.match(html, /Opening your adventures/);
   assert.doesNotMatch(html, /Google OAuth client ID|Connect Drive/);
 });
@@ -164,7 +164,7 @@ test("uses Firebase for trip sync and private R2 photo and video storage", async
   assert.match(page, /Day subtitle/);
   assert.doesNotMatch(memoryLane, /connectPins: true/);
   assert.match(memoryLane, /onPin/);
-  assert.match(memoryLane, /shared family memory/i);
+  assert.match(memoryLane, /shared group memory/i);
   assert.match(memoryLane, /Last edited by/);
   assert.match(memoryLane, /Search Mapbox location/);
   assert.match(memoryLane, /Maximum|of 20 selected/);

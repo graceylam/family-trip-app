@@ -831,7 +831,7 @@ button { cursor: pointer; }
 .admin-copy { margin: 5px 0 12px; }
 .member-role.admin { color: var(--forest); }
 .admin-confirmed { color: var(--forest); font-size: .64rem; font-weight: 900; }
-.admin-technical-details { margin-top: 16px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 14px; background: #f7f8f5; }
+.admin-technical-details { margin: 28px 0 14px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 14px; background: #f7f8f5; }
 .admin-technical-details summary { position: relative; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 8px; min-width: 0; padding-right: 18px; color: var(--forest); cursor: pointer; font-size: .69rem; font-weight: 850; list-style: none; }
 .admin-technical-details summary::-webkit-details-marker { display: none; }
 .admin-technical-details summary > span { display: grid; min-width: 0; gap: 2px; }
@@ -1255,7 +1255,7 @@ button { cursor: pointer; }
   .timeline-gap { margin-left: 62px; }
   .inline-stop-workspace-host { margin: 5px 0 12px 18px; }
   .trip-meta-actions .settings-button { width: auto; min-width: 0; padding-inline: 8px; font-size: .58rem; }
-  .trip-settings-modal { width: 100%; max-height: min(88dvh, 760px); padding: 17px 16px max(18px, env(safe-area-inset-bottom)); border-radius: 20px 20px 0 0; }
+  .trip-settings-modal { width: 100%; max-height: min(88dvh, 760px); padding: 17px 16px max(48px, calc(env(safe-area-inset-bottom) + 28px)); scroll-padding-bottom: 48px; border-radius: 20px 20px 0 0; }
   .trip-settings-modal .cover-settings { grid-template-columns: 112px minmax(0, 1fr); gap: 11px; padding: 11px; }
   .trip-settings-modal .cover-settings-preview { min-height: 108px; }
   .trip-currency-setting { grid-template-columns: minmax(0,1fr) auto; }

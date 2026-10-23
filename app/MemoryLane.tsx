@@ -646,7 +646,7 @@ export default function MemoryLane({
       if (navigator.share && navigator.canShare?.({ files: [videoResult.file] })) {
         await navigator.share({
           title: `${selectedDay?.label ?? "Trip"} highlight`,
-          text: `A family trip highlight from ${tripName}`,
+          text: `A group trip highlight from ${tripName}`,
           files: [videoResult.file],
         });
         return;
@@ -698,7 +698,7 @@ export default function MemoryLane({
       </section>
 
       <section className="collaborative-story" aria-labelledby="collaborative-story-title">
-        <header><div><p className="eyebrow">Added by everyone</p><h2 id="collaborative-story-title">The Family Story So Far</h2></div><button className="text-button" onClick={onRefreshPhotos}>Refresh</button></header>
+        <header><div><p className="eyebrow">Added by everyone</p><h2 id="collaborative-story-title">The Group Story So Far</h2></div><button className="text-button" onClick={onRefreshPhotos}>Refresh</button></header>
         {storyFeed.length === 0 ? (
           <div className="story-feed-empty">Photos and shared memories will gather here as the adventure unfolds.</div>
         ) : (
@@ -904,13 +904,13 @@ export default function MemoryLane({
 
                 {editing ? (
                   <div className="memory-comment-editor">
-                    <label htmlFor={`memory-${stop.id}`}>Shared family memory</label>
+                    <label htmlFor={`memory-${stop.id}`}>Shared group memory</label>
                     <textarea
                       id={`memory-${stop.id}`}
                       value={memoryDraft}
                       onChange={(event) => setMemoryDraft(event.target.value)}
                       maxLength={1000}
-                      placeholder="What should the family remember about this stop?"
+                      placeholder="What should the group remember about this stop?"
                       autoFocus
                     />
                     <div>

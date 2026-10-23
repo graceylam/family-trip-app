@@ -374,7 +374,7 @@ function groupPhotosByPerson(photos: TripMedia[]): Array<{ id: string; name: str
     const id = photo.memberId || photo.memberName;
     const existing = groups.get(id);
     if (existing) existing.photos.push(photo);
-    else groups.set(id, { id, name: photo.memberName || "Family member", photos: [photo] });
+    else groups.set(id, { id, name: photo.memberName || "Group member", photos: [photo] });
   });
   return Array.from(groups.values());
 }
@@ -881,7 +881,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       const invitedAccessKey = invitation.searchParams.get("key")?.trim() || "";
 
       if (!invitedMemberId || !invitedAccessKey) {
-        throw new Error("This does not look like a complete Family Trip invitation link.");
+        throw new Error("This does not look like a complete group trip invitation link.");
       }
 
       if (invitedAdminSecret) window.localStorage.setItem(scopedStorageKey(adminKey, sharedTripId), invitedAdminSecret);
@@ -1327,7 +1327,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     event.target.value = "";
     if (!selectedStop || files.length === 0) return;
     if (!currentMember) {
-      setQueueError("Choose your family profile before adding photos.");
+      setQueueError("Choose your group profile before adding photos.");
       setShowSettings(true);
       return;
     }
@@ -2148,16 +2148,6 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     return "Waiting for Wi-Fi";
   }
 
-  async function connectGoogleDrive() {
-    if (!navigator.onLine) {
-      setGoogleError("Connect to the internet before checking the shared gallery.");
-      return;
-    }
-    setGoogleError(null);
-    setGoogleState("connected");
-    setShowSettings(false);
-  }
-
 
   async function waitBeforeRetry(attempt: number) {
     await new Promise((resolve) => window.setTimeout(resolve, 700 * 2 ** (attempt - 1)));
@@ -2171,7 +2161,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
     return {
       tripId,
-      tripName: tripName.trim() || "Family Trip",
+      tripName: tripName.trim() || "Group Trip",
       dayId: day.id,
       dayNumber: dayIndex + 1,
       dayName: day.label.trim() || `Trip day ${dayIndex + 1}`,
@@ -2299,7 +2289,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       return;
     }
     if (!currentMember) {
-      setGoogleError("Choose your family profile before sharing memories.");
+      setGoogleError("Choose your group profile before sharing memories.");
       setShowSettings(true);
       return;
     }
@@ -2855,7 +2845,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                 </label>
               </div>
               <button className="primary-button add-expense-button" onClick={() => void addExpense()} disabled={!currentMember || !newExpenseItem.trim() || !(Number(newExpenseAmount) > 0) || expenseConversionState === "converting"}>
-                {expenseConversionState === "converting" ? `Converting to ${account.homeCurrency}…` : `Add expense as ${currentMember?.name || "family member"}`}
+                {expenseConversionState === "converting" ? `Converting to ${account.homeCurrency}…` : `Add expense as ${currentMember?.name || "group member"}`}
               </button>
               <p className="expense-rate-note">{account.homeCurrency} is calculated automatically using the latest daily reference rate and saved with the expense.</p>
               {expenseConversionError && <p className="expense-conversion-alert" role="alert">{expenseConversionError}</p>}
@@ -3035,7 +3025,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       ) : activeTab === "documents" ? (
         <section className="documents-page" aria-labelledby="documents-title">
           <header className="documents-page-heading">
-            <div><p className="eyebrow">Everything in one place</p><h1 id="documents-title">Trip Documents</h1><p>Tickets, confirmations, itineraries and attachments shared across the family.</p></div>
+            <div><p className="eyebrow">Everything in one place</p><h1 id="documents-title">Trip Documents</h1><p>Tickets, confirmations, itineraries and attachments shared across the group.</p></div>
             <span>{documentRows.length} file{documentRows.length === 1 ? "" : "s"}</span>
           </header>
           {documentError && <p className="document-alert page-alert" role="alert">{documentError}</p>}
@@ -3244,7 +3234,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
               </section>
               <section className="trip-widget travellers-widget">
                 <p className="eyebrow">Travellers</p>
-                <div className="traveller-bubbles" aria-label={`${tripAccountMembers.length} family travellers`}>
+                <div className="traveller-bubbles" aria-label={`${tripAccountMembers.length} group travellers`}>
                   {tripAccountMembers.slice(0, 6).map((member) => <span key={member.userId} title={member.displayName} style={{ background: member.avatarColor }}>{member.avatarEmoji || member.displayName.slice(0, 1).toUpperCase()}</span>)}
                 </div>
                 <strong>{tripAccountMembers.length} traveller{tripAccountMembers.length === 1 ? "" : "s"}</strong>
@@ -3284,7 +3274,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
               {tripCurrencyState === "saving" && <span>Saving…</span>}
               {tripCurrencyState === "error" && <span className="currency-setting-error">Try again</span>}
             </section>
-            <h3 className="settings-section-title">Family profiles</h3>
+            <h3 className="settings-section-title">Group members</h3>
             <div className="member-list">
               {tripAccountMembers.map((member) => (
                 <div className={`member-row ${member.userId === account.uid ? "active" : ""}`} key={member.userId}>
@@ -3298,9 +3288,6 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
             {adminUpdateError && <p className="gallery-alert" role="alert">{adminUpdateError}</p>}
             <div className="modal-actions">
               <button className="secondary-button" onClick={() => setShowSettings(false)}>Close</button>
-              <button className="primary-button" onClick={connectGoogleDrive} disabled={googleState === "connecting"}>
-                {googleState === "connecting" ? "Refreshing…" : "Refresh shared trip"}
-              </button>
             </div>
             <details className="admin-technical-details">
               <summary><span><strong>Connection details</strong><small>{currentMember?.name || "Account"} · {isAdmin ? "Admin" : "Contributor"}</small></span><em>Synced · Mapbox active</em><b aria-hidden="true">⌄</b></summary>

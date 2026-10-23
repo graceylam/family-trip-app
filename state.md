@@ -90,3 +90,6 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 - Connection details remain collapsed by default and show a complete one-line status summary.
 - Connection details use a fully contained two-line summary on narrow phones so neither the account mode nor sync/Mapbox status is clipped.
 - Trip Settings includes a shared default trip currency. Changing it updates every joined traveller and preselects that currency for new expenses.
+- The redundant `Refresh shared trip` button was removed: Firebase already refreshes shared trip data live, and the button only checked connectivity before closing Settings.
+- Visible product wording now uses `group` and `group members` instead of assuming every trip is a family trip.
+- Connection Details sits farther below the settings actions and the mobile sheet has extra bottom scroll clearance.
