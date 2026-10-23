@@ -83,7 +83,8 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 ## Trip Settings cleanup (2026-10-24)
 
 - Cover-photo controls are collapsed by default and show a compact status row.
-- Admins can choose a shared trip emoji and colour; the icon appears on the trip shelf and is saved for all joined travellers.
+- The earlier trip-level icon control was corrected: avatar customisation belongs to each traveller, not the trip.
+- Each traveller can choose their initial or any emoji for their personal bubble and select from pastel pink, purple, sunset, yellow, green, blue and teal colours. Their choice follows their account across joined trips.
 - Family profiles now come only from real Firebase trip memberships. Legacy placeholder profiles and personal copy-link controls were removed.
 - Invitations use only the QR code or private group name and invite code; the copy-link button was removed.
 - Connection details remain collapsed by default and show a complete one-line status summary.

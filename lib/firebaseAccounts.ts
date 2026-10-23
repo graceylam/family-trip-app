@@ -93,6 +93,8 @@ export type FamilyAccount = {
   profilePhotoDataUrl?: string;
   profilePhotoX: number;
   profilePhotoY: number;
+  avatarEmoji?: string;
+  avatarColor: string;
 };
 
 export type TripRole = "admin" | "contributor";
@@ -103,6 +105,8 @@ export type TripAccountMember = {
   email: string;
   role: TripRole;
   legacyMemberId?: string;
+  avatarEmoji?: string;
+  avatarColor: string;
 };
 
 export type AccountTrip = {
@@ -118,8 +122,6 @@ export type AccountTrip = {
   coverThumbnailDataUrl?: string;
   coverPositionX?: number;
   coverPositionY?: number;
-  iconEmoji?: string;
-  iconColor?: string;
 };
 
 export type CreatedTrip = {
@@ -148,6 +150,8 @@ function accountFromUser(user: User, profile: Record<string, unknown> = {}): Fam
     ...(profile.profilePhotoDataUrl ? { profilePhotoDataUrl: String(profile.profilePhotoDataUrl) } : {}),
     profilePhotoX: Number(profile.profilePhotoX ?? 50),
     profilePhotoY: Number(profile.profilePhotoY ?? 50),
+    avatarEmoji: String(profile.avatarEmoji || ""),
+    avatarColor: String(profile.avatarColor || "#8bb8cf"),
   };
 }
 
@@ -183,6 +187,8 @@ export async function createFamilyAccount(displayName: string, email: string, pa
     homeCurrency: "AUD",
     profilePhotoX: 50,
     profilePhotoY: 50,
+    avatarEmoji: "",
+    avatarColor: "#8bb8cf",
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   }, { merge: true });
@@ -197,7 +203,7 @@ export async function signInToFamilyAccount(email: string, password: string): Pr
 
 export async function updateFamilyProfile(
   account: FamilyAccount,
-  updates: Pick<FamilyAccount, "displayName" | "homeCurrency" | "profilePhotoX" | "profilePhotoY"> & { profilePhotoDataUrl?: string },
+  updates: Pick<FamilyAccount, "displayName" | "homeCurrency" | "profilePhotoX" | "profilePhotoY" | "avatarColor"> & { profilePhotoDataUrl?: string; avatarEmoji?: string },
 ): Promise<void> {
   const { auth, db } = services();
   const cleanName = updates.displayName.trim();
@@ -213,7 +219,7 @@ export async function updateFamilyProfile(
   const batch = writeBatch(db);
   references.docs.forEach((reference) => {
     batch.set(reference.ref, { memberName: cleanName, updatedAt: serverTimestamp() }, { merge: true });
-    batch.set(doc(db, "trips", reference.id, "members", account.uid), { displayName: cleanName }, { merge: true });
+    batch.set(doc(db, "trips", reference.id, "members", account.uid), { displayName: cleanName, avatarEmoji: updates.avatarEmoji || "", avatarColor: updates.avatarColor }, { merge: true });
   });
   if (!references.empty) await batch.commit();
 }
@@ -229,25 +235,6 @@ export async function updateTripCoverPresentation(
   const batch = writeBatch(db);
   batch.set(doc(db, "trips", trip.id), values, { merge: true });
   batch.set(doc(db, "users", account.uid, "trips", trip.id), values, { merge: true });
-  await batch.commit();
-}
-
-export async function updateTripIconPresentation(
-  account: FamilyAccount,
-  trip: AccountTrip,
-  icon: { iconEmoji: string; iconColor: string },
-): Promise<void> {
-  const { db } = services();
-  if (trip.role !== "admin") throw new Error("Only a trip admin can change the trip icon.");
-  const memberSnapshot = await getDocs(collection(db, "trips", trip.id, "members"));
-  const values = { ...icon, updatedAt: serverTimestamp() };
-  const batch = writeBatch(db);
-  batch.set(doc(db, "trips", trip.id), values, { merge: true });
-  memberSnapshot.docs.forEach((memberDocument) => {
-    const memberUid = String(memberDocument.data().userId || memberDocument.id);
-    batch.set(doc(db, "users", memberUid, "trips", trip.id), values, { merge: true });
-  });
-  if (memberSnapshot.empty) batch.set(doc(db, "users", account.uid, "trips", trip.id), values, { merge: true });
   await batch.commit();
 }
 
@@ -289,8 +276,6 @@ export function observeAccountTrips(account: FamilyAccount, listener: (trips: Ac
           ...(data.coverThumbnailDataUrl ? { coverThumbnailDataUrl: String(data.coverThumbnailDataUrl) } : {}),
           coverPositionX: Number(data.coverPositionX ?? trip.coverPositionX ?? 50),
           coverPositionY: Number(data.coverPositionY ?? trip.coverPositionY ?? 50),
-          iconEmoji: String(data.iconEmoji || trip.iconEmoji || "✈️"),
-          iconColor: String(data.iconColor || trip.iconColor || "#5f91aa"),
         };
       } catch { return trip; }
     })).then((trips) => {
@@ -311,6 +296,8 @@ export function observeTripAccountMembers(tripId: string, listener: (members: Tr
         displayName: String(data.displayName || "Traveller"),
         email: String(data.email || ""),
         role: data.role === "admin" ? "admin" : "contributor",
+        avatarEmoji: String(data.avatarEmoji || ""),
+        avatarColor: String(data.avatarColor || "#8bb8cf"),
         ...(data.legacyMemberId ? { legacyMemberId: String(data.legacyMemberId) } : {}),
       } satisfies TripAccountMember;
     });
@@ -440,6 +427,8 @@ export async function createAccountTrip(
     userId: account.uid,
     displayName: account.displayName,
     email: account.email,
+    avatarEmoji: account.avatarEmoji || "",
+    avatarColor: account.avatarColor,
     role: "admin",
     joinedAt: serverTimestamp(),
   });
@@ -524,6 +513,8 @@ export async function joinTripWithInvite(account: FamilyAccount, inviteId: strin
     userId: account.uid,
     displayName: account.displayName,
     email: account.email,
+    avatarEmoji: account.avatarEmoji || "",
+    avatarColor: account.avatarColor,
     role: "contributor",
     inviteId: invite.id,
     joinedAt: serverTimestamp(),
@@ -637,6 +628,8 @@ export async function attachLegacyViennaTrip(account: FamilyAccount): Promise<Ac
       userId: account.uid,
       displayName: account.displayName,
       email: account.email,
+      avatarEmoji: account.avatarEmoji || "",
+      avatarColor: account.avatarColor,
       role: "admin",
       legacyMemberId: "grace",
       joinedAt: serverTimestamp(),

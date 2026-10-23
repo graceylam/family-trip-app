@@ -10,7 +10,7 @@ import StopsBank from "./StopsBank";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { createFamilyMap, getMapboxPlace, searchMapboxPlaces, type FamilyMapTravelMode } from "../lib/mapbox";
 import type { SavedPlace } from "../lib/firebaseSavedPlaces";
-import { deleteAccountTrip, observeTripAccountMembers, promoteTripMemberToAdmin, updateTripCoverPresentation, updateTripIconPresentation, type AccountTrip, type FamilyAccount, type TripAccountMember } from "../lib/firebaseAccounts";
+import { deleteAccountTrip, observeTripAccountMembers, promoteTripMemberToAdmin, updateTripCoverPresentation, type AccountTrip, type FamilyAccount, type TripAccountMember } from "../lib/firebaseAccounts";
 import {
   getFirebaseTripState,
   initializeFirebaseTripState,
@@ -420,9 +420,6 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [tripCoverThumbnail, setTripCoverThumbnail] = useState(accountTrip.coverThumbnailDataUrl || "");
   const [coverUploadState, setCoverUploadState] = useState<"idle" | "uploading" | "error">("idle");
   const [coverUploadError, setCoverUploadError] = useState<string | null>(null);
-  const [tripIconEmoji, setTripIconEmoji] = useState(accountTrip.iconEmoji || "✈️");
-  const [tripIconColor, setTripIconColor] = useState(accountTrip.iconColor || "#5f91aa");
-  const [tripIconState, setTripIconState] = useState<"idle" | "saving" | "error">("idle");
   const tripId = sharedTripId;
   const [previousTripId, setPreviousTripId] = useState("");
   const [adminSecret, setAdminSecret] = useState("");
@@ -1581,17 +1578,6 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     } catch (error) {
       setCoverUploadState("error");
       setCoverUploadError(error instanceof Error ? error.message : "The cover position could not be saved.");
-    }
-  }
-
-  async function saveTripIcon(emoji: string, color: string) {
-    if (!isAdmin) return;
-    setTripIconEmoji(emoji); setTripIconColor(color); setTripIconState("saving");
-    try {
-      await updateTripIconPresentation(account, accountTrip, { iconEmoji: emoji, iconColor: color });
-      setTripIconState("idle");
-    } catch {
-      setTripIconState("error");
     }
   }
 
@@ -3245,10 +3231,10 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
               </section>
               <section className="trip-widget travellers-widget">
                 <p className="eyebrow">Travellers</p>
-                <div className="traveller-bubbles" aria-label={`${members.length} family travellers`}>
-                  {members.slice(0, 6).map((member) => <span key={member.id} title={member.name}>{member.name.slice(0, 1).toUpperCase()}</span>)}
+                <div className="traveller-bubbles" aria-label={`${tripAccountMembers.length} family travellers`}>
+                  {tripAccountMembers.slice(0, 6).map((member) => <span key={member.userId} title={member.displayName} style={{ background: member.avatarColor }}>{member.avatarEmoji || member.displayName.slice(0, 1).toUpperCase()}</span>)}
                 </div>
-                <strong>{members.length} traveller{members.length === 1 ? "" : "s"}</strong>
+                <strong>{tripAccountMembers.length} traveller{tripAccountMembers.length === 1 ? "" : "s"}</strong>
               </section>
             </div>
           </aside>
@@ -3260,7 +3246,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           <section className="modal trip-settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" onMouseDown={(event) => event.stopPropagation()}>
             <div className="trip-settings-heading"><div><p className="eyebrow">Admin controls</p><h2 id="settings-title">Trip Settings</h2></div><button className="overview-close" aria-label="Close trip settings" onClick={() => setShowSettings(false)}>×</button></div>
             <details className="settings-collapsible cover-settings-collapsible">
-              <summary><span className="settings-summary-icon" style={{ background: tripIconColor }}>{tripIconEmoji}</span><span><strong>Trip cover photo</strong><small>{tripCoverDisplayUrl ? "Cover added · tap to edit" : "No cover yet · tap to add"}</small></span><b aria-hidden="true">⌄</b></summary>
+              <summary><span className="settings-summary-icon">▧</span><span><strong>Trip cover photo</strong><small>{tripCoverDisplayUrl ? "Cover added · tap to edit" : "No cover yet · tap to add"}</small></span><b aria-hidden="true">⌄</b></summary>
               <section className="cover-settings" aria-labelledby="cover-settings-title">
                 <div className={`cover-settings-preview ${tripCoverDisplayUrl ? "has-image" : ""}`} style={tripCoverDisplayUrl ? { backgroundImage: `url(${tripCoverDisplayUrl})`, backgroundPosition: `${tripCoverPositionX}% ${tripCoverPositionY}%` } : undefined}>
                   {!tripCoverDisplayUrl && <span aria-hidden="true">🏛️</span>}
@@ -3277,17 +3263,11 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                 </div>
               </section>
             </details>
-            <section className="trip-icon-settings" aria-labelledby="trip-icon-title">
-              <div className="trip-icon-heading"><span className="trip-icon-preview" style={{ background: tripIconColor }}>{tripIconEmoji}</span><div><h3 id="trip-icon-title">Trip icon</h3><small>Choose an emoji and colour for this trip.</small></div>{tripIconState === "saving" && <em>Saving…</em>}</div>
-              <div className="trip-emoji-options" aria-label="Trip emoji">{["✈️","🧳","🏛️","🏖️","🌏","🚗","⛺","🎡"].map((emoji) => <button className={tripIconEmoji === emoji ? "active" : ""} onClick={() => void saveTripIcon(emoji, tripIconColor)} key={emoji} aria-label={`Use ${emoji} as the trip icon`}>{emoji}</button>)}</div>
-              <div className="trip-color-options" aria-label="Trip icon colour">{["#5f91aa","#49745f","#d27c68","#c59a46","#816f9f","#3f6f89","#9a6673","#667a45"].map((color) => <button className={tripIconColor === color ? "active" : ""} style={{ background: color }} onClick={() => void saveTripIcon(tripIconEmoji, color)} key={color} aria-label="Choose this trip icon colour" />)}</div>
-              {tripIconState === "error" && <small className="cover-upload-error" role="alert">The trip icon could not be saved. Please try again.</small>}
-            </section>
             <h3 className="settings-section-title">Family profiles</h3>
             <div className="member-list">
               {tripAccountMembers.map((member) => (
                 <div className={`member-row ${member.userId === account.uid ? "active" : ""}`} key={member.userId}>
-                  <span className="member-avatar">{member.displayName.slice(0, 1).toUpperCase()}</span>
+                  <span className="member-avatar" style={{ background: member.avatarColor }}>{member.avatarEmoji || member.displayName.slice(0, 1).toUpperCase()}</span>
                   <strong>{member.displayName}</strong>
                   <span className={`member-role ${member.role}`}>{member.role === "admin" ? "Admin" : "Contributor"}</span>
                   {member.role === "admin" ? <span className="admin-confirmed">Joined</span> : <button className="member-action" onClick={() => void makeTripAdmin(member)} disabled={Boolean(adminUpdateUid)}>{adminUpdateUid === member.userId ? "Updating…" : "Make admin"}</button>}

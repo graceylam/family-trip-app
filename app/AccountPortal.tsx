@@ -121,6 +121,8 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
   const [profilePhoto, setProfilePhoto] = useState("");
   const [profileX, setProfileX] = useState(50);
   const [profileY, setProfileY] = useState(50);
+  const [profileEmoji, setProfileEmoji] = useState("");
+  const [profileColor, setProfileColor] = useState("#8bb8cf");
   const [profileState, setProfileState] = useState<"idle" | "saving">("idle");
   const [profileError, setProfileError] = useState("");
   const [confirmSignOut, setConfirmSignOut] = useState(false);
@@ -133,6 +135,8 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
     setProfilePhoto(account.profilePhotoDataUrl || "");
     setProfileX(account.profilePhotoX ?? 50);
     setProfileY(account.profilePhotoY ?? 50);
+    setProfileEmoji(account.avatarEmoji || "");
+    setProfileColor(account.avatarColor || "#8bb8cf");
     setProfileError("");
     setConfirmSignOut(false);
     setShowProfile(true);
@@ -152,7 +156,7 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
     if (!account) return;
     setProfileState("saving"); setProfileError("");
     try {
-      await updateFamilyProfile(account, { displayName: profileName, homeCurrency: profileCurrency, profilePhotoDataUrl: profilePhoto || undefined, profilePhotoX: profileX, profilePhotoY: profileY });
+      await updateFamilyProfile(account, { displayName: profileName, homeCurrency: profileCurrency, profilePhotoDataUrl: profilePhoto || undefined, profilePhotoX: profileX, profilePhotoY: profileY, avatarEmoji: profileEmoji, avatarColor: profileColor });
       setShowProfile(false);
     } catch (error) { setProfileError(firebaseErrorMessage(error)); }
     finally { setProfileState("idle"); }
@@ -382,7 +386,7 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
       <header className="trips-header">
         <div><p className="eyebrow">Welcome back, {account.displayName}</p><h1>My Adventures</h1><p>Where are we going—and which story are we opening again?</p></div>
         <button className="profile-button" onClick={openProfile} aria-label="Open your profile settings">
-          {account.profilePhotoDataUrl ? <span style={{ backgroundImage: `url(${account.profilePhotoDataUrl})`, backgroundPosition: `${account.profilePhotoX}% ${account.profilePhotoY}%` }} /> : <span>{account.displayName.slice(0, 1).toUpperCase()}</span>}
+          {account.profilePhotoDataUrl ? <span style={{ backgroundImage: `url(${account.profilePhotoDataUrl})`, backgroundPosition: `${account.profilePhotoX}% ${account.profilePhotoY}%` }} /> : <span style={{ backgroundColor: account.avatarColor }}>{account.avatarEmoji || account.displayName.slice(0, 1).toUpperCase()}</span>}
         </button>
       </header>
 
@@ -413,7 +417,6 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
               <article className="account-trip-card" key={trip.id}>
                 <button className={`trip-card-open ${trip.coverThumbnailDataUrl ? "has-cover" : ""}`} onClick={() => setActiveTrip(trip)} style={trip.coverThumbnailDataUrl ? { backgroundImage: `linear-gradient(180deg, rgba(17,39,49,.08), rgba(17,39,49,.78)), url(${trip.coverThumbnailDataUrl})`, backgroundPosition: `center, ${trip.coverPositionX ?? 50}% ${trip.coverPositionY ?? 50}%` } : undefined}>
                   <span className="trip-role">{trip.role === "admin" ? "Admin" : "Contributor"}</span>
-                  <span className="trip-shelf-icon" style={{ background: trip.iconColor || "#5f91aa" }} aria-hidden="true">{trip.iconEmoji || "✈️"}</span>
                   <h3>{trip.name}</h3>
                   <p>{dateLabel(trip.startDate)}{trip.endDate && trip.endDate !== trip.startDate ? ` — ${dateLabel(trip.endDate)}` : ""}</p>
                   <strong>Open trip <span aria-hidden="true">→</span></strong>
@@ -431,10 +434,16 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
             <p className="eyebrow">Your travel profile</p><h2 id="profile-title">Make it feel like you</h2>
             <form className="account-form" onSubmit={saveProfile}>
               <div className="profile-photo-editor">
-                <div className="profile-photo-preview" style={profilePhoto ? { backgroundImage: `url(${profilePhoto})`, backgroundPosition: `${profileX}% ${profileY}%` } : undefined}>{!profilePhoto && profileName.slice(0, 1).toUpperCase()}</div>
+                <div className="profile-photo-preview" style={profilePhoto ? { backgroundImage: `url(${profilePhoto})`, backgroundPosition: `${profileX}% ${profileY}%` } : { backgroundColor: profileColor }}>{!profilePhoto && (profileEmoji || profileName.slice(0, 1).toUpperCase())}</div>
                 <div><label className="secondary-button profile-photo-picker">Choose profile photo<input className="visually-hidden" type="file" accept="image/*" onChange={chooseProfilePhoto} /></label><small>Use the sliders to choose what stays in the circle.</small></div>
               </div>
               {profilePhoto && <div className="focal-controls"><label><span>Move photo left or right</span><input type="range" min="0" max="100" value={profileX} onChange={(event) => setProfileX(Number(event.target.value))} /></label><label><span>Move photo up or down</span><input type="range" min="0" max="100" value={profileY} onChange={(event) => setProfileY(Number(event.target.value))} /></label></div>}
+              <section className="profile-bubble-editor" aria-labelledby="profile-bubble-title">
+                <div className="profile-bubble-heading"><span className="profile-bubble-preview" style={{ background: profileColor }}>{profileEmoji || profileName.slice(0, 1).toUpperCase()}</span><div><strong id="profile-bubble-title">Your family bubble</strong><small>Use your initial or choose any emoji and colour.</small></div></div>
+                <div className="profile-emoji-options"><button type="button" className={!profileEmoji ? "active" : ""} onClick={() => { setProfileEmoji(""); setProfilePhoto(""); }}>Initial</button>{["😊","🌸","🌞","🦋","🍓","🌿","🐨","✨"].map((emoji) => <button type="button" className={profileEmoji === emoji ? "active" : ""} onClick={() => { setProfileEmoji(emoji); setProfilePhoto(""); }} key={emoji}>{emoji}</button>)}</div>
+                <label className="custom-emoji-field"><span>Or type any emoji</span><input value={profileEmoji} onChange={(event) => { setProfileEmoji(Array.from(event.target.value).slice(0, 2).join("")); setProfilePhoto(""); }} placeholder="🎨" /></label>
+                <div className="profile-color-options" aria-label="Bubble background colour">{["#f3a6b8","#d7afe8","#f5a27d","#f6c96b","#9dcf9f","#8bb8cf","#9faee8","#78c7c0","#c8a6d9","#aacb78"].map((color) => <button type="button" className={profileColor === color ? "active" : ""} style={{ background: color }} onClick={() => setProfileColor(color)} key={color} aria-label="Choose this pastel colour" />)}</div>
+              </section>
               <label><span>Your name</span><input value={profileName} onChange={(event) => setProfileName(event.target.value)} required /></label>
               <label><span>Default home currency</span><select value={profileCurrency} onChange={(event) => setProfileCurrency(event.target.value)}>{["AUD","EUR","USD","GBP","NZD","CAD","JPY","CHF","SGD","HKD"].map((currency) => <option key={currency}>{currency}</option>)}</select></label>
               {profileError && <p className="account-alert" role="alert">{profileError}</p>}
