@@ -55,3 +55,4 @@ The previous Google Drive implementation is preserved in Git history. Roll back 
 
 - The iOS web view now extends beneath both safe areas; existing CSS safe-area padding continues to protect normal screens while the Gallery viewer can paint fully edge-to-edge.
 - Expenses can now be added directly from the Expenses tab by choosing a day and stop, with the current member recorded automatically.
+- Quick expense entry is collapsed by default and expands only when the user taps `Add expense`; it collapses again after saving or when requested.

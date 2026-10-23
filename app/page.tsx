@@ -503,6 +503,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [expenseCategoryFilter, setExpenseCategoryFilter] = useState("");
   const [expenseEntryDayId, setExpenseEntryDayId] = useState(workspaceInitialDays[0]?.id || "");
   const [expenseEntryStopId, setExpenseEntryStopId] = useState("");
+  const [expenseEntryExpanded, setExpenseEntryExpanded] = useState(false);
   const [sharedPhotos, setSharedPhotos] = useState<TripMedia[]>([]);
   const [sharedPhotoUrls, setSharedPhotoUrls] = useState<Record<string, string>>({});
   const [galleryState, setGalleryState] = useState<"idle" | "loading" | "ready" | "offline" | "error">("idle");
@@ -3114,19 +3115,19 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
           {expenseConversionError && <p className="gallery-alert" role="alert">{expenseConversionError}</p>}
 
-          <section className="expenses-add-card" aria-labelledby="expenses-add-title">
+          <section className={`expenses-add-card ${expenseEntryExpanded ? "expanded" : "collapsed"}`} aria-labelledby="expenses-add-title">
             <header>
-              <div><p className="eyebrow">Quick entry</p><h2 id="expenses-add-title">Add an expense</h2></div>
-              <small>Logged as {currentMember?.name ?? "you"}</small>
+              <div><p className="eyebrow">Quick entry</p><h2 id="expenses-add-title">Add an expense</h2>{!expenseEntryExpanded && <small>Record something you paid for during the trip.</small>}</div>
+              {expenseEntryExpanded ? <button className="expenses-collapse-button" onClick={() => setExpenseEntryExpanded(false)} aria-label="Collapse quick expense entry">Collapse ↑</button> : <button className="primary-button expenses-expand-button" onClick={() => setExpenseEntryExpanded(true)} aria-expanded="false" aria-controls="expenses-add-form">Add expense</button>}
             </header>
-            <div className="expenses-add-grid">
+            {expenseEntryExpanded && <div className="expenses-add-grid" id="expenses-add-form">
               <label><span>Day</span><select value={expenseEntryDay?.id ?? ""} onChange={(event) => { const day = days.find((item) => item.id === event.target.value); setExpenseEntryDayId(event.target.value); setExpenseEntryStopId(day?.stops[0]?.id ?? ""); }}>{days.map((day, index) => <option value={day.id} key={day.id}>Day {index + 1}: {day.label}</option>)}</select></label>
               <label><span>Stop</span><select value={expenseEntryStop?.id ?? ""} onChange={(event) => setExpenseEntryStopId(event.target.value)} disabled={!expenseEntryDay?.stops.length}><option value="" disabled>{expenseEntryDay?.stops.length ? "Choose a stop" : "No stops on this day"}</option>{expenseEntryDay?.stops.map((stop, index) => <option value={stop.id} key={stop.id}>Stop {index + 1}: {stop.title}</option>)}</select></label>
               <label><span>Item</span><input value={newExpenseItem} onChange={(event) => setNewExpenseItem(event.target.value)} placeholder="Dinner, tickets, taxi…" /></label>
               <label><span>Amount</span><div className="money-input"><select value={newExpenseLocalCurrency} onChange={(event) => setNewExpenseLocalCurrency(event.target.value)} aria-label="Local currency">{currencyOptions.map((currency) => <option value={currency} key={currency}>{currency}</option>)}</select><input type="number" inputMode="decimal" min="0" step="0.01" value={newExpenseAmount} onChange={(event) => setNewExpenseAmount(event.target.value)} placeholder="0.00" aria-label="Local amount" /></div></label>
               <label><span>Category</span><select value={newExpenseCategory} onChange={(event) => setNewExpenseCategory(event.target.value)}>{expenseCategories.map((category) => <option value={category} key={category}>{category}</option>)}</select></label>
-              <button className="primary-button" onClick={() => void addExpense(expenseEntryDay?.id, expenseEntryStop?.id)} disabled={!expenseEntryStop || !currentMember || !newExpenseItem.trim() || !(Number(newExpenseAmount) > 0) || expenseConversionState === "converting"}>{expenseConversionState === "converting" ? "Converting…" : "Add expense"}</button>
-            </div>
+              <button className="primary-button" onClick={() => void addExpense(expenseEntryDay?.id, expenseEntryStop?.id).then(() => setExpenseEntryExpanded(false))} disabled={!expenseEntryStop || !currentMember || !newExpenseItem.trim() || !(Number(newExpenseAmount) > 0) || expenseConversionState === "converting"}>{expenseConversionState === "converting" ? "Converting…" : "Add expense"}</button>
+            </div>}
           </section>
 
           <div className="expense-filters" aria-label="Expense filters">
