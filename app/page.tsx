@@ -3117,8 +3117,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
           <section className={`expenses-add-card ${expenseEntryExpanded ? "expanded" : "collapsed"}`} aria-labelledby="expenses-add-title">
             <header>
-              <div><p className="eyebrow">Quick entry</p><h2 id="expenses-add-title">Add an expense</h2>{!expenseEntryExpanded && <small>Record something you paid for during the trip.</small>}</div>
-              {expenseEntryExpanded ? <button className="expenses-collapse-button" onClick={() => setExpenseEntryExpanded(false)} aria-label="Collapse quick expense entry">Collapse ↑</button> : <button className="primary-button expenses-expand-button" onClick={() => setExpenseEntryExpanded(true)} aria-expanded="false" aria-controls="expenses-add-form">Add expense</button>}
+              {expenseEntryExpanded ? <div><p className="eyebrow">Quick entry</p><h2 id="expenses-add-title">Add an expense</h2></div> : <p className="eyebrow" id="expenses-add-title">Quick entry</p>}
+              {expenseEntryExpanded ? <button className="expenses-collapse-button" onClick={() => setExpenseEntryExpanded(false)} aria-label="Collapse quick expense entry">Collapse ↑</button> : <button className="primary-button expenses-expand-button" onClick={() => setExpenseEntryExpanded(true)} aria-expanded="false" aria-controls="expenses-add-form">+ Add expense</button>}
             </header>
             {expenseEntryExpanded && <div className="expenses-add-grid" id="expenses-add-form">
               <label><span>Day</span><select value={expenseEntryDay?.id ?? ""} onChange={(event) => { const day = days.find((item) => item.id === event.target.value); setExpenseEntryDayId(event.target.value); setExpenseEntryStopId(day?.stops[0]?.id ?? ""); }}>{days.map((day, index) => <option value={day.id} key={day.id}>Day {index + 1}: {day.label}</option>)}</select></label>

@@ -517,7 +517,9 @@ button { cursor: pointer; }
 .expenses-page-heading h1 { margin: 5px 0 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(2rem, 5vw, 3.1rem); font-weight: 500; letter-spacing: -.03em; }
 .expenses-page-heading p:last-child { margin: 7px 0 0; color: var(--muted); font-size: .86rem; }
 .expenses-add-card { display: grid; gap: 14px; padding: 18px; border: 1px solid #c9dce5; border-radius: 18px; background: linear-gradient(145deg, rgba(239,248,251,.96), rgba(255,253,248,.96)); box-shadow: 0 9px 28px rgba(31,49,61,.06); }
-.expenses-add-card.collapsed { padding-block: 14px; }
+.expenses-add-card.collapsed { padding-block: 12px; }
+.expenses-add-card.collapsed > header { align-items: center; }
+.expenses-add-card.collapsed .eyebrow { color: var(--ink); }
 .expenses-add-card > header { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
 .expenses-add-card h2 { margin: 3px 0 0; font-family: Georgia, "Times New Roman", serif; font-size: 1.35rem; font-weight: 500; }
 .expenses-add-card header small { display: block; margin-top: 3px; color: var(--muted); font-size: .68rem; font-weight: 750; }
