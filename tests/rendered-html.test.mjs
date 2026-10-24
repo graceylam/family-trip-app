@@ -31,6 +31,8 @@ test("server-renders the Family Trip app", async () => {
   const html = await response.text();
   assert.match(html, /<title>Our Shared Adventure<\/title>/i);
   assert.match(html, /Opening your adventures/);
+  assert.match(html, /Your trip\. All together\./);
+  assert.match(html, /zora-loading-progress/);
   assert.doesNotMatch(html, /Google OAuth client ID|Connect Drive/);
 });
 

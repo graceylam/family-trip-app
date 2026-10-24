@@ -552,6 +552,34 @@ button { cursor: pointer; }
 .expenses-empty p { margin: 0; font-size: .76rem; }
 .trip-library-loading { min-height: 190px; }
 .trip-library-loading span { animation: shelf-plane 1.2s ease-in-out infinite alternate; }
+.zora-loading-shell { min-height: 100dvh; margin: 0; overflow: hidden; background: #fffcf5; }
+.zora-loader { position: relative; display: grid; min-height: 100dvh; place-content: center; justify-items: center; overflow: hidden; padding: max(40px, env(safe-area-inset-top)) 24px max(190px, env(safe-area-inset-bottom)); color: #236f94; background: radial-gradient(circle at 52% 38%, rgba(255,255,255,.94), transparent 22rem), #fffcf5; text-align: center; }
+.zora-loader-brand { position: relative; z-index: 2; display: flex; align-items: flex-end; color: #23789f; }
+.zora-loader-brand > span { margin-left: -35px; font-family: Georgia, "Times New Roman", serif; font-size: clamp(5rem, 17vw, 8.5rem); font-weight: 400; letter-spacing: -.075em; line-height: .75; }
+.zora-loader-mark { width: clamp(116px, 27vw, 165px); height: auto; overflow: visible; }
+.zora-loader-mark circle { fill: #90c8df; }
+.zora-mountain-back { fill: #9dc9db; }
+.zora-mountain-front { fill: #4b96b7; }
+.zora-river { fill: #26779e; }
+.zora-loader-tagline { position: relative; z-index: 2; margin: 29px 0 0; color: #246e92; font-family: -apple-system, BlinkMacSystemFont, "Avenir Next", "Segoe UI", sans-serif; font-size: clamp(.76rem, 3vw, 1.03rem); font-weight: 600; letter-spacing: .17em; }
+.zora-loading-progress { position: relative; z-index: 2; display: flex; gap: 7px; height: 10px; margin-top: 29px; align-items: center; }
+.zora-loading-progress i { width: 7px; height: 7px; border-radius: 50%; background: #4d9bbc; animation: zora-loading-dot 1.2s ease-in-out infinite; }
+.zora-loading-progress i:nth-child(2) { animation-delay: .16s; }
+.zora-loading-progress i:nth-child(3) { animation-delay: .32s; }
+.zora-loader > small { position: relative; z-index: 2; margin-top: 11px; color: #5d7d8c; font-family: -apple-system, BlinkMacSystemFont, "Avenir Next", "Segoe UI", sans-serif; font-size: .68rem; font-weight: 650; letter-spacing: .03em; }
+.zora-loader-landscape { position: absolute; right: 0; bottom: 0; left: 0; width: 100%; height: min(34vh, 310px); }
+.zora-loader-landscape circle { fill: #e6f4f7; }
+.zora-loader-landscape .ridge-one { fill: #dbeef4; }
+.zora-loader-landscape .ridge-two { fill: #b9dae7; }
+.zora-loader-landscape .ridge-three { fill: #75aac1; }
+.zora-loader-landscape .water { fill: rgba(226,243,247,.9); }
+.zora-loader.compact { min-height: 190px; padding: 28px 20px; border: 1px dashed #b9c8c9; border-radius: 22px; background: rgba(255,255,255,.5); }
+.zora-loader.compact .zora-loader-brand > span { margin-left: -14px; font-size: 2.65rem; }
+.zora-loader.compact .zora-loader-mark { width: 57px; }
+.zora-loader.compact .zora-loader-tagline { display: none; }
+.zora-loader.compact .zora-loading-progress { margin-top: 17px; }
+@keyframes zora-loading-dot { 0%, 60%, 100% { opacity: .35; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-5px); } }
+@media (prefers-reduced-motion: reduce) { .zora-loading-progress i { animation: none; opacity: .75; } }
 @keyframes shelf-plane { from { transform: translateX(-5px) rotate(-5deg); } to { transform: translateX(5px) rotate(5deg); } }
 .gallery-page-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding: 8px 2px 2px; }
 .gallery-page-heading h1 { margin: 5px 0 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(2rem, 5vw, 3.1rem); font-weight: 500; letter-spacing: -.03em; }

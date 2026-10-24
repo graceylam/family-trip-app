@@ -2,6 +2,7 @@
 
 import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
+import ZoraLoader from "./ZoraLoader";
 import {
   attachLegacyViennaTrip,
   createAccountTrip,
@@ -345,7 +346,7 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
   }
 
   if (account === undefined) {
-    return <main className="account-shell"><section className="account-card setup-card"><p>Opening your adventures…</p></section></main>;
+    return <main className="zora-loading-shell"><ZoraLoader /></main>;
   }
 
   if (!account) {
@@ -405,7 +406,7 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
       <section className="trip-library" aria-labelledby="trip-library-title">
         <div className="trip-library-heading"><p className="eyebrow">Your travel shelf</p><h2 id="trip-library-title">Trips you belong to</h2></div>
         {!tripsReady ? (
-          <div className="empty-trip-library trip-library-loading" role="status"><span aria-hidden="true">✈︎</span><h3>Bringing your adventures up to date…</h3></div>
+          <ZoraLoader compact message="Bringing your adventures up to date" />
         ) : trips.length === 0 ? (
           <div className="empty-trip-library">
             <span aria-hidden="true">🧳</span><h3>Your first adventure belongs here</h3><p>Create a trip, or connect the Vienna trip you already built.</p>

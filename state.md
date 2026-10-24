@@ -100,3 +100,8 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 
 - PDFs and other compatible attachments now open in Apple Quick Look inside the iPhone app, with every page available, native scrolling and zoom, and a full-screen Done control.
 - Images retain the app’s existing full-screen preview, while the laptop/web build retains its embedded document preview.
+
+## Zora loading identity (2026-10-24)
+
+- Initial account loading now uses the Zora splash identity: a Georgia wordmark, system-font `Your trip. All together.` tagline, layered blue landscape and an explicit animated three-dot loading state.
+- The trip shelf refresh uses a compact version of the same loader so loading feedback remains branded without taking over the whole bookshelf.
