@@ -116,3 +116,9 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 - The splash lockup uses Grace’s supplied light-background Z artwork directly (rather than redrawing it), followed only by Georgia `ora`, and sits in the upper portion with deliberate breathing room.
 - Mapbox public-token rotation on 24 October 2026 is applied to local/iPhone builds and the GitHub Pages repository variable; the token remains excluded from Git history.
 - Trip cover headers now use an even dark translucent overlay instead of a pale gradient, with light high-contrast text that remains readable over any cover photo.
+
+## TestFlight deployment (2026-10-24)
+
+- Apple Developer App ID `com.graceylam.familytrip` and the App Store Connect record `Zora: Trips Together` are registered.
+- Zora 1.0 build 2 archived successfully and uploaded to App Store Connect with no errors (delivery UUID `e49570fd-8d4b-4c94-bab7-1669ebd4becd`).
+- Apple is processing build 2. Once processing finishes, configure External Testing, complete export-compliance and beta-review details, and invite family testers through TestFlight. Do not use the Internal Testing group unless the tester has been deliberately added as an App Store Connect user.
