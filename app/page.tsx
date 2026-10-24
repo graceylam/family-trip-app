@@ -19,6 +19,7 @@ import {
 } from "../lib/firebaseTripState";
 import { deleteTripMedia, observeTripMedia, updateTripMedia, uploadTripMedia, type TripMedia } from "../lib/firebaseMedia";
 import { canSaveDirectlyToPhotos, saveBlobToNativePhotos, saveUrlToPhotos } from "../lib/nativePhotos";
+import { canPreviewDocumentsNatively, previewBlobNatively } from "../lib/nativeDocuments";
 import { sortItineraryChronologically } from "../lib/chronology";
 import { convertedAmount, getLatestExchangeRate } from "../lib/exchangeRates";
 import {
@@ -2226,6 +2227,10 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     setDocumentPreviewLoading(document);
     try {
       const { blob, name } = await getSharedFileBlob(tripId, document.fileId);
+      if (canPreviewDocumentsNatively() && !document.mimeType.startsWith("image/")) {
+        await previewBlobNatively(blob, name || document.name, document.mimeType || blob.type);
+        return;
+      }
       const url = URL.createObjectURL(blob);
       setDocumentPreview((current) => {
         if (current?.url) URL.revokeObjectURL(current.url);

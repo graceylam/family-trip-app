@@ -217,6 +217,8 @@ test("uses Firebase for trip sync and private R2 photo and video storage", async
   assert.match(page, /Add screenshots/);
   assert.match(page, /document-preview-modal/);
   assert.match(page, /document-preview-done/);
+  assert.match(page, /canPreviewDocumentsNatively/);
+  assert.match(page, /previewBlobNatively/);
   assert.match(page, />Done<\/button>/);
   assert.match(page, /Open \/ Share/);
   assert.match(styles, /\.modal\.document-preview-modal \{[^}]*width: 100vw;[^}]*height: 100dvh/);

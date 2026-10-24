@@ -1,6 +1,70 @@
 import UIKit
 import Capacitor
 import Photos
+import QuickLook
+
+@objc(NativeDocumentsPlugin)
+public class NativeDocumentsPlugin: CAPPlugin, CAPBridgedPlugin, QLPreviewControllerDataSource {
+    public let identifier = "NativeDocumentsPlugin"
+    public let jsName = "NativeDocuments"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "previewBase64", returnType: CAPPluginReturnPromise)
+    ]
+
+    private var previewURL: URL?
+
+    @objc func previewBase64(_ call: CAPPluginCall) {
+        guard let encoded = call.getString("data"), let data = Data(base64Encoded: encoded) else {
+            call.reject("The document could not be read.")
+            return
+        }
+        let suppliedName = call.getString("name") ?? "Trip document"
+        let safeName = URL(fileURLWithPath: suppliedName).lastPathComponent
+        let fileName = safeName.isEmpty ? "Trip document" : safeName
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("family-trip-\(UUID().uuidString)-\(fileName)")
+
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            call.reject("The document could not be prepared for viewing.", nil, error)
+            return
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let presenter = self.bridge?.viewController else {
+                try? FileManager.default.removeItem(at: url)
+                call.reject("The document viewer is unavailable.")
+                return
+            }
+            if let previousURL = self.previewURL { try? FileManager.default.removeItem(at: previousURL) }
+            self.previewURL = url
+            let preview = QLPreviewController()
+            preview.dataSource = self
+            preview.navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(self.closePreview))
+            let navigation = UINavigationController(rootViewController: preview)
+            navigation.modalPresentationStyle = .fullScreen
+            presenter.present(navigation, animated: true) {
+                call.resolve(["opened": true])
+            }
+        }
+    }
+
+    public func numberOfPreviewItems(in controller: QLPreviewController) -> Int {
+        previewURL == nil ? 0 : 1
+    }
+
+    public func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
+        previewURL! as NSURL
+    }
+
+    @objc private func closePreview() {
+        bridge?.viewController?.presentedViewController?.dismiss(animated: true) { [weak self] in
+            guard let self else { return }
+            if let url = self.previewURL { try? FileManager.default.removeItem(at: url) }
+            self.previewURL = nil
+        }
+    }
+}
 
 @objc(NativePhotosPlugin)
 public class NativePhotosPlugin: CAPPlugin, CAPBridgedPlugin {
@@ -127,6 +191,7 @@ public class FamilyBridgeViewController: CAPBridgeViewController {
 
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(NativePhotosPlugin())
+        bridge?.registerPluginInstance(NativeDocumentsPlugin())
     }
 }
 

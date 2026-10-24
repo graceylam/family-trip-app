@@ -95,3 +95,8 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 - Connection Details sits farther below the settings actions and the mobile sheet has extra bottom scroll clearance.
 - Gallery upload bubbles resolve against the live group-member profile, so existing photos immediately adopt a person’s latest display name initial, emoji and pastel colour.
 - The mobile Settings close action is no longer sticky over the content; Connection Details now has a clear protected gap above its full top border.
+
+## Native document preview (2026-10-24)
+
+- PDFs and other compatible attachments now open in Apple Quick Look inside the iPhone app, with every page available, native scrolling and zoom, and a full-screen Done control.
+- Images retain the app’s existing full-screen preview, while the laptop/web build retains its embedded document preview.
