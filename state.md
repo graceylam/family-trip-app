@@ -105,3 +105,5 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 
 - Initial account loading now uses the Zora splash identity: a Georgia wordmark, system-font `Your trip. All together.` tagline, layered blue landscape and an explicit animated three-dot loading state.
 - The trip shelf refresh uses a compact version of the same loader so loading feedback remains branded without taking over the whole bookshelf.
+- The landscape/river mark is the `Z` itself and is followed only by Georgia `ora`, preventing the lockup from reading as a separate logo plus the word Zora.
+- The iPhone and installable web app now use the supplied dark-blue Zora landscape icon artwork.

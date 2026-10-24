@@ -1,11 +1,18 @@
 {
-  "name": "Our Family Adventure",
-  "short_name": "Our Adventure",
-  "description": "Plan the adventure together and keep every family memory in one place.",
+  "name": "Zora",
+  "short_name": "Zora",
+  "description": "Plan your trips together and keep every group memory in one place.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f7f3ea",
   "theme_color": "#3d789b",
-  "icons": []
+  "icons": [
+    {
+      "src": "./zora-app-icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
 }

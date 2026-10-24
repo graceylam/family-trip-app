@@ -1,12 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="2732" height="2732" viewBox="0 0 2732 2732">
   <rect width="2732" height="2732" fill="#fffcf5"/>
   <circle cx="2110" cy="2195" r="120" fill="#e6f4f7"/>
-  <g transform="translate(690 1040)">
-    <circle cx="475" cy="40" r="34" fill="#90c8df"/>
-    <path d="M0 125 105 22 176 70 259 6 378 125Z" fill="#9dc9db"/>
-    <path d="M0 125 105 54 176 98 259 32 378 125Z" fill="#4b96b7"/>
-    <path d="M374 127c79 0 108 22 72 52-35 26-129 38-204 76-29 15-53 27-91 34H7c78-48 202-85 284-112 47-15 60-31 8-50Z" fill="#26779e"/>
-    <text x="322" y="284" fill="#23789f" font-family="Georgia, 'Times New Roman', serif" font-size="332" letter-spacing="-22">Zora</text>
+  <g transform="translate(650 865) scale(3.6)">
+    <circle cx="156" cy="21" r="13" fill="#90c8df"/>
+    <path d="M14 50C31 21 48 15 66 29 85 12 92 6 104 10c24 13 39 32 67 41-48-3-103-1-157-1Z" fill="#9dc9db"/>
+    <path d="M14 50c20-29 37-30 57-16 18 12 34 16 63 18-43 0-80-1-120-2Z" fill="#4b96b7"/>
+    <path d="M132 51c39-1 49 7 30 19-24 14-58 25-84 42-18 12-23 23-10 31 13 8 43 8 74 3-36 13-103 11-118-7-16-20 12-47 46-64 27-13 50-18 62-24Z" fill="#26779e"/>
+    <path d="M92 122c-12 10-10 19 4 24 15 6 44 5 73-2-28 15-67 14-82 4-13-9-11-19 5-26Z" fill="#cfe9f2"/>
+    <text x="145" y="145" fill="#23789f" font-family="Georgia, 'Times New Roman', serif" font-size="105" letter-spacing="-7">ora</text>
   </g>
   <text x="1366" y="1515" text-anchor="middle" fill="#246e92" font-family="-apple-system, BlinkMacSystemFont, 'Avenir Next', Arial, sans-serif" font-size="58" font-weight="600" letter-spacing="12">Your trip. All together.</text>
   <g fill="#4d9bbc"><circle cx="1322" cy="1605" r="13" opacity=".45"/><circle cx="1366" cy="1605" r="13" opacity=".7"/><circle cx="1410" cy="1605" r="13"/></g>

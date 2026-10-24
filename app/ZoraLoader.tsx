@@ -7,13 +7,14 @@ export default function ZoraLoader({ compact = false, message = "Opening your ad
   return (
     <section className={`zora-loader ${compact ? "compact" : ""}`} role="status" aria-live="polite">
       <div className="zora-loader-brand" aria-label="Zora">
-        <svg className="zora-loader-mark" viewBox="0 0 160 82" aria-hidden="true">
-          <circle cx="128" cy="18" r="9" />
-          <path className="zora-mountain-back" d="M15 38 42 12 60 24 82 8 113 38Z" />
-          <path className="zora-mountain-front" d="M15 38 42 20 61 31 82 15 113 38Z" />
-          <path className="zora-river" d="M111 39c21 0 29 6 19 14-9 7-34 10-54 20-8 4-14 7-24 9h-39c21-13 54-23 76-30 13-4 16-8 2-13Z" />
+        <svg className="zora-loader-mark" viewBox="0 0 190 155" aria-hidden="true">
+          <circle cx="156" cy="21" r="13" />
+          <path className="zora-mountain-back" d="M14 50C31 21 48 15 66 29 85 12 92 6 104 10c24 13 39 32 67 41-48-3-103-1-157-1Z" />
+          <path className="zora-mountain-front" d="M14 50c20-29 37-30 57-16 18 12 34 16 63 18-43 0-80-1-120-2Z" />
+          <path className="zora-river" d="M132 51c39-1 49 7 30 19-24 14-58 25-84 42-18 12-23 23-10 31 13 8 43 8 74 3-36 13-103 11-118-7-16-20 12-47 46-64 27-13 50-18 62-24Z" />
+          <path className="zora-river-light" d="M92 122c-12 10-10 19 4 24 15 6 44 5 73-2-28 15-67 14-82 4-13-9-11-19 5-26Z" />
         </svg>
-        <span>Zora</span>
+        <span>ora</span>
       </div>
       <p className="zora-loader-tagline">Your trip. All together.</p>
       <div className="zora-loading-progress" aria-hidden="true"><i /><i /><i /></div>
