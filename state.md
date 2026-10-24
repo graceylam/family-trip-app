@@ -121,4 +121,7 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 
 - Apple Developer App ID `com.graceylam.familytrip` and the App Store Connect record `Zora: Trips Together` are registered.
 - Zora 1.0 build 2 archived successfully and uploaded to App Store Connect with no errors (delivery UUID `e49570fd-8d4b-4c94-bab7-1669ebd4becd`).
-- Apple is processing build 2. Once processing finishes, configure External Testing, complete export-compliance and beta-review details, and invite family testers through TestFlight. Do not use the Internal Testing group unless the tester has been deliberately added as an App Store Connect user.
+- Apple finished processing build 2 and its export-compliance response was completed.
+- The correct external TestFlight group is `Lambs Testers`; build 2 is attached and three external testers have been added. Their email addresses are intentionally not stored in this public repository.
+- Build 2 is waiting for Apple Beta App Review. Once approved, the external testers can accept their TestFlight invitations without Developer Mode or App Store Connect access.
+- An earlier `Lambs` internal group also exists but should not be used for family testers unless they are deliberately added as App Store Connect users.
