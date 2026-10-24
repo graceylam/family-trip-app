@@ -108,4 +108,4 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 - The landscape/river mark is the `Z` itself and is followed only by Georgia `ora`, preventing the lockup from reading as a separate logo plus the word Zora.
 - The iPhone and installable web app now use the supplied dark-blue Zora landscape icon artwork.
 - The splash lockup uses Grace’s supplied light-background Z artwork directly (rather than redrawing it), followed only by Georgia `ora`, and sits in the upper portion with deliberate breathing room.
-- Mapbox public-token rotation on 24 October 2026 is applied to local/iPhone builds. The GitHub Pages repository variable still needs updating after GitHub sign-in; the token is deliberately excluded from Git history.
+- Mapbox public-token rotation on 24 October 2026 is applied to local/iPhone builds and the GitHub Pages repository variable; the token remains excluded from Git history.
