@@ -41,6 +41,12 @@ Last updated: 24 October 2026
 3. Configure Cloudflare usage notifications (informational alerts, not a true billing hard cap).
 4. Test one small photo and one short video from the installed iPhone app, then verify gallery display, download and deletion.
 
+## TestFlight preparation (24 October 2026)
+
+- Zora 1.0 build 2 is synced with the latest web assets and archived successfully for generic iOS distribution.
+- Bundle ID: `com.graceylam.familytrip`; Apple team: `FXAU5S68HU`; minimum iOS version: 15.0.
+- App Store Connect sign-in is the remaining prerequisite before creating/verifying the Zora app record, uploading build 2, completing export-compliance details and inviting the first tester.
+
 ## Rollback
 
 The previous Google Drive implementation is preserved in Git history. Roll back to the commit immediately before the R2 migration if required; do not delete the old Drive files until the R2 phone test has passed.
