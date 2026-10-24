@@ -33,6 +33,8 @@ test("server-renders the Family Trip app", async () => {
   assert.match(html, /Opening your adventures/);
   assert.match(html, /Your trip\. All together\./);
   assert.match(html, /zora-loading-progress/);
+  assert.match(html, /zora-mark\.png/);
+  assert.match(html, /<span>ora<\/span>/);
   assert.doesNotMatch(html, /Google OAuth client ID|Connect Drive/);
 });
 
