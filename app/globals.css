@@ -1347,7 +1347,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .adventure-hero .eyebrow { font-family: inherit; font-size: .67rem; font-style: normal; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
 .adventure-hero .trip-title-input { width: min(650px, 72vw); margin-top: 5px; font-size: clamp(2.15rem, 5vw, 3.25rem); line-height: 1.02; }
 .adventure-hero .shared-role { margin-top: 8px; padding: 5px 9px; border: 1px solid rgba(53,111,145,.11); background: rgba(255,255,255,.7); }
-.adventure-hero.has-trip-cover { background-color: #e8eef0; background-repeat: no-repeat; background-size: cover; }
+.adventure-hero.has-trip-cover { background-color: #172a34; background-repeat: no-repeat; background-size: cover; }
+.adventure-hero.has-trip-cover::before { position: absolute; inset: 0; background: rgba(9,22,29,.64); content: ""; }
+.adventure-hero.has-trip-cover .trip-title-input { color: #fffaf2; text-shadow: 0 2px 14px rgba(0,0,0,.36); }
+.adventure-hero.has-trip-cover .eyebrow { color: #f4d6c6; }
+.adventure-hero.has-trip-cover .shared-role { border-color: rgba(255,255,255,.24); color: #f2f6f7; background: rgba(8,24,32,.38); }
+.adventure-hero.has-trip-cover .back-to-trips { border-color: rgba(255,255,255,.28); color: #f5f8f9; background: rgba(8,24,32,.4); }
 .hero-actions { gap: 8px; }
 .avatar, .avatar.locked { width: 40px; height: 40px; flex-basis: 40px; font-size: .78rem; }
 .settings-button { min-height: 40px; padding: 8px 11px; border-radius: 10px; box-shadow: none; }

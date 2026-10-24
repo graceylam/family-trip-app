@@ -2487,7 +2487,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     <main className="app-shell">
       <header
         className={`topbar adventure-hero ${tripCoverDisplayUrl ? "has-trip-cover" : ""}`}
-        style={tripCoverDisplayUrl ? { backgroundImage: `linear-gradient(90deg, rgba(255,250,241,.88) 0%, rgba(255,250,241,.68) 45%, rgba(255,250,241,.18) 82%), url(${tripCoverDisplayUrl})`, backgroundPosition: `center, ${tripCoverPositionX}% ${tripCoverPositionY}%` } : undefined}
+        style={tripCoverDisplayUrl ? { backgroundImage: `url(${tripCoverDisplayUrl})`, backgroundPosition: `${tripCoverPositionX}% ${tripCoverPositionY}%` } : undefined}
       >
         <div className="hero-copy">
           <button className="back-to-trips" onClick={onBackToTrips} aria-label="Back to My Adventures">← My Adventures</button>
