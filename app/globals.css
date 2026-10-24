@@ -1041,6 +1041,7 @@ button { cursor: pointer; }
   .cover-settings-preview { min-height: 150px; }
 }
 
+
 @media (max-width: 430px) {
   .trip-sidebar { grid-template-columns: 1fr; }
   .trip-postcard { grid-column: auto; }
@@ -1752,3 +1753,20 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .trip-settings-modal .member-row { grid-template-columns: 30px minmax(0, 1fr) auto; }
   .trip-settings-modal .member-row > :last-child { grid-column: 2 / -1; justify-self: start; }
 }
+
+/* In-trip cover hero: one consistent dark veil keeps every control readable. */
+.adventure-hero.has-trip-cover { isolation: isolate; }
+.adventure-hero.has-trip-cover::before { z-index: 0; background: rgba(7,18,24,.7); }
+.adventure-hero.has-trip-cover .hero-copy { position: relative; z-index: 1; }
+.adventure-hero.has-trip-cover .trip-title-input { color: #fffaf2; }
+.adventure-hero.has-trip-cover .trip-title-input:hover,
+.adventure-hero.has-trip-cover .trip-title-input:focus { border-color: rgba(255,255,255,.34); color: #fff; background: rgba(7,18,24,.42); }
+.adventure-hero.has-trip-cover .eyebrow { color: #f5ded2; }
+.adventure-hero.has-trip-cover .shared-role,
+.adventure-hero.has-trip-cover .back-to-trips,
+.adventure-hero.has-trip-cover .overview-button,
+.adventure-hero.has-trip-cover .settings-button { border-color: rgba(255,255,255,.26); color: #f6fafb; background: rgba(7,18,24,.48); backdrop-filter: blur(9px); }
+.adventure-hero.has-trip-cover .overview-button .app-icon,
+.adventure-hero.has-trip-cover .settings-button .app-icon { color: #f6fafb; }
+.adventure-hero.has-trip-cover .overview-button:hover,
+.adventure-hero.has-trip-cover .settings-button:hover { border-color: rgba(255,255,255,.5); color: #fff; background: rgba(7,18,24,.66); }
