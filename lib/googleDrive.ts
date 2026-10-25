@@ -66,6 +66,8 @@ export type TripStopMemory = {
   updatedAt: string;
   entries?: TripScrapbookEntry[];
   mapPhotoIds?: string[];
+  mapHidden?: boolean;
+  mapHiddenPhotoIds?: string[];
 };
 
 export type TripScrapbookEntry = {

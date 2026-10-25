@@ -153,3 +153,11 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 - Creation is title-first, followed by photos chosen from anywhere in the trip. Each vertical slide supports freely positioned text, arbitrary emoji and decorative stickers that can be dragged, resized and rotated.
 - Highlights are shared in the trip JSON, retain creator ownership for editing/deletion, merge safely by ID, and play as full-screen timed slideshows.
 - The scrapbook remains a separate, collaborative per-day canvas. The later Movie Studio will support both an automatic themed render and a manual editor; it is intentionally not part of this Highlights-first change.
+
+## Streamlined Memory Lane navigation (2026-10-25)
+
+- Memory Lane is now divided into `Highlights`, `Days` and `Map`, with Highlights as the calm default view. The previous `Added by everyone` feed has been removed.
+- Highlights contains the trip-wide handcrafted slideshow library; a compact Short Clips preview marks the next creation format without mixing the unfinished video editor into this view.
+- Days contains the day selector, collaborative scrapbook and the existing automatic `Create Day n Video` flow.
+- Map contains the photo map, photo-pin controls and Trip Statistics. Photos assigned to a stop now appear at its pin automatically.
+- Members can hide individual photos from a pin or hide an entire pin. These presentation choices are reversible and never delete the source photo, itinerary stop or saved location; newly uploaded stop photos appear automatically unless explicitly hidden.

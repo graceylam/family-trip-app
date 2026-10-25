@@ -1791,14 +1791,15 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     });
   }
 
-  function updateMemoryMapPhotos(dayId: string, stopId: string, photoIds: string[]) {
+  function updateMemoryMapPresentation(dayId: string, stopId: string, changes: { hidden?: boolean; hiddenPhotoIds?: string[] }) {
     if (!currentMember) return;
     const now = new Date().toISOString();
     setDays((current) => sortItineraryChronologically(current.map((day) => day.id === dayId ? {
       ...day,
       stops: day.stops.map((stop) => stop.id === stopId ? { ...stop, memory: {
         ...(stop.memory ?? { comment: "", entries: [] }),
-        mapPhotoIds: photoIds.slice(0, 4),
+        mapHidden: changes.hidden ?? stop.memory?.mapHidden ?? false,
+        mapHiddenPhotoIds: changes.hiddenPhotoIds ?? stop.memory?.mapHiddenPhotoIds ?? [],
         updatedByMemberId: currentMember.id,
         updatedByMemberName: currentMember.name,
         updatedAt: now,
@@ -3104,7 +3105,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           onSaveMemory={saveStopMemory}
           onAddScrapbookEntry={addScrapbookEntry}
           onDeleteScrapbookEntry={deleteScrapbookEntry}
-          onUpdateMapPhotos={updateMemoryMapPhotos}
+          onUpdateMapPresentation={updateMemoryMapPresentation}
           onUpdateDayStory={updateDayStory}
           highlights={highlights}
           onUpdateHighlights={setHighlights}
