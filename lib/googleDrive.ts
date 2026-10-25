@@ -56,6 +56,7 @@ export type TripDocument = {
   size: number;
   memberId: string;
   memberName: string;
+  contributorNames?: string[];
   createdAt: string;
 };
 
