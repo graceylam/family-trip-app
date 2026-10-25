@@ -173,7 +173,7 @@ export type TripStory = {
 
 export type TripScrapbookPageElement = {
   id: string;
-  kind: "text" | "photo" | "video" | "emoji" | "sticker";
+  kind: "text" | "photo" | "video" | "emoji" | "sticker" | "decoration";
   value: string;
   x: number;
   y: number;
@@ -181,6 +181,8 @@ export type TripScrapbookPageElement = {
   rotation: number;
   colour?: string;
   frame?: "none" | "polaroid" | "postcard";
+  textStyle?: "classic" | "handwritten" | "cutout" | "outline" | "label";
+  attachment?: "none" | "tape" | "pin" | "clip";
 };
 
 export type TripScrapbookPage = {
@@ -192,6 +194,8 @@ export type TripScrapbookPage = {
   freeText: string;
   favouriteThings: string[];
   weather: string;
+  weatherTemperature?: string;
+  weatherDescription?: string;
   steps: string;
   distance: string;
   favouriteMemory: string;
