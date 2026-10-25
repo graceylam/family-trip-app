@@ -495,6 +495,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [newExpenseAmount, setNewExpenseAmount] = useState("");
   const [newExpenseCategory, setNewExpenseCategory] = useState(expenseCategories[0]);
   const [newExpenseLocalCurrency, setNewExpenseLocalCurrency] = useState(accountTrip.defaultCurrency || "EUR");
+  const [newExpenseMemberId, setNewExpenseMemberId] = useState("");
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [expenseEditDraft, setExpenseEditDraft] = useState({ item: "", amount: "", category: expenseCategories[0], localCurrency: "EUR" });
   const [expenseConversionState, setExpenseConversionState] = useState<"idle" | "converting">("idle");
@@ -1323,30 +1324,29 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     updatePhotoView(photoId, changes);
   }
 
-  async function handlePhotoSelection(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? []);
-    event.target.value = "";
-    if (!selectedStop || files.length === 0) return;
+  async function addFilesToPhotoQueue(files: File[], dayId: string, stopId: string) {
+    const targetStop = days.find((day) => day.id === dayId)?.stops.find((stop) => stop.id === stopId);
+    if (!targetStop || files.length === 0) return;
     if (!currentMember) {
       setQueueError("Choose your group profile before adding photos.");
       setShowSettings(true);
-      return;
+      throw new Error("Choose your group profile before adding photos.");
     }
 
     setQueueState("saving");
     setQueueError(null);
 
-    let nextPhotoNumber = sharedPhotos.filter((photo) => photo.stopId === selectedStop.id && photo.memberName === currentMember.name && photo.mediaType === "photo").length
-      + queuedPhotos.filter((photo) => photo.stopId === selectedStop.id && photo.memberName === currentMember.name && !photo.mimeType.startsWith("video/") && photo.status !== "uploaded").length;
-    let nextVideoNumber = sharedPhotos.filter((photo) => photo.stopId === selectedStop.id && photo.memberName === currentMember.name && photo.mediaType === "video").length
-      + queuedPhotos.filter((photo) => photo.stopId === selectedStop.id && photo.memberName === currentMember.name && photo.mimeType.startsWith("video/") && photo.status !== "uploaded").length;
+    let nextPhotoNumber = sharedPhotos.filter((photo) => photo.stopId === targetStop.id && photo.memberName === currentMember.name && photo.mediaType === "photo").length
+      + queuedPhotos.filter((photo) => photo.stopId === targetStop.id && photo.memberName === currentMember.name && !photo.mimeType.startsWith("video/") && photo.status !== "uploaded").length;
+    let nextVideoNumber = sharedPhotos.filter((photo) => photo.stopId === targetStop.id && photo.memberName === currentMember.name && photo.mediaType === "video").length
+      + queuedPhotos.filter((photo) => photo.stopId === targetStop.id && photo.memberName === currentMember.name && photo.mimeType.startsWith("video/") && photo.status !== "uploaded").length;
 
     const additions: StoredQueuedPhoto[] = files.map((file) => {
       const sequence = file.type.startsWith("video/") ? ++nextVideoNumber : ++nextPhotoNumber;
       return {
       id: crypto.randomUUID(),
-      stopId: selectedStop.id,
-      name: friendlyMediaName(selectedStop.title, currentMember.name, file, sequence),
+      stopId: targetStop.id,
+      name: friendlyMediaName(targetStop.title, currentMember.name, file, sequence),
       mimeType: file.type || "image/jpeg",
       size: file.size,
       createdAt: new Date().toISOString(),
@@ -1385,6 +1385,18 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
             : "The photos could not be added to the offline queue. The originals remain safe in Apple Photos.",
       );
       setQueueState("ready");
+      throw error;
+    }
+  }
+
+  async function handlePhotoSelection(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (!selectedDay || !selectedStop || files.length === 0) return;
+    try {
+      await addFilesToPhotoQueue(files, selectedDay.id, selectedStop.id);
+    } catch {
+      // The durable queue error is already displayed in the itinerary photo panel.
     }
   }
 
@@ -1787,6 +1799,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
   async function addExpense(dayId = selectedDay?.id, stopId = selectedStop?.id) {
     if (!currentMember || !dayId || !stopId) return;
+    const expenseMember = members.find((member) => member.id === newExpenseMemberId) ?? currentMember;
     const targetStop = days.find((day) => day.id === dayId)?.stops.find((stop) => stop.id === stopId);
     if (!targetStop) return;
     const item = newExpenseItem.trim();
@@ -1811,8 +1824,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       id: crypto.randomUUID(),
       item,
       category: newExpenseCategory,
-      memberId: currentMember.id,
-      memberName: currentMember.name,
+      memberId: expenseMember.id,
+      memberName: expenseMember.name,
       localAmount,
       localCurrency: newExpenseLocalCurrency,
       homeAmount,
@@ -1824,6 +1837,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     updateStopInDay(dayId, stopId, { expenses: [...(targetStop.expenses ?? []), expense] });
     setNewExpenseItem("");
     setNewExpenseAmount("");
+    setNewExpenseMemberId("");
     setExpenseConversionState("idle");
   }
 
@@ -3025,6 +3039,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           isAdmin={isAdmin}
           state={galleryState}
           error={galleryError}
+          onUpload={(files, dayId, stopId) => addFilesToPhotoQueue(files, dayId, stopId)}
           onUpdate={async (item, changes) => updateTripMedia(accountTrip.id, item.fileId, changes)}
           onDelete={async (item) => deleteTripMedia(accountTrip.id, item)}
         />
@@ -3116,6 +3131,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
               <label><span>Amount</span><div className="money-input"><select value={newExpenseLocalCurrency} onChange={(event) => setNewExpenseLocalCurrency(event.target.value)} aria-label="Local currency">{currencyOptions.map((currency) => <option value={currency} key={currency}>{currency}</option>)}</select><input type="number" inputMode="decimal" min="0" step="0.01" value={newExpenseAmount} onChange={(event) => setNewExpenseAmount(event.target.value)} placeholder="0.00" aria-label="Local amount" /></div></label>
               <label><span>Category</span><select value={newExpenseCategory} onChange={(event) => setNewExpenseCategory(event.target.value)}>{expenseCategories.map((category) => <option value={category} key={category}>{category}</option>)}</select></label>
               <button className="primary-button" onClick={() => void addExpense(expenseEntryDay?.id, expenseEntryStop?.id).then(() => setExpenseEntryExpanded(false))} disabled={!expenseEntryStop || !currentMember || !newExpenseItem.trim() || !(Number(newExpenseAmount) > 0) || expenseConversionState === "converting"}>{expenseConversionState === "converting" ? "Converting…" : "Add expense"}</button>
+              <details className="expense-person-disclosure"><summary>Expense for someone else?</summary><label><span>Person</span><select value={newExpenseMemberId || currentMember?.id || ""} onChange={(event) => setNewExpenseMemberId(event.target.value)}>{members.map((member) => <option value={member.id} key={member.id}>{member.name}</option>)}</select></label></details>
             </div>}
           </section>
 

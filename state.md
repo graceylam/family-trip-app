@@ -125,3 +125,11 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 - The correct external TestFlight group is `Lambs Testers`; build 2 is attached and three external testers have been added. Their email addresses are intentionally not stored in this public repository.
 - Build 2 is waiting for Apple Beta App Review. Once approved, the external testers can accept their TestFlight invitations without Developer Mode or App Store Connect access.
 - An earlier `Lambs` internal group also exists but should not be used for family testers unless they are deliberately added as App Store Connect users.
+
+## Local post-TestFlight refinements (2026-10-25)
+
+- These changes are implemented locally and synced into the local iOS project, but have **not** been uploaded as a new TestFlight or App Store build.
+- The full-screen Zora loader now more closely follows the approved splash prototype and retains an animated three-dot loading indicator so startup never appears frozen.
+- The cover photo inside an opened trip uses a stronger, even dark veil on iPhone, with light text and controls matching the trip shelf treatment.
+- The Gallery has a compact `Upload photos` action. A member chooses the destination day and stop before selecting multiple photos or videos; the files then use the existing durable upload queue and shared R2 flow.
+- Expense quick entry still records the signed-in member by default. A collapsed `Expense for someone else?` control lets a member attribute the entry to another current group member when needed.
