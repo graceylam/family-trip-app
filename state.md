@@ -133,3 +133,4 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 - The cover photo inside an opened trip uses a stronger, even dark veil on iPhone, with light text and controls matching the trip shelf treatment.
 - The Gallery has a compact `Upload photos` action. A member chooses the destination day and stop before selecting multiple photos or videos; the files then use the existing durable upload queue and shared R2 flow.
 - Expense quick entry still records the signed-in member by default. A collapsed `Expense for someone else?` control lets a member attribute the entry to another current group member when needed.
+- The native iPhone launch asset and the in-app loader now share the corrected lower artwork: relaxed layered mountain ridges, a pale lake, soft reflections and the floating sun from the approved prototype. The corrected local build was installed directly on Grace's iPhone without TestFlight.

@@ -1,6 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="2732" height="2732" viewBox="0 0 2732 2732">
   <rect width="2732" height="2732" fill="#fffcf5"/>
-  <circle cx="2110" cy="2195" r="120" fill="#e6f4f7"/>
+  <defs>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#edf8fa"/><stop offset="1" stop-color="#cde8ef"/></linearGradient>
+  </defs>
+  <circle cx="2125" cy="2025" r="120" fill="#e6f4f7"/>
   <g transform="translate(650 865) scale(3.6)">
     <circle cx="156" cy="21" r="13" fill="#90c8df"/>
     <path d="M14 50C31 21 48 15 66 29 85 12 92 6 104 10c24 13 39 32 67 41-48-3-103-1-157-1Z" fill="#9dc9db"/>
@@ -11,8 +14,9 @@
   </g>
   <text x="1366" y="1515" text-anchor="middle" fill="#246e92" font-family="-apple-system, BlinkMacSystemFont, 'Avenir Next', Arial, sans-serif" font-size="58" font-weight="600" letter-spacing="12">Your trip. All together.</text>
   <g fill="#4d9bbc"><circle cx="1322" cy="1605" r="13" opacity=".45"/><circle cx="1366" cy="1605" r="13" opacity=".7"/><circle cx="1410" cy="1605" r="13"/></g>
-  <path d="M0 2235 340 2095 742 2260 1118 2198 1552 2385 2118 2160 2732 2320V2732H0Z" fill="#dbeef4"/>
-  <path d="M0 2328 438 2178 915 2380 1332 2290 1895 2502 2323 2288 2732 2406V2732H0Z" fill="#b9dae7"/>
-  <path d="M0 2490 430 2328 880 2510 1360 2460 1775 2605 2275 2418 2732 2550V2732H0Z" fill="#75aac1"/>
-  <path d="M0 2600H2732V2732H0Z" fill="#e2f3f7" fill-opacity=".92"/>
+  <path d="M0 2200c143-58 250-126 397-102 150 24 242 151 405 160 154 9 260-90 411-55 168 38 267 190 438 198 187 8 281-197 480-219 222-24 359 187 601 212v338H0Z" fill="#dbeef4"/>
+  <path d="M0 2304c198-90 328-158 505-101 171 54 267 211 468 225 188 13 297-126 468-87 188 43 277 218 475 225 218 7 341-190 543-177 174 10 287 103 373 132v211H0Z" fill="#b9dae7"/>
+  <path d="M0 2465c174-96 311-139 475-74 143 57 246 179 430 197 171 17 307-68 468-25 154 40 267 172 437 184 225 15 358-176 570-162 147 10 242 78 352 124v23H0Z" fill="#75aac1"/>
+  <path d="M0 2606c372 4 570 53 836 46 290-7 461-65 758-54 311 11 488 72 761 58 154-8 266-32 377-43v119H0Z" fill="url(#water)"/>
+  <g fill="none" stroke="#fff" stroke-opacity=".68" stroke-width="8" stroke-linecap="round"><path d="M102 2659c317-27 587-24 853 2"/><path d="M1673 2693c287-24 567-17 900 3"/><path d="M458 2760c253-17 475-13 693 3"/></g>
 </svg>

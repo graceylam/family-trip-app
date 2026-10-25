@@ -566,12 +566,13 @@ button { cursor: pointer; }
 .zora-loading-progress i:nth-child(2) { animation-delay: .16s; }
 .zora-loading-progress i:nth-child(3) { animation-delay: .32s; }
 .zora-loader > small { position: relative; z-index: 2; margin-top: 11px; color: #5d7d8c; font-family: -apple-system, BlinkMacSystemFont, "Avenir Next", "Segoe UI", sans-serif; font-size: .68rem; font-weight: 650; letter-spacing: .03em; }
-.zora-loader-landscape { position: absolute; right: 0; bottom: 0; left: 0; width: 100%; height: min(34vh, 310px); }
+.zora-loader-landscape { position: absolute; right: 0; bottom: 0; left: 0; width: 100%; height: min(39vh, 370px); }
 .zora-loader-landscape circle { fill: #e6f4f7; }
 .zora-loader-landscape .ridge-one { fill: #dbeef4; }
 .zora-loader-landscape .ridge-two { fill: #b9dae7; }
 .zora-loader-landscape .ridge-three { fill: #75aac1; }
-.zora-loader-landscape .water { fill: rgba(226,243,247,.9); }
+.zora-loader-landscape .water { fill: url(#zora-water); }
+.zora-loader-landscape .water-glints { fill: none; stroke: rgba(255,255,255,.68); stroke-width: 2.5; stroke-linecap: round; }
 .zora-loader.compact { min-height: 190px; align-content: center; padding: 28px 20px; border: 1px dashed #b9c8c9; border-radius: 22px; background: rgba(255,255,255,.5); }
 .zora-loader.compact .zora-loader-brand > span { margin: 0 0 8px -19px; font-size: 2.65rem; }
 .zora-loader.compact .zora-loader-mark { width: 83px; }
