@@ -6,6 +6,7 @@ import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import type { SharedPhoto, TripDay, TripMember, TripScrapbookPage, TripScrapbookPageElement } from "../lib/googleDrive";
 import { canSaveDirectlyToPhotos, saveBlobToNativePhotos } from "../lib/nativePhotos";
+import { canUseNativeShare, shareBlobNatively } from "../lib/nativeShare";
 
 type Props = { tripName: string; days: TripDay[]; currentMember?: TripMember; media: SharedPhoto[]; mediaUrls: Record<string, string>; pages: TripScrapbookPage[]; onChange: (pages: TripScrapbookPage[]) => void };
 type Template = "blank" | "journal" | "pinboard" | "photo-wall" | "postcard" | "film";
@@ -115,8 +116,10 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
       }
       if (!added) throw new Error("No photobook pages could be rendered.");
       const blob = pdf.output("blob");
-      const file = new File([blob], `${tripName} Photobook.pdf`, { type: "application/pdf" });
-      if (navigator.share && navigator.canShare?.({ files: [file] })) await navigator.share({ title: `${tripName} Photobook`, text: "My Zora trip photobook", files: [file] });
+      const fileName = `${tripName} Photobook.pdf`;
+      const file = new File([blob], fileName, { type: "application/pdf" });
+      if (canUseNativeShare()) await shareBlobNatively(blob, fileName, "application/pdf");
+      else if (navigator.share && navigator.canShare?.({ files: [file] })) await navigator.share({ title: `${tripName} Photobook`, text: "My Zora trip photobook", files: [file] });
       else { const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = file.name; anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
       setPageExportStatus("Photobook PDF ready to share");
     } catch (error) {

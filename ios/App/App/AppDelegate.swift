@@ -3,6 +3,56 @@ import Capacitor
 import Photos
 import QuickLook
 
+@objc(NativeSharePlugin)
+public class NativeSharePlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "NativeSharePlugin"
+    public let jsName = "NativeShare"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "shareBase64", returnType: CAPPluginReturnPromise)
+    ]
+
+    private var sharedURL: URL?
+
+    @objc func shareBase64(_ call: CAPPluginCall) {
+        guard let encoded = call.getString("data"), let data = Data(base64Encoded: encoded) else {
+            call.reject("The PDF could not be read.")
+            return
+        }
+        let suppliedName = call.getString("name") ?? "Zora Photobook.pdf"
+        let safeName = URL(fileURLWithPath: suppliedName).lastPathComponent
+        let fileName = safeName.isEmpty ? "Zora Photobook.pdf" : safeName
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("zora-\(UUID().uuidString)-\(fileName)")
+
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            call.reject("The PDF could not be prepared for sharing.", nil, error)
+            return
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let presenter = self.bridge?.viewController else {
+                try? FileManager.default.removeItem(at: url)
+                call.reject("The iPhone Share Sheet is unavailable.")
+                return
+            }
+            if let previousURL = self.sharedURL { try? FileManager.default.removeItem(at: previousURL) }
+            self.sharedURL = url
+            let share = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+            if let popover = share.popoverPresentationController {
+                popover.sourceView = presenter.view
+                popover.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.midY, width: 1, height: 1)
+            }
+            share.completionWithItemsHandler = { [weak self] _, completed, _, _ in
+                try? FileManager.default.removeItem(at: url)
+                self?.sharedURL = nil
+                call.resolve(["shared": completed])
+            }
+            presenter.present(share, animated: true)
+        }
+    }
+}
+
 @objc(NativeDocumentsPlugin)
 public class NativeDocumentsPlugin: CAPPlugin, CAPBridgedPlugin, QLPreviewControllerDataSource {
     public let identifier = "NativeDocumentsPlugin"
@@ -192,6 +242,7 @@ public class FamilyBridgeViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(NativePhotosPlugin())
         bridge?.registerPluginInstance(NativeDocumentsPlugin())
+        bridge?.registerPluginInstance(NativeSharePlugin())
     }
 }
 
