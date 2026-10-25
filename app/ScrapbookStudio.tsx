@@ -2,6 +2,7 @@
 
 import { type PointerEvent as ReactPointerEvent, type TouchEvent as ReactTouchEvent, useEffect, useMemo, useState } from "react";
 import { toPng } from "html-to-image";
+import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import type { SharedPhoto, TripDay, TripMember, TripScrapbookPage, TripScrapbookPageElement } from "../lib/googleDrive";
 import { canSaveDirectlyToPhotos, saveBlobToNativePhotos } from "../lib/nativePhotos";
@@ -84,7 +85,7 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
     if (!visible || !page) return;
     setPageExportStatus("Saving…");
     try {
-      const data = await captureNodeForPdf(visible);
+      const data = await captureNodeReliably(visible);
       const blob = await (await fetch(data)).blob();
       if (canSaveDirectlyToPhotos()) await saveBlobToNativePhotos(blob, "image/png");
       else { const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `Scrapbook Page ${bookPage}.png`; anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
@@ -105,12 +106,12 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
       setBookPage(0);
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       const cover = document.querySelector<HTMLElement>(".scrapbook-reader-stage .scrapbook-book");
-      if (cover) addCapture(await captureNodeForPdf(cover));
+      if (cover) addCapture(await captureNodeReliably(cover));
       for (const pageIndex of visibleBookIndices) {
         setBookPage(pageIndex);
         await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
         const node = document.querySelector<HTMLElement>(".scrapbook-reader-page");
-        if (node) addCapture(await captureNodeForPdf(node));
+        if (node) addCapture(await captureNodeReliably(node));
       }
       if (!added) throw new Error("No photobook pages could be rendered.");
       const blob = pdf.output("blob");
@@ -125,6 +126,39 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
     window.setTimeout(() => setPageExportStatus(""), 2800);
   }
   async function captureNodeForPdf(node: HTMLElement): Promise<string> { const clone = node.cloneNode(true) as HTMLElement; clone.querySelectorAll(".scrapbook-reader-edit").forEach((element) => element.remove()); clone.classList.add("scrapbook-pdf-capture"); clone.style.position = "fixed"; clone.style.left = "0"; clone.style.top = "0"; clone.style.zIndex = "0"; clone.style.width = "900px"; clone.style.minHeight = "1200px"; clone.style.height = "1200px"; const sourceImages = [...node.querySelectorAll<HTMLImageElement>("img")]; const clonedImages = [...clone.querySelectorAll<HTMLImageElement>("img")]; await Promise.all(clonedImages.map(async (image, index) => { const source = sourceImages[index]?.currentSrc || sourceImages[index]?.src || image.src; if (!source) return; try { const response = await fetch(source); if (!response.ok) throw new Error("Image fetch failed"); const blob = await response.blob(); image.src = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(blob); }); } catch { image.src = source; } })); document.body.append(clone); try { await Promise.all(clonedImages.map((image) => image.complete ? Promise.resolve() : image.decode().catch(() => undefined))); await document.fonts.ready; return await toPng(clone, { cacheBust: false, pixelRatio: 1.6, backgroundColor: "#fffaf0" }); } finally { clone.remove(); } }
+  async function captureNodeReliably(node: HTMLElement): Promise<string> {
+    const clone = node.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll(".scrapbook-reader-edit").forEach((element) => element.remove());
+    clone.classList.add("scrapbook-pdf-capture");
+    Object.assign(clone.style, { position: "fixed", left: "0", top: "0", zIndex: "-1", width: "900px", minHeight: "1200px", height: "1200px" });
+    const sourceImages = [...node.querySelectorAll<HTMLImageElement>("img")];
+    const clonedImages = [...clone.querySelectorAll<HTMLImageElement>("img")];
+    await Promise.all(clonedImages.map(async (image, index) => {
+      const source = sourceImages[index]?.currentSrc || sourceImages[index]?.src || image.src;
+      if (!source) return;
+      try {
+        const response = await fetch(source);
+        if (!response.ok) throw new Error("Image fetch failed");
+        const blob = await response.blob();
+        image.src = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(blob);
+        });
+        image.removeAttribute("srcset");
+      } catch { image.src = source; }
+    }));
+    document.body.append(clone);
+    try {
+      await Promise.all(clonedImages.map((image) => image.decode().catch(() => undefined)));
+      await document.fonts.ready;
+      const canvas = await html2canvas(clone, { backgroundColor: "#fffaf0", scale: 2, useCORS: true, allowTaint: false, logging: false, width: 900, height: 1200, windowWidth: 900, windowHeight: 1200 });
+      return canvas.toDataURL("image/png", 1);
+    } catch {
+      return await captureNodeForPdf(node);
+    } finally { clone.remove(); }
+  }
   function addWallPhoto() { if (!wallPhotoId) return; addElement("photo", wallPhotoId, { caption: wallPhotoCaption.trim(), emoji: wallPhotoEmoji.trim(), attachment: wallPhotoDecoration, frame: "polaroid" }); setWallPhotoId(""); setWallPhotoCaption(""); setWallPhotoEmoji("✨"); setWallPhotoDecoration("tape"); }
   function update(changes: Partial<TripScrapbookPage>) { setDraft((page) => page ? { ...page, ...changes } : null); }
   function save() { if (!draft) return; const contributors = [...new Set([...(draft.contributorNames ?? [draft.memberName]), ...(currentMember ? [currentMember.name] : [])])]; const saved = { ...draft, favouriteThings: [...draft.favouriteThings.slice(0, 3), "", "", ""].slice(0, 3), title: draft.title.trim() || "Untitled Scrapbook", contributorNames: contributors, updatedAt: new Date().toISOString() }; onChange([...pages.filter((page) => page.id !== saved.id), saved]); setAddMenuOpen(false); setDraft(null); }
@@ -139,8 +173,8 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
 
   return <section className="scrapbook-studio">
     <header><div><p className="eyebrow">Pages made together</p><h2>Digital Scrapbook</h2><p>Mix photos, videos, words, frames and decorations—your way.</p></div><button className="primary-button" onClick={() => setCreateOpen(true)} disabled={!currentMember}>＋ New Page</button></header>
-    {bookOpen && bookPage > 0 && !arranging && <button className="scrapbook-save-page" onClick={() => void saveCompleteReaderPage()} disabled={pageExportStatus === "Saving…" || pageExportStatus === "Building PDF…"}>↓ {pageExportStatus === "Saving…" ? "Saving…" : "Save Page to Photos"}</button>}
-    {bookOpen && !arranging && <button className="scrapbook-export-pdf" onClick={() => void exportBookAsPdf()} disabled={!visibleBookPages.length || pageExportStatus === "Building PDF…"}>↥ {pageExportStatus === "Building PDF…" ? "Building PDF…" : "Share Book as PDF"}</button>}
+    {bookOpen && bookPage > 0 && !arranging && <button className="scrapbook-save-page" onClick={() => void saveCompleteReaderPage()} disabled={pageExportStatus === "Saving…" || pageExportStatus === "Building PDF…"} aria-label="Save page to Photos">↓ {pageExportStatus === "Saving…" ? "Saving…" : "Save Page"}</button>}
+    {bookOpen && !arranging && <button className="scrapbook-export-pdf" onClick={() => void exportBookAsPdf()} disabled={!visibleBookPages.length || pageExportStatus === "Building PDF…"}>↥ {pageExportStatus === "Building PDF…" ? "Building…" : "Export PDF"}</button>}
     {pageExportStatus && pageExportStatus !== "Saving…" && <div className="scrapbook-export-toast" role="status">{pageExportStatus}</div>}
     <button className="scrapbook-open-book" onClick={() => { setBookPage(0); setBookOpen(true); }}><span>📖</span><div><strong>Open my photobook</strong><small>{visibleBookPages.length ? `${visibleBookPages.length} visible page${visibleBookPages.length === 1 ? "" : "s"}` : "Choose pages to show in your book"}</small></div><b>Open →</b></button>
     {contentPages.length > 0 && <details className="scrapbook-visibility-settings"><summary><span>Photobook Pages</span><small>{visibleBookPages.length} of {contentPages.length} shown</small><b>⌄</b></summary><div>{contentPages.map((page, index) => <label key={page.id}><span><b>Page {index + 1}</b><small>{page.title}</small></span><input type="checkbox" checked={!page.hiddenFromPhotobook} onChange={() => togglePageVisibility(page.id)} /><i /></label>)}</div></details>}
