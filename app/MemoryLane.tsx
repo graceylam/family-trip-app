@@ -32,6 +32,8 @@ type MemoryLaneProps = {
   onDeleteScrapbookEntry: (dayId: string, stopId: string, entryId: string) => void;
   onUpdateMapPhotos: (dayId: string, stopId: string, photoIds: string[]) => void;
   onUpdateDayStory: (dayId: string, changes: Partial<Pick<TripDay, "storyTitle" | "coverPhotoId" | "stories">>) => void;
+  highlights: TripStory[];
+  onUpdateHighlights: (highlights: TripStory[]) => void;
   onFocusLocation: (dayId: string, stopId: string) => void;
   onLocationChange: (dayId: string, stopId: string, value: string) => void;
   onUseTypedLocation: (dayId: string, stopId: string) => void;
@@ -366,6 +368,8 @@ export default function MemoryLane({
   onDeleteScrapbookEntry,
   onUpdateMapPhotos,
   onUpdateDayStory,
+  highlights,
+  onUpdateHighlights,
   onFocusLocation,
   onLocationChange,
   onUseTypedLocation,
@@ -749,11 +753,12 @@ export default function MemoryLane({
       )}
 
       <StoryBuilder
-        day={selectedDay}
+        days={days}
         currentMember={currentMember}
-        photos={availableDayPhotos}
+        photos={sharedPhotos}
         photoUrls={sharedPhotoUrls}
-        onChange={(stories: TripStory[]) => onUpdateDayStory(selectedDay.id, { stories })}
+        highlights={highlights}
+        onChange={onUpdateHighlights}
       />
 
       <div className={`memory-lane-layout ${memoryView}-focus`}>

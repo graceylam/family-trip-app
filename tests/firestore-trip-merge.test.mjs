@@ -78,3 +78,20 @@ test("still preserves both versions when two people change the same stop field",
   assert.equal(merged.days[0].stops[1].title, "Palace (Mama's version)");
 });
 
+test("preserves trip-wide highlights created concurrently by different members", () => {
+  const current = structuredClone(base);
+  current.revision = 2;
+  current.highlights = [{
+    id: "grace-highlight", title: "Vienna favourites", memberId: "grace", memberName: "Grace",
+    status: "finished", slides: [], createdAt: "2026-10-25T01:00:00.000Z", updatedAt: "2026-10-25T01:00:00.000Z",
+  }];
+  const submitted = structuredClone(base);
+  submitted.highlights = [{
+    id: "mama-highlight", title: "Our funniest moments", memberId: "mama", memberName: "Mama",
+    status: "draft", slides: [], createdAt: "2026-10-25T01:01:00.000Z", updatedAt: "2026-10-25T01:01:00.000Z",
+  }];
+
+  const merged = mergeTripState(current, submitted, base, "Mama", false);
+
+  assert.deepEqual(merged.highlights.map((highlight) => highlight.id), ["grace-highlight", "mama-highlight"]);
+});

@@ -30,7 +30,7 @@ service cloud.firestore {
 
     function validItineraryState(tripId) {
       return request.resource.data.keys().hasOnly([
-          "schemaVersion", "tripId", "tripName", "coverPhotoId", "days", "members",
+          "schemaVersion", "tripId", "tripName", "coverPhotoId", "days", "members", "highlights",
           "revision", "updatedAt", "updatedByUid", "updatedByName"
         ]) &&
         request.resource.data.schemaVersion == 1 &&
@@ -39,6 +39,7 @@ service cloud.firestore {
         request.resource.data.coverPhotoId is string &&
         request.resource.data.days is list &&
         request.resource.data.members is list &&
+        (!request.resource.data.keys().hasAny(["highlights"]) || request.resource.data.highlights is list) &&
         request.resource.data.revision is int &&
         request.resource.data.revision >= 1 &&
         request.resource.data.updatedByUid == request.auth.uid;

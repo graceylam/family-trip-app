@@ -146,3 +146,10 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 - Saved stories live in the shared Firebase trip JSON and carry creator identity and timestamps. Concurrent story additions merge by story ID, so one member's new story does not overwrite another's.
 - The next agreed Memory Lane phases remain: expand the entirely user-authored per-day scrapbook (free text, arbitrary emoji, configurable tape/borders, optional weather and animated stickers), then rebuild Highlight Video Studio around themes, selected media, bundled royalty-free music and native iOS export.
 - On-device Story Builder review showed that the initial mobile editor looked like a single static photo because its large preview appeared before the controls. The creation flow now opens an explicit photo-or-text chooser first; editing controls appear before a smaller preview on phones, and the picker is layered above the editor correctly.
+
+### Superseded by trip-wide Highlights
+
+- The day-owned Story prototype above has been replaced by trip-wide `Highlights`; a Highlight is deliberately independent of any one itinerary day.
+- Creation is title-first, followed by photos chosen from anywhere in the trip. Each vertical slide supports freely positioned text, arbitrary emoji and decorative stickers that can be dragged, resized and rotated.
+- Highlights are shared in the trip JSON, retain creator ownership for editing/deletion, merge safely by ID, and play as full-screen timed slideshows.
+- The scrapbook remains a separate, collaborative per-day canvas. The later Movie Studio will support both an automatic themed render and a manual editor; it is intentionally not part of this Highlights-first change.

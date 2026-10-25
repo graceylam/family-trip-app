@@ -143,6 +143,19 @@ export type TripStorySlide = {
   emoji: string;
   background: string;
   duration: number;
+  elements?: TripHighlightElement[];
+};
+
+export type TripHighlightElement = {
+  id: string;
+  kind: "text" | "emoji" | "sticker";
+  value: string;
+  x: number;
+  y: number;
+  scale: number;
+  rotation: number;
+  color: string;
+  background?: string;
 };
 
 export type TripStory = {
@@ -167,6 +180,7 @@ export type SharedTripState = {
   coverPhotoId?: string;
   days: TripDay[];
   members: TripMember[];
+  highlights?: TripStory[];
   updatedAt: string;
   revision: number;
 };

@@ -282,6 +282,7 @@ export function mergeTripState(
     coverPhotoId: isAdmin ? mergeValue(current.coverPhotoId, authorized.coverPhotoId, base.coverPhotoId) : current.coverPhotoId,
     days: mergeDays(current.days, authorized.days, base.days, contributorName, isAdmin),
     members: isAdmin ? mergeMembers(current.members, authorized.members, base.members) : current.members,
+    highlights: mergeStories(current.highlights ?? [], authorized.highlights ?? [], base.highlights ?? []),
     revision: current.revision,
     updatedAt: current.updatedAt,
   };
