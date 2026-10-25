@@ -18,6 +18,10 @@ const textStyles: Array<NonNullable<TripScrapbookPageElement["textStyle"]>> = ["
 const attachments: Array<NonNullable<TripScrapbookPageElement["attachment"]>> = ["none", "tape", "pin", "clip", "postmark"];
 const frames: Array<NonNullable<TripScrapbookPageElement["frame"]>> = ["none", "white", "polaroid", "film", "postcard"];
 
+function displayLabel(value: string): string {
+  return value.split("-").map((word) => word ? word[0].toUpperCase() + word.slice(1) : word).join(" ");
+}
+
 function isDarkPaper(background: string): boolean {
   if (background.includes("#151515") || background.includes("#393939")) return true;
   const hex = background.trim().match(/^#([0-9a-f]{6})$/i)?.[1];
@@ -38,7 +42,7 @@ function newPage(member: TripMember, pageType: TripScrapbookPage["pageType"], da
   if (template === "pinboard") elements.push({ ...item("text", "Pin your favourite moments here", 50, 22, 60), textStyle: "cutout" }, { ...item("decoration", "clip", 50, 47, 13), attachment: "clip" });
   if (template === "postcard") elements.push({ ...item("text", "Wish you were here", 52, 34, 64), textStyle: "outline" }, item("sticker", "✈️", 78, 73, 15, 12));
   if (template === "film") elements.push({ ...item("text", "Scenes from our adventure", 50, 18, 70), textStyle: "label", colour: "#fffdf8" }, { ...item("sticker", "✦", 84, 78, 12, 8), colour: "#fffdf8" });
-  return { id: crypto.randomUUID(), title: day ? `${day.label} recap` : template === "blank" ? "Untitled scrapbook" : template.replace("-", " "), pageType, template: pageType === "freeform" ? template : undefined, dayId: day?.id, background: templateBackgrounds[template], freeText: "", favouriteThings: ["", "", ""], weather: "", weatherTemperature: "", weatherDescription: "", steps: "", distance: "", favouriteMemory: "", elements, memberId: member.id, memberName: member.name, contributorNames: [member.name], createdAt: now, updatedAt: now };
+  return { id: crypto.randomUUID(), title: day ? `${day.label} Recap` : template === "blank" ? "Untitled Scrapbook" : displayLabel(template), pageType, template: pageType === "freeform" ? template : undefined, dayId: day?.id, background: templateBackgrounds[template], freeText: "", favouriteThings: ["", "", ""], weather: "", weatherTemperature: "", weatherDescription: "", steps: "", distance: "", favouriteMemory: "", elements, memberId: member.id, memberName: member.name, contributorNames: [member.name], createdAt: now, updatedAt: now };
 }
 
 export default function ScrapbookStudio({ tripName, days, currentMember, media, mediaUrls, pages, onChange }: Props) {
@@ -69,7 +73,7 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
   function finishSwipe(event: ReactTouchEvent) { if (swipeStart === null) return; const distance = event.changedTouches[0].clientX - swipeStart; if (Math.abs(distance) > 45) turnPage(distance < 0 ? 1 : -1); setSwipeStart(null); }
   function addWallPhoto() { if (!wallPhotoId) return; addElement("photo", wallPhotoId, { caption: wallPhotoCaption.trim(), emoji: wallPhotoEmoji.trim(), attachment: wallPhotoDecoration, frame: "polaroid" }); setWallPhotoId(""); setWallPhotoCaption(""); setWallPhotoEmoji("✨"); setWallPhotoDecoration("tape"); }
   function update(changes: Partial<TripScrapbookPage>) { setDraft((page) => page ? { ...page, ...changes } : null); }
-  function save() { if (!draft) return; const contributors = [...new Set([...(draft.contributorNames ?? [draft.memberName]), ...(currentMember ? [currentMember.name] : [])])]; const saved = { ...draft, favouriteThings: [...draft.favouriteThings.slice(0, 3), "", "", ""].slice(0, 3), title: draft.title.trim() || "Untitled scrapbook", contributorNames: contributors, updatedAt: new Date().toISOString() }; onChange([...pages.filter((page) => page.id !== saved.id), saved]); setAddMenuOpen(false); setDraft(null); }
+  function save() { if (!draft) return; const contributors = [...new Set([...(draft.contributorNames ?? [draft.memberName]), ...(currentMember ? [currentMember.name] : [])])]; const saved = { ...draft, favouriteThings: [...draft.favouriteThings.slice(0, 3), "", "", ""].slice(0, 3), title: draft.title.trim() || "Untitled Scrapbook", contributorNames: contributors, updatedAt: new Date().toISOString() }; onChange([...pages.filter((page) => page.id !== saved.id), saved]); setAddMenuOpen(false); setDraft(null); }
   function addElement(kind: TripScrapbookPageElement["kind"], value: string, changes: Partial<TripScrapbookPageElement> = {}) { if (!draft) return; const created = { ...item(kind, value, 50, 45, kind === "emoji" || kind === "sticker" || kind === "decoration" ? 16 : 52), ...changes }; update({ elements: [...draft.elements, created] }); setSelectedElementId(created.id); setMediaPurpose(null); }
   function updateElement(changes: Partial<TripScrapbookPageElement>) { if (!draft || !selectedElementId) return; update({ elements: draft.elements.map((element) => element.id === selectedElementId ? { ...element, ...changes } : element) }); }
   function selectMedia(entry: SharedPhoto) { if (!draft) return; if (mediaPurpose === "recap") { update({ favouritePhotoId: entry.fileId }); setMediaPurpose(null); return; } if (draft.template === "photo-wall" && entry.mimeType.startsWith("image/")) { setWallPhotoId(entry.fileId); return; } addElement(entry.mimeType.startsWith("video/") ? "video" : "photo", entry.fileId); }
