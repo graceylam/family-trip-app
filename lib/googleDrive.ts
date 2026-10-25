@@ -192,6 +192,7 @@ export type TripScrapbookPage = {
   title: string;
   pageType: "day-recap" | "freeform" | "cover";
   coverStyle?: "journal" | "ring" | "album";
+  pageOrder?: number;
   template?: "blank" | "journal" | "pinboard" | "photo-wall" | "postcard" | "film";
   dayId?: string;
   background: string;
