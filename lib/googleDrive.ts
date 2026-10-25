@@ -182,7 +182,7 @@ export type TripScrapbookPageElement = {
   colour?: string;
   frame?: "none" | "white" | "polaroid" | "film" | "postcard";
   textStyle?: "classic" | "handwritten" | "cutout" | "outline" | "label";
-  attachment?: "none" | "tape" | "pin" | "clip";
+  attachment?: "none" | "tape" | "pin" | "clip" | "postmark";
 };
 
 export type TripScrapbookPage = {
