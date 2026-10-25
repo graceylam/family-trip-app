@@ -20,6 +20,9 @@ importers:
       firebase:
         specifier: ^12.17.1
         version: 12.17.1
+      html-to-image:
+        specifier: ^1.11.13
+        version: 1.11.13
       mapbox-gl:
         specifier: ^3.32.0
         version: 3.32.0
@@ -3800,6 +3803,9 @@ packages:
   hono@4.13.2:
     resolution: {integrity: sha512-JydRilDRkYBQMt9qR9U92mXxmbGqsqSn/IKOrh4e7/gEbn+0zSr8igTu0obwJoNGN4sez28DIql7FBHWydoJpA==}
     engines: {node: '>=16.9.0'}
+
+  html-to-image@1.11.13:
+    resolution: {integrity: sha512-cuOPoI7WApyhBElTTb9oqsawRvZ0rHhaHwghRLlTuffoD1B2aDemlCruLeZrUIIdvG7gs9xeELEPm6PhuASqrg==}
 
   http-errors@2.0.1:
     resolution: {integrity: sha512-4FbRdAX+bSdmo4AUFuS0WNiPz8NgFt+r8ThgNWmlrjQjt1Q7ZR9+zTlce2859x4KSXrwIsaeTqDoKQmtP8pLmQ==}
@@ -10045,6 +10051,8 @@ snapshots:
   highlight.js@10.7.3: {}
 
   hono@4.13.2: {}
+
+  html-to-image@1.11.13: {}
 
   http-errors@2.0.1:
     dependencies:
