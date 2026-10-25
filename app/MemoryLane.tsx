@@ -685,7 +685,7 @@ export default function MemoryLane({
         onChange={onUpdateHighlights}
       /><section className="memory-clips-coming"><span>▶</span><div><strong>Short clips are next</strong><small>Soon you&apos;ll be able to turn selected moments into a music-backed clip here.</small></div></section></>}
 
-      {memoryView === "days" && <ScrapbookStudio days={days} currentMember={currentMember} media={sharedMedia} mediaUrls={sharedPhotoUrls} pages={scrapbookPages} onChange={onUpdateScrapbookPages} />}
+      {memoryView === "days" && <ScrapbookStudio tripName={tripName} days={days} currentMember={currentMember} media={sharedMedia} mediaUrls={sharedPhotoUrls} pages={scrapbookPages} onChange={onUpdateScrapbookPages} />}
 
       {false && <div className="memory-lane-layout days-focus">
         <div className="memory-recap-column">

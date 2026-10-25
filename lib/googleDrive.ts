@@ -190,7 +190,8 @@ export type TripScrapbookPageElement = {
 export type TripScrapbookPage = {
   id: string;
   title: string;
-  pageType: "day-recap" | "freeform";
+  pageType: "day-recap" | "freeform" | "cover";
+  coverStyle?: "journal" | "ring" | "album";
   template?: "blank" | "journal" | "pinboard" | "photo-wall" | "postcard" | "film";
   dayId?: string;
   background: string;
