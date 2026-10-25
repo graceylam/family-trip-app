@@ -131,7 +131,29 @@ export type TripDay = {
   label: string;
   storyTitle?: string;
   coverPhotoId?: string;
+  stories?: TripStory[];
   stops: TripStop[];
+};
+
+export type TripStorySlide = {
+  id: string;
+  photoId?: string;
+  layout: "full" | "caption" | "quote" | "split";
+  text: string;
+  emoji: string;
+  background: string;
+  duration: number;
+};
+
+export type TripStory = {
+  id: string;
+  title: string;
+  memberId: string;
+  memberName: string;
+  status: "draft" | "finished";
+  slides: TripStorySlide[];
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type TripMember = {

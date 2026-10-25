@@ -5,11 +5,13 @@ import type {
   PlaceSuggestion,
   SharedPhoto,
   TripScrapbookEntry,
+  TripStory,
   TripDay,
   TripMember,
   TripStop,
 } from "../lib/googleDrive";
 import { createFamilyMap } from "../lib/mapbox";
+import StoryBuilder from "./StoryBuilder";
 
 type MemoryLaneProps = {
   tripName: string;
@@ -29,7 +31,7 @@ type MemoryLaneProps = {
   onAddScrapbookEntry: (dayId: string, stopId: string, entry: Omit<TripScrapbookEntry, "id" | "memberId" | "memberName" | "createdAt" | "updatedAt">) => void;
   onDeleteScrapbookEntry: (dayId: string, stopId: string, entryId: string) => void;
   onUpdateMapPhotos: (dayId: string, stopId: string, photoIds: string[]) => void;
-  onUpdateDayStory: (dayId: string, changes: Partial<Pick<TripDay, "storyTitle" | "coverPhotoId">>) => void;
+  onUpdateDayStory: (dayId: string, changes: Partial<Pick<TripDay, "storyTitle" | "coverPhotoId" | "stories">>) => void;
   onFocusLocation: (dayId: string, stopId: string) => void;
   onLocationChange: (dayId: string, stopId: string, value: string) => void;
   onUseTypedLocation: (dayId: string, stopId: string) => void;
@@ -745,6 +747,14 @@ export default function MemoryLane({
       {galleryState === "offline" && (
         <p className="gallery-alert">Memory Lane needs an internet connection to open shared photos. Saved itinerary details remain available.</p>
       )}
+
+      <StoryBuilder
+        day={selectedDay}
+        currentMember={currentMember}
+        photos={availableDayPhotos}
+        photoUrls={sharedPhotoUrls}
+        onChange={(stories: TripStory[]) => onUpdateDayStory(selectedDay.id, { stories })}
+      />
 
       <div className={`memory-lane-layout ${memoryView}-focus`}>
         <aside className="memory-map-column">

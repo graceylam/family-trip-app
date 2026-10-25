@@ -1,4 +1,4 @@
-import type { SharedTripState, TripDay, TripDocument, TripExpense, TripMember, TripScrapbookEntry, TripStop, TripStopMemory } from "./googleDrive";
+import type { SharedTripState, TripDay, TripDocument, TripExpense, TripMember, TripScrapbookEntry, TripStory, TripStop, TripStopMemory } from "./googleDrive";
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -64,6 +64,19 @@ function mergeScrapbookEntries(current: TripScrapbookEntry[], submitted: TripScr
   });
   const submittedIds = new Set(submitted.map((entry) => entry.id));
   return result.filter((entry) => submittedIds.has(entry.id) || !baseItems.has(entry.id));
+}
+
+function mergeStories(current: TripStory[], submitted: TripStory[], base: TripStory[]): TripStory[] {
+  const result = current.map(clone);
+  const baseItems = byId(base);
+  submitted.forEach((story) => {
+    const index = result.findIndex((item) => item.id === story.id);
+    if (index < 0) result.push(clone(story));
+    else if (json(result[index]) === json(baseItems.get(story.id)) || json(result[index]) === json(story)) result[index] = clone(story);
+    else if ((Date.parse(story.updatedAt) || 0) >= (Date.parse(result[index].updatedAt) || 0)) result[index] = clone(story);
+  });
+  const submittedIds = new Set(submitted.map((story) => story.id));
+  return result.filter((story) => submittedIds.has(story.id) || !baseItems.has(story.id));
 }
 
 function mergeExpenses(current: TripExpense[], submitted: TripExpense[], base: TripExpense[], contributorName: string): TripExpense[] {
@@ -212,6 +225,7 @@ function mergeDays(current: TripDay[], submitted: TripDay[], base: TripDay[], co
     if (isAdmin) currentDay.label = mergeValue(currentDay.label, submittedDay.label, baseDay.label);
     currentDay.storyTitle = mergeValue(currentDay.storyTitle, submittedDay.storyTitle, baseDay.storyTitle);
     currentDay.coverPhotoId = mergeValue(currentDay.coverPhotoId, submittedDay.coverPhotoId, baseDay.coverPhotoId);
+    currentDay.stories = mergeStories(currentDay.stories ?? [], submittedDay.stories ?? [], baseDay.stories ?? []);
     currentDay.stops = mergeStops(currentDay.stops, submittedDay.stops, baseDay.stops, contributorName);
   });
   const submittedIds = new Set(submitted.map((day) => day.id));

@@ -137,3 +137,11 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 - The opened-trip cover veil was reduced from roughly 80% to roughly 60% opacity so the cover remains recognisable while the white hero text and controls retain contrast. The shelf treatment is unchanged.
 - Memory Lane day-cover photos now have a gentle, even dark veil with a slightly stronger lower edge, keeping the chosen memory visible while maintaining white-text contrast.
 - The Memory Lane veil was subsequently deepened by one small step after on-device review; this change applies only to day covers in Memory Lane.
+
+## Memory Lane Story Builder MVP (2026-10-25)
+
+- Each trip day now has a Stories studio without replacing the existing scrapbook or Memory Map.
+- Any joined group member can create a personal vertical story, add photo or text slides, reorder slides, choose full-photo/caption/quote/split layouts, enter free text and any emoji, choose a colour and set slide duration.
+- Stories can be saved as drafts or finished stories, previewed in an edge-to-edge tap-through player, reopened by their creator and deleted only by their creator.
+- Saved stories live in the shared Firebase trip JSON and carry creator identity and timestamps. Concurrent story additions merge by story ID, so one member's new story does not overwrite another's.
+- The next agreed Memory Lane phases remain: expand the entirely user-authored per-day scrapbook (free text, arbitrary emoji, configurable tape/borders, optional weather and animated stickers), then rebuild Highlight Video Studio around themes, selected media, bundled royalty-free music and native iOS export.

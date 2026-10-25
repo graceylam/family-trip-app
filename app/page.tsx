@@ -2065,7 +2065,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     setShowEditDay(false);
   }
 
-  function updateDayStory(dayId: string, changes: Partial<Pick<TripDay, "storyTitle" | "coverPhotoId">>) {
+  function updateDayStory(dayId: string, changes: Partial<Pick<TripDay, "storyTitle" | "coverPhotoId" | "stories">>) {
     if (!currentMember) return;
     setDays((current) => current.map((day) => day.id === dayId ? { ...day, ...changes } : day));
   }
