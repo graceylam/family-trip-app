@@ -1913,3 +1913,5 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 /* Keep photobook export controls secondary to the page itself. */
 .scrapbook-export-pdf { top: max(calc(env(safe-area-inset-top) + 9px),calc(50% - 437px)); right: max(152px,calc(50% - 238px)); bottom: auto; left: auto; min-height: 34px; padding: 7px 10px; border-radius: 9px; box-shadow: none; }
 .scrapbook-save-page { right: max(118px,calc(50% - 175px)); bottom: max(78px,calc(env(safe-area-inset-bottom) + 66px)); left: auto; min-height: 34px; padding: 7px 10px; border-radius: 999px; box-shadow: 0 5px 14px rgba(23,48,59,.2); }
+.scrapbook-editor-save-photo { position: fixed; z-index: 2520; top: max(10px,calc(env(safe-area-inset-top) + 8px)); right: 112px; min-height: 36px; padding: 7px 10px; border: 1px solid #bfd0d3; border-radius: 10px; color: #315f76; background: #f8fbfa; font-size: .58rem; font-weight: 850; box-shadow: none; }
+.scrapbook-editor-save-photo:disabled { opacity: .62; }

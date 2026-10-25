@@ -94,6 +94,30 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
     } catch (error) { setPageExportStatus(error instanceof Error ? error.message : "The page could not be saved."); }
     window.setTimeout(() => setPageExportStatus(""), 2600);
   }
+  async function saveDraftToPhotos() {
+    const canvas = document.querySelector<HTMLElement>(".scrapbook-editor .scrapbook-canvas");
+    if (!canvas || !draft) return;
+    setSelectedElementId("");
+    setPageExportStatus("Saving…");
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    try {
+      const data = await captureNodeReliably(canvas);
+      const blob = await (await fetch(data)).blob();
+      if (canSaveDirectlyToPhotos()) await saveBlobToNativePhotos(blob, "image/png");
+      else {
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = "Zora Scrapbook Page.png";
+        anchor.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+      setPageExportStatus(canSaveDirectlyToPhotos() ? "Page saved to Photos" : "Page downloaded");
+    } catch (error) {
+      setPageExportStatus(error instanceof Error ? error.message : "The page could not be saved.");
+    }
+    window.setTimeout(() => setPageExportStatus(""), 2600);
+  }
   useEffect(() => { if (!bookOpen || bookPage === 0) return; const page = contentPages[bookPage - 1]; const nodes = document.querySelectorAll<HTMLElement>(".scrapbook-reader-page .scrapbook-reader-element"); nodes.forEach((node, index) => { const element = page?.elements[index]; if (!element) return; node.classList.add("scrapbook-canvas-element", `text-${element.textStyle || "classic"}`, `attach-${element.attachment || "none"}`); node.style.color = ["cutout", "outline", "label"].includes(element.textStyle ?? "") || element.colour === "#294552" && isDarkPaper(page.background) ? "#fffdf8" : element.colour; }); }, [bookOpen, bookPage, contentPages]);
   useEffect(() => { if (!bookOpen) return; const dots = document.querySelectorAll<HTMLButtonElement>(".scrapbook-reader > footer > div button"); dots.forEach((dot, index) => { dot.hidden = index > 0 && Boolean(contentPages[index - 1]?.hiddenFromPhotobook); }); const position = bookPage === 0 ? 0 : visibleBookIndices.indexOf(bookPage) + 1; const label = document.querySelector<HTMLElement>(".scrapbook-reader > header > div:first-child > strong"); if (label) label.textContent = bookPage === 0 ? "Cover" : `${position} of ${visibleBookPages.length}`; }, [bookOpen, bookPage, contentPages, visibleBookIndices, visibleBookPages.length]);
   async function exportBookAsPdf() {
@@ -179,6 +203,7 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
     {bookOpen && bookPage > 0 && !arranging && <button className="scrapbook-save-page" onClick={() => void saveCompleteReaderPage()} disabled={pageExportStatus === "Saving…" || pageExportStatus === "Building PDF…"} aria-label="Save page to Photos">↓ {pageExportStatus === "Saving…" ? "Saving…" : "Save Page"}</button>}
     {bookOpen && !arranging && <button className="scrapbook-export-pdf" onClick={() => void exportBookAsPdf()} disabled={!visibleBookPages.length || pageExportStatus === "Building PDF…"}>↥ {pageExportStatus === "Building PDF…" ? "Building…" : "Export PDF"}</button>}
     {pageExportStatus && pageExportStatus !== "Saving…" && <div className="scrapbook-export-toast" role="status">{pageExportStatus}</div>}
+    {draft && <button className="scrapbook-editor-save-photo" onClick={() => void saveDraftToPhotos()} disabled={pageExportStatus === "Saving…"}>↓ {pageExportStatus === "Saving…" ? "Saving…" : "Save to Photos"}</button>}
     <button className="scrapbook-open-book" onClick={() => { setBookPage(0); setBookOpen(true); }}><span>📖</span><div><strong>Open my photobook</strong><small>{visibleBookPages.length ? `${visibleBookPages.length} visible page${visibleBookPages.length === 1 ? "" : "s"}` : "Choose pages to show in your book"}</small></div><b>Open →</b></button>
     {contentPages.length > 0 && <details className="scrapbook-visibility-settings"><summary><span>Photobook Pages</span><small>{visibleBookPages.length} of {contentPages.length} shown</small><b>⌄</b></summary><div>{contentPages.map((page, index) => <label key={page.id}><span><b>Page {index + 1}</b><small>{page.title}</small></span><input type="checkbox" checked={!page.hiddenFromPhotobook} onChange={() => togglePageVisibility(page.id)} /><i /></label>)}</div></details>}
     {contentPages.length > 0 && <section className="scrapbook-page-previews"><div className="scrapbook-page-previews-heading"><strong>Your pages</strong><small>Tap any page to edit</small></div><div>{contentPages.map((page, index) => <article style={{ background: page.background }} key={page.id}><button onClick={() => { setDraft({ ...structuredClone(page), favouriteThings: [...(page.favouriteThings ?? []).slice(0, 3), "", "", ""].slice(0, 3) }); setSelectedElementId(""); }}><div className="scrapbook-preview-canvas">{page.pageType === "day-recap" && <div className="scrapbook-preview-recap"><b>{page.freeText || "Day recap"}</b>{page.favouriteThings.filter(Boolean).slice(0, 3).map((thing) => <i key={thing}>{thing}</i>)}</div>}{page.elements.slice(0, 12).map((element, elementIndex) => <span className={`scrapbook-preview-element ${element.kind} frame-${element.frame || "none"}`} style={{ zIndex: elementIndex + 1, left: `${element.x}%`, top: `${element.y}%`, width: `${element.width}%`, transform: `translate(-50%,-50%) rotate(${element.rotation}deg)` }} key={element.id}>{element.kind === "photo" ? <img src={mediaUrls[element.value]} alt="" /> : element.kind === "video" ? <span>▶</span> : element.kind === "decoration" ? element.attachment === "pin" ? "●" : element.attachment === "clip" ? "⌇" : element.attachment === "postmark" ? "◎" : "▰" : element.value}</span>)}</div><div className="scrapbook-preview-caption"><span>Page {index + 1}</span><strong>{page.title}</strong><small>By {(page.contributorNames?.length ? page.contributorNames : [page.memberName]).join(", ")}</small></div></button>{page.memberId === currentMember?.id && <button className="scrapbook-page-delete" onClick={() => window.confirm(`Delete “${page.title}”?`) && onChange(pages.filter((entry) => entry.id !== page.id))} aria-label={`Delete ${page.title}`}>×</button>}</article>)}</div></section>}
