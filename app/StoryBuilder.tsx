@@ -51,9 +51,9 @@ export default function StoryBuilder({ day, currentMember, photos, photoUrls, on
   function startStory() {
     if (!currentMember) return;
     const now = new Date().toISOString();
-    const first = newSlide(availablePhotos[0]?.fileId);
-    setDraft({ id: crypto.randomUUID(), title: `${day.label} Story`, memberId: currentMember.id, memberName: currentMember.name, status: "draft", slides: [first], createdAt: now, updatedAt: now });
-    setSelectedSlideId(first.id);
+    setDraft({ id: crypto.randomUUID(), title: `${day.label} Story`, memberId: currentMember.id, memberName: currentMember.name, status: "draft", slides: [], createdAt: now, updatedAt: now });
+    setSelectedSlideId("");
+    setShowPhotoPicker(true);
   }
 
   function editStory(story: TripStory) {
@@ -112,7 +112,7 @@ export default function StoryBuilder({ day, currentMember, photos, photoUrls, on
       <header><button className="story-builder-close" onClick={() => setDraft(null)} aria-label="Close">×</button><div><p className="eyebrow">Story Builder</p><input id="story-builder-title" value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} aria-label="Story title" /></div><button className="text-button" onClick={() => saveStory("draft")}>Save draft</button></header>
       <div className="story-builder-body">
         <aside className="story-slide-rail"><button className="story-add-slide" onClick={() => setShowPhotoPicker(true)}>＋</button>{draft.slides.map((slide, index) => <div className={slide.id === selectedSlide?.id ? "active" : ""} key={slide.id}><button onClick={() => setSelectedSlideId(slide.id)}><small>{index + 1}</small>{slide.photoId && photoUrls[slide.photoId] ? <img src={photoUrls[slide.photoId]} alt="" /> : <span style={{ background: slide.background }}>{slide.emoji}</span>}</button><nav><button onClick={() => moveSlide(index, -1)} disabled={index === 0}>↑</button><button onClick={() => moveSlide(index, 1)} disabled={index === draft.slides.length - 1}>↓</button></nav></div>)}</aside>
-        {selectedSlide && <main className="story-editing-area">
+        {selectedSlide ? <main className="story-editing-area">
           <div className={`story-phone-preview layout-${selectedSlide.layout}`} style={{ background: selectedSlide.background }}>
             {selectedSlide.photoId && photoUrls[selectedSlide.photoId] && <img src={photoUrls[selectedSlide.photoId]} alt="Story preview" />}
             <div><b>{selectedSlide.emoji}</b>{selectedSlide.text && <p>{selectedSlide.text}</p>}</div>
@@ -125,12 +125,12 @@ export default function StoryBuilder({ day, currentMember, photos, photoUrls, on
             <label><span>Slide duration</span><select value={selectedSlide.duration} onChange={(event) => updateSlide({ duration: Number(event.target.value) })}><option value={2}>2 seconds</option><option value={4}>4 seconds</option><option value={6}>6 seconds</option><option value={8}>8 seconds</option></select></label>
             <div className="story-control-actions"><button className="secondary-button" onClick={() => setShowPhotoPicker(true)}>Change/Add photos</button><button className="danger-button" disabled={draft.slides.length === 1} onClick={() => { const remaining = draft.slides.filter((slide) => slide.id !== selectedSlide.id); setDraft({ ...draft, slides: remaining }); setSelectedSlideId(remaining[0]?.id ?? ""); }}>Delete slide</button></div>
           </div>
-        </main>}
+        </main> : <main className="story-builder-welcome"><span>✦</span><h2>Choose how your story begins</h2><p>Add a snapshot from this day, or begin with a text and emoji card.</p><div><button className="primary-button" onClick={() => setShowPhotoPicker(true)}>Choose a photo</button><button className="secondary-button" onClick={() => { const slide = newSlide(); setDraft({ ...draft, slides: [slide] }); setSelectedSlideId(slide.id); }}>Add text slide</button></div></main>}
       </div>
       <footer><span>{draft.slides.length} slide{draft.slides.length === 1 ? "" : "s"}</span><div><button className="secondary-button" onClick={() => { setPlaying(draft); setPlayIndex(0); }}>Preview</button><button className="primary-button" onClick={() => saveStory("finished")}>Finish Story</button></div></footer>
     </section></div>}
 
-    {showPhotoPicker && draft && <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowPhotoPicker(false)}><section className="modal story-photo-picker" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><h2>Choose snapshots</h2><p className="modal-copy">Tap one or more photos to add them as new slides.</p><div>{availablePhotos.map((photo) => <button onClick={() => addSlides([photo.fileId])} key={photo.fileId}><img src={photoUrls[photo.fileId]} alt={photo.name} /><span>＋</span></button>)}</div><div className="modal-actions"><button className="secondary-button" onClick={() => setShowPhotoPicker(false)}>Done</button><button className="primary-button" onClick={() => { const slide = newSlide(); setDraft({ ...draft, slides: [...draft.slides, slide] }); setSelectedSlideId(slide.id); setShowPhotoPicker(false); }}>Add text slide</button></div></section></div>}
+    {showPhotoPicker && draft && <div className="modal-backdrop story-photo-picker-backdrop" role="presentation" onMouseDown={() => setShowPhotoPicker(false)}><section className="modal story-photo-picker" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><h2>How should your story begin?</h2><p className="modal-copy">Choose a snapshot from this day, or start with your own words.</p>{availablePhotos.length ? <div>{availablePhotos.map((photo) => <button onClick={() => addSlides([photo.fileId])} key={photo.fileId}><img src={photoUrls[photo.fileId]} alt={photo.name} /><span>＋</span></button>)}</div> : <p className="story-picker-empty">There are no shared snapshots for this day yet. You can still make a text story.</p>}<div className="modal-actions"><button className="secondary-button" onClick={() => setShowPhotoPicker(false)}>Cancel</button><button className="primary-button" onClick={() => { const slide = newSlide(); setDraft({ ...draft, slides: [...draft.slides, slide] }); setSelectedSlideId(slide.id); setShowPhotoPicker(false); }}>Start with text</button></div></section></div>}
 
     {playing && playing.slides[playIndex] && (() => { const slide = playing.slides[playIndex]; return <div className={`story-player layout-${slide.layout}`} role="dialog" aria-modal="true" style={{ background: slide.background }} onClick={() => playIndex < playing.slides.length - 1 ? setPlayIndex(playIndex + 1) : setPlaying(null)}>
       <div className="story-progress">{playing.slides.map((_, index) => <i className={index <= playIndex ? "active" : ""} key={index} />)}</div><header><strong>{playing.title}</strong><button onClick={(event) => { event.stopPropagation(); setPlaying(null); }}>×</button></header>
