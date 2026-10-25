@@ -165,7 +165,8 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 ## Digital Scrapbook Studio (2026-10-25)
 
 - The former day/stop recap layout is replaced by a page library. Members can create either an original freeform page or an optional guided Day Recap page, so chronology is a template rather than a restriction.
-- Day Recap includes free writing, three favourite things, split temperature/description weather fields, optional steps/distance, a favourite-memory prompt and one optional photo or video at the bottom. Existing recap pages remain compatible and are normalised to three favourites when edited.
+- Day Recap includes free writing, three favourite things, split temperature/description weather fields, optional steps/distance and one optional photo or video at the bottom. Existing recap pages remain compatible and are normalised to three favourites when edited.
+- The Day Recap ending is now `Snapshot of the day`: one optional photo or video, without the former favourite-memory writing prompt. The existing media field remains backward-compatible with saved recaps.
 - Page elements can be dragged, resized and rotated on coloured paper. Scrapbook pages are stored in shared trip state, carry creator identity and merge safely by page ID.
 - Freeform pages now include original Zora blank, journal, pinboard, photo-wall, postcard and film-inspired starting templates. Members can mix photos, videos, classic/handwritten/cut-out/outline/label text, arbitrary emoji, stickers, coloured tape, pins and clips.
 - Photos and videos can use plain, white, Polaroid, film or postcard frames, with tape/pin/clip attachments. Selected elements can also move forward/backward, duplicate, resize, rotate or be deleted for a more tactile layered-page feel.
