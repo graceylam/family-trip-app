@@ -1767,7 +1767,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 /* In-trip cover hero: one consistent dark veil keeps every control readable. */
 .adventure-hero.has-trip-cover { isolation: isolate; }
-.adventure-hero.has-trip-cover::before { z-index: 0; background: rgba(5,14,19,.79); }
+.adventure-hero.has-trip-cover::before { z-index: 0; background: rgba(5,14,19,.6); }
 .adventure-hero.has-trip-cover .hero-copy { position: relative; z-index: 1; }
 .adventure-hero.has-trip-cover .trip-title-input { color: #fffaf2; }
 .adventure-hero.has-trip-cover .trip-title-input:hover,
@@ -1781,4 +1781,4 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .adventure-hero.has-trip-cover .settings-button .app-icon { color: #f6fafb; }
 .adventure-hero.has-trip-cover .overview-button:hover,
 .adventure-hero.has-trip-cover .settings-button:hover { border-color: rgba(255,255,255,.5); color: #fff; background: rgba(7,18,24,.66); }
-@media (max-width: 760px) { .adventure-hero.has-trip-cover::before { background: rgba(5,14,19,.83); } }
+@media (max-width: 760px) { .adventure-hero.has-trip-cover::before { background: rgba(5,14,19,.62); } }
