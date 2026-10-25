@@ -135,3 +135,4 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 - Expense quick entry still records the signed-in member by default. A collapsed `Expense for someone else?` control lets a member attribute the entry to another current group member when needed.
 - The native iPhone launch asset and the in-app loader now share the corrected lower artwork: relaxed layered mountain ridges, a pale lake, soft reflections and the floating sun from the approved prototype. The corrected local build was installed directly on Grace's iPhone without TestFlight.
 - The opened-trip cover veil was reduced from roughly 80% to roughly 60% opacity so the cover remains recognisable while the white hero text and controls retain contrast. The shelf treatment is unchanged.
+- Memory Lane day-cover photos now have a gentle, even dark veil with a slightly stronger lower edge, keeping the chosen memory visible while maintaining white-text contrast.
