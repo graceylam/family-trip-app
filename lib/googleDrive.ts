@@ -152,6 +152,8 @@ export type TripHighlightElement = {
   id: string;
   kind: "text" | "emoji" | "sticker";
   value: string;
+  caption?: string;
+  emoji?: string;
   x: number;
   y: number;
   scale: number;
