@@ -1,4 +1,4 @@
-import type { SharedTripState, TripDay, TripDocument, TripExpense, TripMember, TripScrapbookEntry, TripStory, TripStop, TripStopMemory } from "./googleDrive";
+import type { SharedTripState, TripDay, TripDocument, TripExpense, TripMember, TripScrapbookEntry, TripScrapbookPage, TripStory, TripStop, TripStopMemory } from "./googleDrive";
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -77,6 +77,19 @@ function mergeStories(current: TripStory[], submitted: TripStory[], base: TripSt
   });
   const submittedIds = new Set(submitted.map((story) => story.id));
   return result.filter((story) => submittedIds.has(story.id) || !baseItems.has(story.id));
+}
+
+function mergeScrapbookPages(current: TripScrapbookPage[], submitted: TripScrapbookPage[], base: TripScrapbookPage[]): TripScrapbookPage[] {
+  const result = current.map(clone);
+  const baseItems = byId(base);
+  submitted.forEach((page) => {
+    const index = result.findIndex((item) => item.id === page.id);
+    if (index < 0) result.push(clone(page));
+    else if (json(result[index]) === json(baseItems.get(page.id)) || json(result[index]) === json(page)) result[index] = clone(page);
+    else if ((Date.parse(page.updatedAt) || 0) >= (Date.parse(result[index].updatedAt) || 0)) result[index] = clone(page);
+  });
+  const submittedIds = new Set(submitted.map((page) => page.id));
+  return result.filter((page) => submittedIds.has(page.id) || !baseItems.has(page.id));
 }
 
 function mergeExpenses(current: TripExpense[], submitted: TripExpense[], base: TripExpense[], contributorName: string): TripExpense[] {
@@ -283,6 +296,7 @@ export function mergeTripState(
     days: mergeDays(current.days, authorized.days, base.days, contributorName, isAdmin),
     members: isAdmin ? mergeMembers(current.members, authorized.members, base.members) : current.members,
     highlights: mergeStories(current.highlights ?? [], authorized.highlights ?? [], base.highlights ?? []),
+    scrapbookPages: mergeScrapbookPages(current.scrapbookPages ?? [], authorized.scrapbookPages ?? [], base.scrapbookPages ?? []),
     revision: current.revision,
     updatedAt: current.updatedAt,
   };

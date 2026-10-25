@@ -161,3 +161,10 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 - Days contains the day selector, collaborative scrapbook and the existing automatic `Create Day n Video` flow.
 - Map contains the photo map, photo-pin controls and Trip Statistics. Photos assigned to a stop now appear at its pin automatically.
 - Members can hide individual photos from a pin or hide an entire pin. These presentation choices are reversible and never delete the source photo, itinerary stop or saved location; newly uploaded stop photos appear automatically unless explicitly hidden.
+
+## Digital Scrapbook Studio (2026-10-25)
+
+- The former day/stop recap layout is replaced by a page library. Members can create either an original freeform page or an optional guided Day Recap page, so chronology is a template rather than a restriction.
+- Day Recap includes free writing, five favourite things, weather, optional steps/distance and a favourite-memory prompt. Blank pages support trip-wide photos and videos, text, arbitrary emoji and stickers.
+- Page elements can be dragged, resized and rotated on coloured paper. Scrapbook pages are stored in shared trip state, carry creator identity and merge safely by page ID.
+- The Memory Map is now one combined all-trip map. Its management list is collapsed by default; opening it asks for a day before showing that day's stops, preventing an overwhelming list.

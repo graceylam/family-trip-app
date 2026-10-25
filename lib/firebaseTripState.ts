@@ -26,6 +26,7 @@ function cleanTripState(value: Partial<SharedTripState>, tripId: string): Shared
     days,
     members,
     highlights: Array.isArray(value.highlights) ? value.highlights : [],
+    scrapbookPages: Array.isArray(value.scrapbookPages) ? value.scrapbookPages : [],
     updatedAt: String(value.updatedAt || new Date().toISOString()),
     revision: Math.max(1, Math.floor(Number(value.revision) || 1)),
   };

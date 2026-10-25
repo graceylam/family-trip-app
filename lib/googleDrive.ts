@@ -171,6 +171,38 @@ export type TripStory = {
   updatedAt: string;
 };
 
+export type TripScrapbookPageElement = {
+  id: string;
+  kind: "text" | "photo" | "video" | "emoji" | "sticker";
+  value: string;
+  x: number;
+  y: number;
+  width: number;
+  rotation: number;
+  colour?: string;
+  frame?: "none" | "polaroid" | "postcard";
+};
+
+export type TripScrapbookPage = {
+  id: string;
+  title: string;
+  pageType: "day-recap" | "freeform";
+  dayId?: string;
+  background: string;
+  freeText: string;
+  favouriteThings: string[];
+  weather: string;
+  steps: string;
+  distance: string;
+  favouriteMemory: string;
+  favouritePhotoId?: string;
+  elements: TripScrapbookPageElement[];
+  memberId: string;
+  memberName: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type TripMember = {
   id: string;
   name: string;
@@ -183,6 +215,7 @@ export type SharedTripState = {
   days: TripDay[];
   members: TripMember[];
   highlights?: TripStory[];
+  scrapbookPages?: TripScrapbookPage[];
   updatedAt: string;
   revision: number;
 };

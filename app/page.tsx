@@ -48,6 +48,7 @@ import {
   type TripMember,
   type TripStop,
   type TripScrapbookEntry,
+  type TripScrapbookPage,
   type TripStory,
   uploadDocumentToDrive,
 } from "../lib/googleDrive";
@@ -159,12 +160,12 @@ type PendingTripSave = {
   baseTrip: SharedTripState;
 };
 
-function tripFingerprint(tripName: string, coverPhotoId: string, days: TripDay[], members: TripMember[], highlights: TripStory[]): string {
-  return JSON.stringify({ tripName, coverPhotoId, days, members, highlights });
+function tripFingerprint(tripName: string, coverPhotoId: string, days: TripDay[], members: TripMember[], highlights: TripStory[], scrapbookPages: TripScrapbookPage[]): string {
+  return JSON.stringify({ tripName, coverPhotoId, days, members, highlights, scrapbookPages });
 }
 
 function sharedTripFingerprint(trip: SharedTripState): string {
-  return tripFingerprint(trip.tripName, trip.coverPhotoId || "", trip.days, trip.members, trip.highlights ?? []);
+  return tripFingerprint(trip.tripName, trip.coverPhotoId || "", trip.days, trip.members, trip.highlights ?? [], trip.scrapbookPages ?? []);
 }
 
 function normalizeSharedTripChronology(trip: SharedTripState): SharedTripState {
@@ -440,6 +441,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [tripSyncError, setTripSyncError] = useState<string | null>(null);
   const [days, setDays] = useState<TripDay[]>(workspaceInitialDays);
   const [highlights, setHighlights] = useState<TripStory[]>([]);
+  const [scrapbookPages, setScrapbookPages] = useState<TripScrapbookPage[]>([]);
   const [selectedDayId, setSelectedDayId] = useState(workspaceInitialDays[0]?.id || "");
   const [selectedStopId, setSelectedStopId] = useState("");
   const [inlineStopContainer, setInlineStopContainer] = useState<HTMLDivElement | null>(null);
@@ -538,6 +540,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     days: workspaceInitialDays,
     members: workspaceInitialMembers,
     highlights: [] as TripStory[],
+    scrapbookPages: [] as TripScrapbookPage[],
     revision: 1,
   });
   const placeSearchTimerRef = useRef<number | null>(null);
@@ -549,7 +552,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     () => members.find((member) => member.id === currentMemberId),
     [currentMemberId, members],
   );
-  latestTripDraftRef.current = { tripName, coverPhotoId: tripCoverPhotoId, days, members, highlights, revision: tripRevision };
+  latestTripDraftRef.current = { tripName, coverPhotoId: tripCoverPhotoId, days, members, highlights, scrapbookPages, revision: tripRevision };
 
   const processPendingTripSave = useCallback(async () => {
     if (
@@ -617,6 +620,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           setDays(chronologicalSaved.days);
           setMembers(chronologicalSaved.members);
           setHighlights(chronologicalSaved.highlights ?? []);
+          setScrapbookPages(chronologicalSaved.scrapbookPages ?? []);
           setTripRevision(chronologicalSaved.revision);
           setSelectedDayId((current) => chronologicalSaved.days.some((day) => day.id === current) ? current : chronologicalSaved.days[0]?.id ?? "");
           setSelectedStopId((current) => chronologicalSaved.days.some((day) => day.stops.some((stop) => stop.id === current))
@@ -697,6 +701,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
         setDays(chronologicalTrip.days);
         setMembers(chronologicalTrip.members);
         setHighlights(chronologicalTrip.highlights ?? []);
+        setScrapbookPages(chronologicalTrip.scrapbookPages ?? []);
         setCurrentMemberId((current) => {
           if (chronologicalTrip.members.some((member) => member.id === current)) return current;
           return chronologicalTrip.members.find((member) => member.name.toLocaleLowerCase("en-AU") === accountTrip.memberName.toLocaleLowerCase("en-AU"))?.id
@@ -762,6 +767,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     setDays(localTrip.days);
     setMembers(localTrip.members);
     setHighlights(localTrip.highlights ?? []);
+    setScrapbookPages(localTrip.scrapbookPages ?? []);
     setTripRevision(localTrip.revision);
     setLastTripSavedAt(window.localStorage.getItem(scopedStorageKey(lastTripSavedAtKey, sharedTripId))
       || (sharedTripId === legacySharedTripId ? window.localStorage.getItem(lastTripSavedAtKey) : null)
@@ -815,7 +821,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     const preservePendingOnExit = () => {
       const latest = latestTripDraftRef.current;
       const chronologicalDays = sortItineraryChronologically(latest.days);
-      const fingerprint = tripFingerprint(latest.tripName, latest.coverPhotoId, chronologicalDays, latest.members, latest.highlights);
+      const fingerprint = tripFingerprint(latest.tripName, latest.coverPhotoId, chronologicalDays, latest.members, latest.highlights, latest.scrapbookPages);
       const existing = pendingTripSaveRef.current;
       if ((fingerprint === lastSavedTripRef.current && !existing) || !lastSyncedTripRef.current) return;
       if (existing?.fingerprint === fingerprint) return;
@@ -830,6 +836,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           days: chronologicalDays,
           members: latest.members,
           highlights: latest.highlights,
+          scrapbookPages: latest.scrapbookPages,
           revision: latest.revision,
           updatedAt: new Date().toISOString(),
         },
@@ -936,6 +943,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
         setDays(chronologicalTrip.days);
         setMembers(chronologicalTrip.members);
         setHighlights(chronologicalTrip.highlights ?? []);
+        setScrapbookPages(chronologicalTrip.scrapbookPages ?? []);
         setTripRevision(chronologicalTrip.revision);
         setLastTripSavedAt(chronologicalTrip.updatedAt);
         window.localStorage.setItem(scopedStorageKey(lastTripSavedAtKey, sharedTripId), chronologicalTrip.updatedAt);
@@ -1055,7 +1063,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
   useEffect(() => {
     if (!hasLoadedLocalState || !sharedStateReady || !currentMember || !lastSyncedTripRef.current) return;
-    const fingerprint = tripFingerprint(tripName, tripCoverPhotoId, days, members, highlights);
+    const fingerprint = tripFingerprint(tripName, tripCoverPhotoId, days, members, highlights, scrapbookPages);
     const existingPending = pendingTripSaveRef.current;
     if (fingerprint === lastSavedTripRef.current && !existingPending) {
       setHasPendingTripSave(false);
@@ -1070,6 +1078,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
         days: sortItineraryChronologically(days),
         members,
         highlights,
+        scrapbookPages,
         revision: tripRevision,
         updatedAt: new Date().toISOString(),
       };
@@ -1096,7 +1105,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     }, 900);
 
     return () => window.clearTimeout(timeoutId);
-  }, [currentMember, days, hasLoadedLocalState, highlights, isOffline, members, processPendingTripSave, sharedStateReady, sharedTripId, tripCoverPhotoId, tripName, tripRevision, workspaceInitialName]);
+  }, [currentMember, days, hasLoadedLocalState, highlights, isOffline, members, processPendingTripSave, scrapbookPages, sharedStateReady, sharedTripId, tripCoverPhotoId, tripName, tripRevision, workspaceInitialName]);
 
   const selectedDay = useMemo(
     () => days.find((day) => day.id === selectedDayId) ?? days[0],
@@ -3093,6 +3102,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           days={days}
           currentMember={currentMember}
           sharedPhotos={sharedPhotos.filter((item) => item.mediaType === "photo")}
+          sharedMedia={sharedPhotos}
           sharedPhotoUrls={sharedPhotoUrls}
           galleryState={galleryState}
           galleryError={galleryError}
@@ -3109,6 +3119,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           onUpdateDayStory={updateDayStory}
           highlights={highlights}
           onUpdateHighlights={setHighlights}
+          scrapbookPages={scrapbookPages}
+          onUpdateScrapbookPages={setScrapbookPages}
           onFocusLocation={focusMemoryLocation}
           onLocationChange={(dayId, stopId, value) => handleLocationChangeForStop(stopId, value, dayId)}
           onUseTypedLocation={confirmTypedLocation}

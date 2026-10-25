@@ -95,3 +95,12 @@ test("preserves trip-wide highlights created concurrently by different members",
 
   assert.deepEqual(merged.highlights.map((highlight) => highlight.id), ["grace-highlight", "mama-highlight"]);
 });
+
+test("preserves scrapbook pages created concurrently by different members", () => {
+  const current = structuredClone(base); current.revision = 2;
+  current.scrapbookPages = [{ id: "day-one", title: "Day one", pageType: "day-recap", background: "#fff", freeText: "", favouriteThings: [], weather: "", steps: "", distance: "", favouriteMemory: "", elements: [], memberId: "grace", memberName: "Grace", createdAt: "2026-10-25T01:00:00.000Z", updatedAt: "2026-10-25T01:00:00.000Z" }];
+  const submitted = structuredClone(base);
+  submitted.scrapbookPages = [{ id: "food", title: "Best meals", pageType: "freeform", background: "#eef", freeText: "", favouriteThings: [], weather: "", steps: "", distance: "", favouriteMemory: "", elements: [], memberId: "mama", memberName: "Mama", createdAt: "2026-10-25T01:01:00.000Z", updatedAt: "2026-10-25T01:01:00.000Z" }];
+  const merged = mergeTripState(current, submitted, base, "Mama", false);
+  assert.deepEqual(merged.scrapbookPages.map((page) => page.id), ["day-one", "food"]);
+});
