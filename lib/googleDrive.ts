@@ -180,7 +180,7 @@ export type TripScrapbookPageElement = {
   width: number;
   rotation: number;
   colour?: string;
-  frame?: "none" | "polaroid" | "postcard";
+  frame?: "none" | "white" | "polaroid" | "film" | "postcard";
   textStyle?: "classic" | "handwritten" | "cutout" | "outline" | "label";
   attachment?: "none" | "tape" | "pin" | "clip";
 };
@@ -189,6 +189,7 @@ export type TripScrapbookPage = {
   id: string;
   title: string;
   pageType: "day-recap" | "freeform";
+  template?: "blank" | "journal" | "pinboard" | "photo-wall" | "postcard" | "film";
   dayId?: string;
   background: string;
   freeText: string;

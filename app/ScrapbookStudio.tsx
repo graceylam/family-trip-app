@@ -6,9 +6,17 @@ import type { SharedPhoto, TripDay, TripMember, TripScrapbookPage, TripScrapbook
 type Props = { days: TripDay[]; currentMember?: TripMember; media: SharedPhoto[]; mediaUrls: Record<string, string>; pages: TripScrapbookPage[]; onChange: (pages: TripScrapbookPage[]) => void };
 type Template = "blank" | "journal" | "pinboard" | "photo-wall" | "postcard" | "film";
 const papers = ["#fffaf0", "#eee6dc", "#eef6f5", "#f8eee9", "#f1edf7", "#edf3fa", "#dce9df"];
+const templateBackgrounds: Record<Template, string> = {
+  blank: papers[0],
+  journal: "repeating-linear-gradient(#fffaf0 0 37px, #d9e5e4 38px, #fffaf0 39px)",
+  pinboard: "radial-gradient(circle at 2px 2px, rgba(91,72,55,.12) 1px, transparent 1.5px) 0 0/12px 12px, #eee6dc",
+  "photo-wall": "linear-gradient(135deg, rgba(255,255,255,.42), transparent 55%), #f8eee9",
+  postcard: "repeating-linear-gradient(0deg, rgba(70,112,132,.05) 0 1px, transparent 1px 5px), #edf3fa",
+  film: "linear-gradient(90deg, rgba(39,60,70,.08) 0 3%, transparent 3% 97%, rgba(39,60,70,.08) 97%), #edf3e9",
+};
 const textStyles: Array<NonNullable<TripScrapbookPageElement["textStyle"]>> = ["classic", "handwritten", "cutout", "outline", "label"];
 const attachments: Array<NonNullable<TripScrapbookPageElement["attachment"]>> = ["none", "tape", "pin", "clip"];
-const frames: Array<NonNullable<TripScrapbookPageElement["frame"]>> = ["none", "polaroid", "postcard"];
+const frames: Array<NonNullable<TripScrapbookPageElement["frame"]>> = ["none", "white", "polaroid", "film", "postcard"];
 
 function item(kind: TripScrapbookPageElement["kind"], value: string, x: number, y: number, width = 45, rotation = 0): TripScrapbookPageElement {
   return { id: crypto.randomUUID(), kind, value, x, y, width, rotation, colour: "#294552", frame: kind === "photo" || kind === "video" ? "polaroid" : "none", textStyle: "classic", attachment: "none" };
@@ -18,9 +26,10 @@ function newPage(member: TripMember, pageType: TripScrapbookPage["pageType"], da
   const elements: TripScrapbookPageElement[] = [];
   if (template === "journal") elements.push({ ...item("text", "A little moment worth remembering…", 60, 40, 56, -2), textStyle: "handwritten" });
   if (template === "pinboard") elements.push({ ...item("text", "Pin your favourite moments here", 50, 22, 60), textStyle: "cutout" }, { ...item("decoration", "clip", 50, 47, 13), attachment: "clip" });
+  if (template === "photo-wall") elements.push({ ...item("text", "The moments we loved", 50, 15, 64), textStyle: "handwritten" }, { ...item("decoration", "tape", 26, 38, 22, -7), attachment: "tape" }, { ...item("decoration", "tape", 74, 64, 22, 6), attachment: "tape" }, item("sticker", "♡", 84, 20, 12, 9));
   if (template === "postcard") elements.push({ ...item("text", "Wish you were here", 52, 34, 64), textStyle: "outline" }, item("sticker", "✈️", 78, 73, 15, 12));
-  if (template === "film") elements.push({ ...item("text", "Scenes from our adventure", 50, 16, 70), textStyle: "label" });
-  return { id: crypto.randomUUID(), title: day ? `${day.label} recap` : template === "blank" ? "Untitled scrapbook" : template.replace("-", " "), pageType, dayId: day?.id, background: template === "pinboard" ? "#eee6dc" : papers[0], freeText: "", favouriteThings: ["", "", ""], weather: "", weatherTemperature: "", weatherDescription: "", steps: "", distance: "", favouriteMemory: "", elements, memberId: member.id, memberName: member.name, createdAt: now, updatedAt: now };
+  if (template === "film") elements.push({ ...item("text", "Scenes from our adventure", 50, 16, 70), textStyle: "label" }, item("sticker", "✦", 84, 82, 12, 8));
+  return { id: crypto.randomUUID(), title: day ? `${day.label} recap` : template === "blank" ? "Untitled scrapbook" : template.replace("-", " "), pageType, template: pageType === "freeform" ? template : undefined, dayId: day?.id, background: templateBackgrounds[template], freeText: "", favouriteThings: ["", "", ""], weather: "", weatherTemperature: "", weatherDescription: "", steps: "", distance: "", favouriteMemory: "", elements, memberId: member.id, memberName: member.name, createdAt: now, updatedAt: now };
 }
 
 export default function ScrapbookStudio({ days, currentMember, media, mediaUrls, pages, onChange }: Props) {
