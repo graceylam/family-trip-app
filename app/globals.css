@@ -1883,3 +1883,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 /* One editing surface on every device: canvas + floating controls */
 .scrapbook-editor-body { grid-template-columns: minmax(0,1fr); }.scrapbook-editor-body > aside { display: none; }.scrapbook-selection-inspector { display: grid; }.scrapbook-add-sheet,.scrapbook-selection-inspector,.scrapbook-media-picker { color: #294552; }.scrapbook-add-sheet p,.scrapbook-selection-inspector p,.scrapbook-media-picker p { color: #5b7079; }
+
+/* Day recaps grow and scroll with an uncropped snapshot */
+.scrapbook-editor-body { overflow-y: auto; padding-bottom: max(88px,calc(env(safe-area-inset-bottom) + 70px)); overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }.scrapbook-canvas.day-recap { align-self: start; height: auto; overflow: visible; }.scrapbook-canvas.day-recap .recap-media-slot { height: auto; min-height: 150px; }.scrapbook-canvas.day-recap .recap-media-slot img,.scrapbook-canvas.day-recap .recap-media-slot video { width: 100%; height: auto; max-height: none; object-fit: contain; }
