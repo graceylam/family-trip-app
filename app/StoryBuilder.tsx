@@ -178,8 +178,9 @@ function scheduleGeneratedMusic(context: AudioContext, output: AudioNode, music:
 }
 
 function newSlide(photoId = ""): TripStorySlide {
-  return { id: crypto.randomUUID(), photoId: photoId || undefined, layout: photoId ? "full" : "quote", text: "", emoji: "", background: backgrounds[0], duration: 4, elements: [] };
+  return { id: crypto.randomUUID(), photoId: photoId || undefined, layout: photoId ? "full" : "quote", text: "", emoji: "", background: backgrounds[0], duration: 3, elements: [] };
 }
+const slideDuration = (slide: TripStorySlide) => Math.min(5, Math.max(1, slide.duration || 3));
 
 function coverUrl(story: TripStory, urls: Record<string, string>): string {
   const slide = story.slides.find((item) => item.photoId && urls[item.photoId]);
@@ -239,7 +240,7 @@ async function renderSavedHighlight(
   if (audioContext) {
     await audioContext.resume();
     const destination = audioContext.createMediaStreamDestination();
-    const duration = story.slides.reduce((total, slide) => total + Math.max(2, slide.duration || 4), 0);
+    const duration = story.slides.reduce((total, slide) => total + slideDuration(slide), 0);
     try {
       const soundtrack = await fetch(musicAssetUrl(music as Exclude<HighlightMusic, "none">)).then((response) => {
         if (!response.ok) throw new Error("Soundtrack unavailable");
@@ -263,12 +264,12 @@ async function renderSavedHighlight(
   const stopped = new Promise<void>((resolve, reject) => { recorder.onstop = () => resolve(); recorder.onerror = () => reject(new Error("Video creation stopped unexpectedly.")); });
   recorder.start(1000);
   const fps = 15;
-  const totalFrames = story.slides.reduce((total, slide) => total + Math.max(2, slide.duration || 4) * fps, 0);
+  const totalFrames = story.slides.reduce((total, slide) => total + slideDuration(slide) * fps, 0);
   let completedFrames = 0;
   try {
     for (const slide of story.slides) {
       const image = slide.photoId && photoUrls[slide.photoId] ? await loadStoryImage(photoUrls[slide.photoId]) : null;
-      const frames = Math.max(2, slide.duration || 4) * fps;
+      const frames = slideDuration(slide) * fps;
       for (let frame = 0; frame < frames; frame += 1) {
         const progress = frame / Math.max(1, frames - 1);
         const fade = Math.min(1, progress / 0.12, (1 - progress) / 0.12);
@@ -376,7 +377,7 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
     const timer = window.setTimeout(() => {
       if (playIndex >= playing.slides.length - 1) setPlaying(null);
       else setPlayIndex((index) => index + 1);
-    }, Math.max(2, slide.duration) * 1000);
+    }, slideDuration(slide) * 1000);
     return () => window.clearTimeout(timer);
   }, [playIndex, playing]);
 
@@ -536,13 +537,13 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
         const mine = story.memberId === currentMember?.id;
         return <article key={story.id} className="story-library-card" style={cover ? { backgroundImage: `linear-gradient(rgba(8,22,29,.16), rgba(8,22,29,.76)), url(${cover})` } : undefined}>
           <button className="story-library-open" onClick={() => { setPlaying(story); setPlayIndex(0); }}><small>{story.status === "draft" ? "Draft" : `${story.slides.length} slides`}</small><strong>{story.title}</strong><span>by {story.memberName}</span></button>
-          <div><button onClick={() => { setVideoExportStory(story); setMusicChoice("baroque"); }} disabled={Boolean(exportingStoryId)}>{exportingStoryId === story.id ? `Creating ${Math.round(exportProgress * 100)}%` : "Save Highlight as Video"}</button>{mine && <><button onClick={() => editStory(story)}>Edit</button><button onClick={() => deleteStory(story)}>Delete</button></>}</div>
+          <div><button onClick={() => { setVideoExportStory(story); setMusicChoice("baroque"); }} disabled={Boolean(exportingStoryId)}>{exportingStoryId === story.id ? `Preparing ${Math.round(exportProgress * 100)}%` : "Download as Video"}</button>{mine && <><button onClick={() => editStory(story)}>Edit</button><button onClick={() => deleteStory(story)}>Delete</button></>}</div>
         </article>;
       })}</div>}
       {exportMessage && <p className="story-export-message" role="status">{exportMessage}</p>}
     </section>
 
-    {videoExportStory && <div className="modal-backdrop highlight-music-backdrop" role="presentation" onMouseDown={() => { stopMusicPreview(); setVideoExportStory(null); }}><section className="modal highlight-music-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">Save Highlight as Video</p><h2>Choose your soundtrack</h2><p className="modal-copy">Preview a Zora-generated, royalty-free instrumental before saving your video.</p><div className="highlight-music-options">{musicChoices.map((choice) => <button className={musicChoice === choice.value ? "active" : ""} onClick={() => { stopMusicPreview(); setMusicChoice(choice.value); }} key={choice.value}><span>{musicIcons[choice.value]}</span><div><strong>{choice.label}</strong><small>{choice.description}</small></div><i>{musicChoice === choice.value ? "✓" : ""}</i></button>)}</div><div className="modal-actions"><button className="secondary-button" onClick={() => { stopMusicPreview(); setVideoExportStory(null); }}>Cancel</button><button className="secondary-button" onClick={() => void toggleMusicPreview()} disabled={musicChoice === "none"}>{previewingMusic ? "■ Stop Preview" : "▶ Preview Music"}</button><button className="primary-button" onClick={() => void saveHighlightVideo(videoExportStory, musicChoice)}>Create Video</button></div></section></div>}
+    {videoExportStory && <div className="modal-backdrop highlight-music-backdrop" role="presentation" onMouseDown={() => { stopMusicPreview(); setVideoExportStory(null); }}><section className="modal highlight-music-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">Download as Video</p><h2>Choose your soundtrack</h2><p className="modal-copy">Preview a royalty-free instrumental, then download the finished highlight video.</p><div className="highlight-music-options">{musicChoices.map((choice) => <button className={musicChoice === choice.value ? "active" : ""} onClick={() => { stopMusicPreview(); setMusicChoice(choice.value); }} key={choice.value}><span>{musicIcons[choice.value]}</span><div><strong>{choice.label}</strong><small>{choice.description}</small></div><i>{musicChoice === choice.value ? "✓" : ""}</i></button>)}</div><div className="modal-actions"><button className="secondary-button" onClick={() => { stopMusicPreview(); setVideoExportStory(null); }}>Cancel</button><button className="secondary-button" onClick={() => void toggleMusicPreview()} disabled={musicChoice === "none"}>{previewingMusic ? "■ Stop Preview" : "▶ Preview Music"}</button><button className="primary-button" onClick={() => void saveHighlightVideo(videoExportStory, musicChoice)}>Download Video</button></div></section></div>}
 
     {showTitlePrompt && <div className="modal-backdrop story-title-backdrop" role="presentation" onMouseDown={() => setShowTitlePrompt(false)}><section className="modal story-title-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">New Highlight</p><h2>Give it a title</h2><p className="modal-copy">You can use moments from any day in this trip.</p><input value={titleDraft} onChange={(event) => setTitleDraft(event.target.value)} placeholder="e.g. Our Vienna favourites" autoFocus maxLength={80} onKeyDown={(event) => { if (event.key === "Enter" && titleDraft.trim()) beginHighlight(); }} /><div className="modal-actions"><button className="secondary-button" onClick={() => setShowTitlePrompt(false)}>Cancel</button><button className="primary-button" onClick={beginHighlight} disabled={!titleDraft.trim()}>Choose photos</button></div></section></div>}
 
@@ -562,7 +563,7 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
             {selectedElement ? <div className="highlight-element-controls"><label><span>{selectedElement.kind === "text" ? "Text" : selectedElement.kind === "emoji" ? "Emoji" : "Sticker"}</span><input value={selectedElement.value} onChange={(event) => updateElement({ value: event.target.value })} maxLength={selectedElement.kind === "text" ? 120 : 16} /></label><fieldset><legend>Colour</legend><div className="story-colours">{elementColours.map((colour) => <button className={selectedElement.color === colour ? "active" : ""} style={{ background: colour }} onClick={() => updateElement({ color: colour })} key={colour} aria-label={`Use ${colour}`} />)}</div></fieldset><label><span>Size</span><input type="range" min="0.5" max="2.5" step="0.1" value={selectedElement.scale} onChange={(event) => updateElement({ scale: Number(event.target.value) })} /></label><label><span>Rotation</span><input type="range" min="-30" max="30" value={selectedElement.rotation} onChange={(event) => updateElement({ rotation: Number(event.target.value) })} /></label><button className="danger-button" onClick={() => { updateSlide({ elements: (selectedSlide.elements ?? []).filter((item) => item.id !== selectedElement.id) }); setSelectedElementId(""); }}>Remove element</button></div> : <p className="highlight-drag-hint">Add text, emoji or stickers, then drag them anywhere on the photo.</p>}
             <label><span>Photo layout</span><select value={selectedSlide.layout} onChange={(event) => updateSlide({ layout: event.target.value as TripStorySlide["layout"] })}>{layouts.map((layout) => <option value={layout.value} key={layout.value}>{layout.label}</option>)}</select></label>
             <fieldset><legend>Background</legend><div className="story-colours">{backgrounds.map((colour) => <button className={selectedSlide.background === colour ? "active" : ""} style={{ background: colour }} onClick={() => updateSlide({ background: colour })} key={colour} aria-label={`Use ${colour}`} />)}</div></fieldset>
-            <label><span>Slide duration</span><select value={selectedSlide.duration} onChange={(event) => updateSlide({ duration: Number(event.target.value) })}><option value={2}>2 seconds</option><option value={4}>4 seconds</option><option value={6}>6 seconds</option><option value={8}>8 seconds</option></select></label>
+            <label><span>{selectedSlide.photoId ? "Photo duration" : "Slide duration"}</span><select value={slideDuration(selectedSlide)} onChange={(event) => updateSlide({ duration: Number(event.target.value) })}>{[1, 2, 3, 4, 5].map((seconds) => <option value={seconds} key={seconds}>{seconds} second{seconds === 1 ? "" : "s"}</option>)}</select></label>
             <div className="story-control-actions"><button className="secondary-button" onClick={() => setShowPhotoPicker(true)}>Change/Add photos</button><button className="danger-button" disabled={draft.slides.length === 1} onClick={() => { const remaining = draft.slides.filter((slide) => slide.id !== selectedSlide.id); setDraft({ ...draft, slides: remaining }); setSelectedSlideId(remaining[0]?.id ?? ""); }}>Delete slide</button></div>
           </div>
         </main> : <main className="story-builder-welcome"><span>✦</span><h2>Choose how your highlight begins</h2><p>Add a snapshot from anywhere in the trip, or begin with a blank canvas.</p><div><button className="primary-button" onClick={() => setShowPhotoPicker(true)}>Choose a photo</button><button className="secondary-button" onClick={() => { const slide = newSlide(); setDraft({ ...draft, slides: [slide] }); setSelectedSlideId(slide.id); }}>Add blank slide</button></div></main>}
