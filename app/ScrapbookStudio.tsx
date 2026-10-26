@@ -200,7 +200,7 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
 
   return <section className="scrapbook-studio">
     <header><div><p className="eyebrow">Pages made together</p><h2>Digital Scrapbook</h2><p>Mix photos, videos, words, frames and decorations—your way.</p></div><button className="primary-button" onClick={() => setCreateOpen(true)} disabled={!currentMember}>＋ New Page</button></header>
-    {bookOpen && bookPage > 0 && !arranging && <button className="scrapbook-save-page" onClick={() => void saveCompleteReaderPage()} disabled={pageExportStatus === "Saving…" || pageExportStatus === "Building PDF…"} aria-label="Save page to Photos">↓ {pageExportStatus === "Saving…" ? "Saving…" : "Save Page"}</button>}
+    {bookOpen && bookPage > 0 && !arranging && <button className="scrapbook-save-page" onClick={() => void saveCompleteReaderPage()} disabled={pageExportStatus === "Saving…" || pageExportStatus === "Building PDF…"} aria-label="Save page to Photos">↓ {pageExportStatus === "Saving…" ? "Saving…" : "Save Page to Photos"}</button>}
     {bookOpen && !arranging && <button className="scrapbook-export-pdf" onClick={() => void exportBookAsPdf()} disabled={!visibleBookPages.length || pageExportStatus === "Building PDF…"}>↥ {pageExportStatus === "Building PDF…" ? "Building…" : "Export PDF"}</button>}
     {pageExportStatus && pageExportStatus !== "Saving…" && <div className="scrapbook-export-toast" role="status">{pageExportStatus}</div>}
     {draft && <button className="scrapbook-editor-save-photo" onClick={() => void saveDraftToPhotos()} disabled={pageExportStatus === "Saving…"}>↓ {pageExportStatus === "Saving…" ? "Saving…" : "Save to Photos"}</button>}
