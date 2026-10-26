@@ -27,12 +27,12 @@ const musicChoices: Array<{ value: HighlightMusic; label: string; description: s
   { value: "baroque", label: "Baroque Promenade", description: "Counterpoint and a lively chamber-string ensemble" },
   { value: "waltz", label: "Vienna Waltz", description: "Piano and lyrical cello dancing in three-quarter time" },
   { value: "nocturne", label: "Moonlit Nocturne", description: "Romantic solo piano with flowing arpeggios" },
-  { value: "sunrise", label: "Acoustic Sunrise", description: "Finger-picked acoustic guitar, warm and hopeful" },
-  { value: "roadtrip", label: "Electric Road Trip", description: "Bright pop guitar, bass and easygoing drums" },
+  { value: "sunrise", label: "Acoustic Sunrise", description: "Spacious piano with a hopeful, hymn-like rise" },
+  { value: "roadtrip", label: "Electric Road Trip", description: "Bright electronic pop, pulsing bass and clean dance beat" },
   { value: "indie", label: "Indie Postcard", description: "Dreamy modern indie-pop with a softer pulse" },
   { value: "celebration", label: "Golden Hour", description: "A joyful, rolling piano riff with a gentle lift" },
 ];
-const musicIcons: Record<HighlightMusic, string> = { none: "◯", baroque: "♬", waltz: "♩", nocturne: "☾", sunrise: "☀", roadtrip: "🎸", indie: "✦", celebration: "♪" };
+const musicIcons: Record<HighlightMusic, string> = { none: "◯", baroque: "♬", waltz: "♩", nocturne: "☾", sunrise: "☀", roadtrip: "⚡", indie: "✦", celebration: "♪" };
 
 const note = (midi: number) => 440 * (2 ** ((midi - 69) / 12));
 
@@ -126,11 +126,14 @@ function scheduleGeneratedMusic(context: AudioContext, output: AudioNode, music:
     return;
   }
   if (music === "sunrise") {
-    const step = 0.36, roots = [48, 45, 53, 55], picking = [0, 7, 12, 16, 12, 7, 12, 19], melody = [64, 67, 72, 74, 76, 74, 72, 67, 69, 72, 76, 79, 76, 72, 69, 67];
+    const step = 0.48, roots = [48, 43, 45, 41], melody = [64, 67, 69, 72, 71, 69, 67, 64, 69, 72, 76, 74, 72, 71, 69, 67];
     for (let i = 0, time = 0; time < duration + 0.5; i += 1, time += step) {
-      const at = start + time, root = roots[Math.floor(i / 8) % roots.length];
-      addGuitar(context, output, root + picking[i % picking.length], at, step * 1.75, 0.018);
-      if (i % 4 === 0) addGuitar(context, output, melody[(i / 4) % melody.length], at, step * 3.5, 0.014);
+      const at = start + time, root = roots[Math.floor(i / 4) % roots.length];
+      if (i % 4 === 0) {
+        addPiano(context, output, root, at, step * 3.8, 0.024);
+        [root + 12, root + 16, root + 19].forEach((midi) => addPiano(context, output, midi, at, step * 3.6, 0.011));
+      }
+      if (i % 2 === 0) addPiano(context, output, melody[(i / 2) % melody.length], at, step * 2.05, 0.027);
     }
     return;
   }
@@ -144,17 +147,32 @@ function scheduleGeneratedMusic(context: AudioContext, output: AudioNode, music:
     }
     return;
   }
-  const roadTrip = music === "roadtrip";
-  const step = roadTrip ? 0.32 : 0.4;
-  const roots = roadTrip ? [40, 43, 45, 48] : [47, 43, 50, 45];
-  const melody = roadTrip ? [64, 67, 69, 71, 69, 67, 64, 62, 64, 67, 71, 74, 71, 69, 67, 64] : [71, 74, 78, 74, 69, 73, 76, 73, 67, 71, 74, 71, 66, 69, 73, 69];
+  if (music === "roadtrip") {
+    const step = 0.25, roots = [40, 36, 43, 45], hook = [76, 76, 79, 83, 81, 79, 76, 74, 76, 79, 81, 84, 83, 81, 79, 76];
+    for (let i = 0, time = 0; time < duration + 0.5; i += 1, time += step) {
+      const at = start + time, root = roots[Math.floor(i / 8) % roots.length];
+      if (i % 2 === 0) {
+        addTone(context, output, note(hook[i % hook.length]), at, step * 1.65, 0.014, "sawtooth", true);
+        addTone(context, output, note(hook[i % hook.length] - 12), at, step * 1.55, 0.008, "triangle", true);
+      }
+      addTone(context, output, note(root), at, step * 0.82, 0.027, "square", true);
+      if (i % 8 === 0) [root + 12, root + 16, root + 19].forEach((midi) => addTone(context, output, note(midi), at, step * 7.5, 0.006, "sawtooth"));
+      if (i % 2 === 0) addDrum(context, output, at, "kick", 0.048);
+      if (i % 4 === 2) addDrum(context, output, at, "snare", 0.023);
+      if (i % 2 === 1) addDrum(context, output, at, "hat", 0.01);
+    }
+    return;
+  }
+  const step = 0.4;
+  const roots = [47, 43, 50, 45];
+  const melody = [71, 74, 78, 74, 69, 73, 76, 73, 67, 71, 74, 71, 66, 69, 73, 69];
   for (let i = 0, time = 0; time < duration + 0.5; i += 1, time += step) {
     const at = start + time, root = roots[Math.floor(i / 8) % roots.length];
-    addGuitar(context, output, melody[i % melody.length], at, step * (roadTrip ? 0.75 : 1.45), roadTrip ? 0.017 : 0.013, true);
+    addGuitar(context, output, melody[i % melody.length], at, step * 1.45, 0.013, true);
     if (i % 2 === 0) addGuitar(context, output, root + 12 + (i % 4 ? 7 : 0), at, step * 1.55, 0.009, true);
-    if (i % 4 === 0) { addTone(context, output, note(root), at, step * 3.7, 0.028, "sine"); addDrum(context, output, at, "kick", roadTrip ? 0.05 : 0.035); }
-    if (i % 4 === 2) addDrum(context, output, at, "snare", roadTrip ? 0.023 : 0.014);
-    if (roadTrip ? i % 2 === 1 : i % 4 === 3) addDrum(context, output, at, "hat", 0.009);
+    if (i % 4 === 0) { addTone(context, output, note(root), at, step * 3.7, 0.028, "sine"); addDrum(context, output, at, "kick", 0.035); }
+    if (i % 4 === 2) addDrum(context, output, at, "snare", 0.014);
+    if (i % 4 === 3) addDrum(context, output, at, "hat", 0.009);
   }
 }
 
