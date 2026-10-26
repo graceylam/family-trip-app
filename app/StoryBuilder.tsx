@@ -21,6 +21,13 @@ const layouts: Array<{ value: TripStorySlide["layout"]; label: string }> = [
   { value: "quote", label: "Quote card" },
   { value: "split", label: "Split" },
 ];
+type HighlightMusic = "none" | "gentle" | "sunny" | "evening";
+const musicChoices: Array<{ value: HighlightMusic; label: string; description: string }> = [
+  { value: "none", label: "No Music", description: "Keep the slideshow quiet" },
+  { value: "gentle", label: "Gentle Journey", description: "Soft, warm and reflective" },
+  { value: "sunny", label: "Sunny Steps", description: "Light, playful and upbeat" },
+  { value: "evening", label: "Evening Glow", description: "Calm and cinematic" },
+];
 
 function newSlide(photoId = ""): TripStorySlide {
   return { id: crypto.randomUUID(), photoId: photoId || undefined, layout: photoId ? "full" : "quote", text: "", emoji: "", background: backgrounds[0], duration: 4, elements: [] };
@@ -64,6 +71,7 @@ function storyTextLines(context: CanvasRenderingContext2D, text: string, maxWidt
 async function renderSavedHighlight(
   story: TripStory,
   photoUrls: Record<string, string>,
+  music: HighlightMusic,
   onProgress: (progress: number) => void,
 ): Promise<{ blob: Blob; extension: "mp4" | "webm" }> {
   if (typeof MediaRecorder === "undefined") throw new Error("Video creation is unavailable on this device.");
@@ -72,8 +80,39 @@ async function renderSavedHighlight(
   canvas.height = 1280;
   const context = canvas.getContext("2d");
   if (!context || typeof canvas.captureStream !== "function") throw new Error("Video creation is unavailable on this device.");
-  const mimeType = ["video/mp4;codecs=avc1.42E01E", "video/mp4", "video/webm;codecs=vp9", "video/webm"].find((type) => MediaRecorder.isTypeSupported(type));
+  const mimeCandidates = music === "none"
+    ? ["video/mp4;codecs=avc1.42E01E", "video/mp4", "video/webm;codecs=vp9", "video/webm"]
+    : ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/mp4", "video/webm;codecs=vp9,opus", "video/webm"];
+  const mimeType = mimeCandidates.find((type) => MediaRecorder.isTypeSupported(type));
   const stream = canvas.captureStream(15);
+  const AudioContextClass = window.AudioContext;
+  const audioContext = music !== "none" && AudioContextClass ? new AudioContextClass() : null;
+  if (audioContext) {
+    await audioContext.resume();
+    const destination = audioContext.createMediaStreamDestination();
+    const duration = story.slides.reduce((total, slide) => total + Math.max(2, slide.duration || 4), 0);
+    const patterns: Record<Exclude<HighlightMusic, "none">, { notes: number[]; beat: number; wave: OscillatorType; volume: number }> = {
+      gentle: { notes: [261.63, 329.63, 392, 329.63, 293.66, 349.23, 440, 349.23], beat: 1.6, wave: "sine", volume: 0.045 },
+      sunny: { notes: [392, 493.88, 523.25, 659.25, 523.25, 493.88, 440, 523.25], beat: 0.65, wave: "triangle", volume: 0.035 },
+      evening: { notes: [196, 246.94, 293.66, 246.94, 174.61, 220, 261.63, 220], beat: 2.1, wave: "sine", volume: 0.05 },
+    };
+    const pattern = patterns[music as Exclude<HighlightMusic, "none">];
+    const start = audioContext.currentTime + 0.05;
+    for (let index = 0, time = 0; time < duration + 0.5; index += 1, time += pattern.beat) {
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      oscillator.type = pattern.wave;
+      oscillator.frequency.value = pattern.notes[index % pattern.notes.length];
+      gain.gain.setValueAtTime(0.0001, start + time);
+      gain.gain.exponentialRampToValueAtTime(pattern.volume, start + time + 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + time + pattern.beat * 0.9);
+      oscillator.connect(gain).connect(destination);
+      oscillator.start(start + time);
+      oscillator.stop(start + time + pattern.beat);
+    }
+    const audioTrack = destination.stream.getAudioTracks()[0];
+    if (audioTrack) stream.addTrack(audioTrack);
+  }
   const recorder = mimeType ? new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 4_000_000 }) : new MediaRecorder(stream);
   const chunks: Blob[] = [];
   recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
@@ -160,7 +199,7 @@ async function renderSavedHighlight(
     if (recorder.state !== "inactive") recorder.stop();
     await stopped.catch(() => undefined);
     throw error;
-  } finally { stream.getTracks().forEach((track) => track.stop()); }
+  } finally { stream.getTracks().forEach((track) => track.stop()); await audioContext?.close(); }
   const outputType = recorder.mimeType || mimeType || "video/webm";
   return { blob: new Blob(chunks, { type: outputType }), extension: outputType.includes("mp4") ? "mp4" : "webm" };
 }
@@ -179,6 +218,8 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
   const [exportingStoryId, setExportingStoryId] = useState("");
   const [exportProgress, setExportProgress] = useState(0);
   const [exportMessage, setExportMessage] = useState("");
+  const [videoExportStory, setVideoExportStory] = useState<TripStory | null>(null);
+  const [musicChoice, setMusicChoice] = useState<HighlightMusic>("gentle");
   const selectedSlide = draft?.slides.find((slide) => slide.id === selectedSlideId) ?? draft?.slides[0];
   const selectedElement = selectedSlide?.elements?.find((element) => element.id === selectedElementId);
   const availablePhotos = useMemo(() => photos.filter((photo) => photoUrls[photo.fileId]), [photoUrls, photos]);
@@ -280,13 +321,14 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
     onChange(stories.filter((item) => item.id !== story.id));
   }
 
-  async function saveHighlightVideo(story: TripStory) {
+  async function saveHighlightVideo(story: TripStory, music: HighlightMusic) {
     if (!story.slides.length || exportingStoryId) return;
     setExportingStoryId(story.id);
     setExportProgress(0);
     setExportMessage("");
     try {
-      const result = await renderSavedHighlight(story, photoUrls, setExportProgress);
+      setVideoExportStory(null);
+      const result = await renderSavedHighlight(story, photoUrls, music, setExportProgress);
       if (canSaveDirectlyToPhotos()) await saveBlobToNativePhotos(result.blob, result.blob.type || `video/${result.extension}`);
       else {
         const url = URL.createObjectURL(result.blob);
@@ -313,11 +355,13 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
         const mine = story.memberId === currentMember?.id;
         return <article key={story.id} className="story-library-card" style={cover ? { backgroundImage: `linear-gradient(rgba(8,22,29,.16), rgba(8,22,29,.76)), url(${cover})` } : undefined}>
           <button className="story-library-open" onClick={() => { setPlaying(story); setPlayIndex(0); }}><small>{story.status === "draft" ? "Draft" : `${story.slides.length} slides`}</small><strong>{story.title}</strong><span>by {story.memberName}</span></button>
-          <div><button onClick={() => void saveHighlightVideo(story)} disabled={Boolean(exportingStoryId)}>{exportingStoryId === story.id ? `Creating ${Math.round(exportProgress * 100)}%` : "Save Highlight as Video"}</button>{mine && <><button onClick={() => editStory(story)}>Edit</button><button onClick={() => deleteStory(story)}>Delete</button></>}</div>
+          <div><button onClick={() => { setVideoExportStory(story); setMusicChoice("gentle"); }} disabled={Boolean(exportingStoryId)}>{exportingStoryId === story.id ? `Creating ${Math.round(exportProgress * 100)}%` : "Save Highlight as Video"}</button>{mine && <><button onClick={() => editStory(story)}>Edit</button><button onClick={() => deleteStory(story)}>Delete</button></>}</div>
         </article>;
       })}</div>}
       {exportMessage && <p className="story-export-message" role="status">{exportMessage}</p>}
     </section>
+
+    {videoExportStory && <div className="modal-backdrop highlight-music-backdrop" role="presentation" onMouseDown={() => setVideoExportStory(null)}><section className="modal highlight-music-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">Save Highlight as Video</p><h2>Add background music?</h2><p className="modal-copy">These instrumental themes are generated by Zora, royalty-free and safe to use in your saved video.</p><div className="highlight-music-options">{musicChoices.map((choice) => <button className={musicChoice === choice.value ? "active" : ""} onClick={() => setMusicChoice(choice.value)} key={choice.value}><span>{choice.value === "none" ? "◯" : choice.value === "gentle" ? "♫" : choice.value === "sunny" ? "☀" : "☾"}</span><div><strong>{choice.label}</strong><small>{choice.description}</small></div><i>{musicChoice === choice.value ? "✓" : ""}</i></button>)}</div><div className="modal-actions"><button className="secondary-button" onClick={() => setVideoExportStory(null)}>Cancel</button><button className="primary-button" onClick={() => void saveHighlightVideo(videoExportStory, musicChoice)}>Create Video</button></div></section></div>}
 
     {showTitlePrompt && <div className="modal-backdrop story-title-backdrop" role="presentation" onMouseDown={() => setShowTitlePrompt(false)}><section className="modal story-title-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">New Highlight</p><h2>Give it a title</h2><p className="modal-copy">You can use moments from any day in this trip.</p><input value={titleDraft} onChange={(event) => setTitleDraft(event.target.value)} placeholder="e.g. Our Vienna favourites" autoFocus maxLength={80} onKeyDown={(event) => { if (event.key === "Enter" && titleDraft.trim()) beginHighlight(); }} /><div className="modal-actions"><button className="secondary-button" onClick={() => setShowTitlePrompt(false)}>Cancel</button><button className="primary-button" onClick={beginHighlight} disabled={!titleDraft.trim()}>Choose photos</button></div></section></div>}
 
