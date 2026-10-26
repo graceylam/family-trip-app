@@ -2,6 +2,7 @@
 
 import { ChangeEvent, FormEvent, Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Capacitor } from "@capacitor/core";
 import AccountPortal from "./AccountPortal";
 import Gallery from "./Gallery";
 import MediaSwipeStage from "./MediaSwipeStage";
@@ -853,7 +854,22 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     void refreshSharedItinerary();
 
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js").catch(() => undefined);
+      if (Capacitor.isNativePlatform()) {
+        // Capacitor ships the web bundle inside the app. A PWA service worker can
+        // otherwise keep an older shell (and older soundtrack files) after a
+        // local iPhone install. Remove only web caches; persisted trip data lives
+        // in local storage/IndexedDB and is deliberately left untouched.
+        void navigator.serviceWorker.getRegistrations()
+          .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
+          .catch(() => undefined);
+        if ("caches" in window) {
+          void caches.keys()
+            .then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+            .catch(() => undefined);
+        }
+      } else {
+        navigator.serviceWorker.register("./sw.js").catch(() => undefined);
+      }
     }
 
     let queueLoadCancelled = false;

@@ -33,7 +33,12 @@ const musicChoices: Array<{ value: HighlightMusic; label: string; description: s
   { value: "celebration", label: "Golden Hour", description: "A joyful, rolling piano riff with a gentle lift" },
 ];
 const musicIcons: Record<HighlightMusic, string> = { none: "◯", baroque: "♬", waltz: "♩", nocturne: "☾", sunrise: "☀", roadtrip: "⚡", indie: "✦", celebration: "♪" };
-const musicAssetUrl = (music: Exclude<HighlightMusic, "none">) => new URL(`music/${music}.wav`, document.baseURI).toString();
+const MUSIC_ASSET_VERSION = "sampled-instruments-20261026-1";
+const musicAssetUrl = (music: Exclude<HighlightMusic, "none">) => {
+  const url = new URL(`music/${music}.wav`, document.baseURI);
+  url.searchParams.set("v", MUSIC_ASSET_VERSION);
+  return url.toString();
+};
 
 const note = (midi: number) => 440 * (2 ** ((midi - 69) / 12));
 

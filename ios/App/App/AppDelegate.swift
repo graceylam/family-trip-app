@@ -2,6 +2,7 @@ import UIKit
 import Capacitor
 import Photos
 import QuickLook
+import WebKit
 
 @objc(NativeSharePlugin)
 public class NativeSharePlugin: CAPPlugin, CAPBridgedPlugin {
@@ -290,6 +291,24 @@ public class FamilyBridgeViewController: CAPBridgeViewController {
         edgesForExtendedLayout = .all
         extendedLayoutIncludesOpaqueBars = true
         webView?.scrollView.contentInsetAdjustmentBehavior = .never
+
+        // Clear obsolete PWA caches once when the embedded bundle changes. This
+        // does not touch local storage, IndexedDB, authentication, or trip data.
+        let cacheVersion = "sampled-instruments-20261026-1"
+        let cacheVersionKey = "ZoraEmbeddedWebCacheVersion"
+        if UserDefaults.standard.string(forKey: cacheVersionKey) != cacheVersion {
+            let cacheTypes: Set<String> = [
+                WKWebsiteDataTypeDiskCache,
+                WKWebsiteDataTypeMemoryCache,
+                WKWebsiteDataTypeServiceWorkerRegistrations
+            ]
+            WKWebsiteDataStore.default().removeData(ofTypes: cacheTypes, modifiedSince: .distantPast) { [weak self] in
+                UserDefaults.standard.set(cacheVersion, forKey: cacheVersionKey)
+                DispatchQueue.main.async {
+                    self?.webView?.reloadFromOrigin()
+                }
+            }
+        }
     }
 
     override open func capacitorDidLoad() {
