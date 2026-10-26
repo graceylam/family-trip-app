@@ -118,11 +118,20 @@ public class NativeDocumentsPlugin: CAPPlugin, CAPBridgedPlugin, QLPreviewContro
 
 @objc(NativePhotosPlugin)
 public class NativePhotosPlugin: CAPPlugin, CAPBridgedPlugin {
+    private struct PendingWrite {
+        let url: URL
+        let handle: FileHandle
+        let mimeType: String
+    }
+    private var pendingWrites: [String: PendingWrite] = [:]
     public let identifier = "NativePhotosPlugin"
     public let jsName = "NativePhotos"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "saveFromUrl", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "saveBase64", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "saveBase64", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "beginChunkedSave", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "appendChunk", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "finishChunkedSave", returnType: CAPPluginReturnPromise)
     ]
 
     @objc func saveFromUrl(_ call: CAPPluginCall) {
@@ -162,6 +171,50 @@ public class NativePhotosPlugin: CAPPlugin, CAPBridgedPlugin {
             saveFile(localURL, mimeType: mimeType, call: call)
         } catch {
             call.reject("The memory could not be prepared for Photos.", nil, error)
+        }
+    }
+
+    @objc func beginChunkedSave(_ call: CAPPluginCall) {
+        let mimeType = call.getString("mimeType") ?? "video/mp4"
+        let id = UUID().uuidString
+        let url = temporaryURL(mimeType: mimeType)
+        guard FileManager.default.createFile(atPath: url.path, contents: nil),
+              let handle = try? FileHandle(forWritingTo: url) else {
+            call.reject("The video file could not be prepared.")
+            return
+        }
+        pendingWrites[id] = PendingWrite(url: url, handle: handle, mimeType: mimeType)
+        call.resolve(["id": id])
+    }
+
+    @objc func appendChunk(_ call: CAPPluginCall) {
+        guard let id = call.getString("id"), let pending = pendingWrites[id],
+              let encoded = call.getString("data"), let data = Data(base64Encoded: encoded) else {
+            call.reject("Part of the video could not be prepared.")
+            return
+        }
+        do {
+            try pending.handle.write(contentsOf: data)
+            call.resolve(["appended": true])
+        } catch {
+            try? pending.handle.close()
+            try? FileManager.default.removeItem(at: pending.url)
+            pendingWrites.removeValue(forKey: id)
+            call.reject("Part of the video could not be written.", nil, error)
+        }
+    }
+
+    @objc func finishChunkedSave(_ call: CAPPluginCall) {
+        guard let id = call.getString("id"), let pending = pendingWrites.removeValue(forKey: id) else {
+            call.reject("The prepared video could not be found.")
+            return
+        }
+        do {
+            try pending.handle.close()
+            saveFile(pending.url, mimeType: pending.mimeType, call: call)
+        } catch {
+            try? FileManager.default.removeItem(at: pending.url)
+            call.reject("The video file could not be completed.", nil, error)
         }
     }
 

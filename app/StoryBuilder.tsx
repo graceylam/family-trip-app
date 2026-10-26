@@ -511,7 +511,11 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
       stopMusicPreview();
       setVideoExportStory(null);
       const result = await renderSavedHighlight(story, photoUrls, music, setExportProgress);
-      if (canSaveDirectlyToPhotos()) await saveBlobToNativePhotos(result.blob, result.blob.type || `video/${result.extension}`);
+      if (!result.blob.size) throw new Error("The downloaded video was empty. Please try again.");
+      if (canSaveDirectlyToPhotos()) {
+        setExportMessage("Saving video to Photos…");
+        await saveBlobToNativePhotos(result.blob, result.blob.type || `video/${result.extension}`);
+      }
       else {
         const url = URL.createObjectURL(result.blob);
         const link = document.createElement("a");
