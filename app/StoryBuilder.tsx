@@ -1,6 +1,6 @@
 "use client";
 
-import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useState } from "react";
+import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { SharedPhoto, TripDay, TripHighlightElement, TripMember, TripStory, TripStorySlide } from "../lib/googleDrive";
 import { canSaveDirectlyToPhotos, saveBlobToNativePhotos } from "../lib/nativePhotos";
 
@@ -28,6 +28,28 @@ const musicChoices: Array<{ value: HighlightMusic; label: string; description: s
   { value: "sunny", label: "Sunny Steps", description: "Light, playful and upbeat" },
   { value: "evening", label: "Evening Glow", description: "Calm and cinematic" },
 ];
+const musicPatterns: Record<Exclude<HighlightMusic, "none">, { notes: number[]; beat: number; wave: OscillatorType; volume: number }> = {
+  gentle: { notes: [261.63, 329.63, 392, 329.63, 293.66, 349.23, 440, 349.23], beat: 1.6, wave: "sine", volume: 0.045 },
+  sunny: { notes: [392, 493.88, 523.25, 659.25, 523.25, 493.88, 440, 523.25], beat: 0.65, wave: "triangle", volume: 0.035 },
+  evening: { notes: [196, 246.94, 293.66, 246.94, 174.61, 220, 261.63, 220], beat: 2.1, wave: "sine", volume: 0.05 },
+};
+
+function scheduleGeneratedMusic(context: AudioContext, output: AudioNode, music: Exclude<HighlightMusic, "none">, duration: number) {
+  const pattern = musicPatterns[music];
+  const start = context.currentTime + 0.05;
+  for (let index = 0, time = 0; time < duration + 0.5; index += 1, time += pattern.beat) {
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = pattern.wave;
+    oscillator.frequency.value = pattern.notes[index % pattern.notes.length];
+    gain.gain.setValueAtTime(0.0001, start + time);
+    gain.gain.exponentialRampToValueAtTime(pattern.volume, start + time + 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + time + pattern.beat * 0.9);
+    oscillator.connect(gain).connect(output);
+    oscillator.start(start + time);
+    oscillator.stop(start + time + pattern.beat);
+  }
+}
 
 function newSlide(photoId = ""): TripStorySlide {
   return { id: crypto.randomUUID(), photoId: photoId || undefined, layout: photoId ? "full" : "quote", text: "", emoji: "", background: backgrounds[0], duration: 4, elements: [] };
@@ -91,25 +113,7 @@ async function renderSavedHighlight(
     await audioContext.resume();
     const destination = audioContext.createMediaStreamDestination();
     const duration = story.slides.reduce((total, slide) => total + Math.max(2, slide.duration || 4), 0);
-    const patterns: Record<Exclude<HighlightMusic, "none">, { notes: number[]; beat: number; wave: OscillatorType; volume: number }> = {
-      gentle: { notes: [261.63, 329.63, 392, 329.63, 293.66, 349.23, 440, 349.23], beat: 1.6, wave: "sine", volume: 0.045 },
-      sunny: { notes: [392, 493.88, 523.25, 659.25, 523.25, 493.88, 440, 523.25], beat: 0.65, wave: "triangle", volume: 0.035 },
-      evening: { notes: [196, 246.94, 293.66, 246.94, 174.61, 220, 261.63, 220], beat: 2.1, wave: "sine", volume: 0.05 },
-    };
-    const pattern = patterns[music as Exclude<HighlightMusic, "none">];
-    const start = audioContext.currentTime + 0.05;
-    for (let index = 0, time = 0; time < duration + 0.5; index += 1, time += pattern.beat) {
-      const oscillator = audioContext.createOscillator();
-      const gain = audioContext.createGain();
-      oscillator.type = pattern.wave;
-      oscillator.frequency.value = pattern.notes[index % pattern.notes.length];
-      gain.gain.setValueAtTime(0.0001, start + time);
-      gain.gain.exponentialRampToValueAtTime(pattern.volume, start + time + 0.08);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + time + pattern.beat * 0.9);
-      oscillator.connect(gain).connect(destination);
-      oscillator.start(start + time);
-      oscillator.stop(start + time + pattern.beat);
-    }
+    scheduleGeneratedMusic(audioContext, destination, music as Exclude<HighlightMusic, "none">, duration);
     const audioTrack = destination.stream.getAudioTracks()[0];
     if (audioTrack) stream.addTrack(audioTrack);
   }
@@ -220,6 +224,8 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
   const [exportMessage, setExportMessage] = useState("");
   const [videoExportStory, setVideoExportStory] = useState<TripStory | null>(null);
   const [musicChoice, setMusicChoice] = useState<HighlightMusic>("gentle");
+  const [previewingMusic, setPreviewingMusic] = useState(false);
+  const musicPreviewRef = useRef<{ context: AudioContext; timer: number } | null>(null);
   const selectedSlide = draft?.slides.find((slide) => slide.id === selectedSlideId) ?? draft?.slides[0];
   const selectedElement = selectedSlide?.elements?.find((element) => element.id === selectedElementId);
   const availablePhotos = useMemo(() => photos.filter((photo) => photoUrls[photo.fileId]), [photoUrls, photos]);
@@ -233,6 +239,13 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
     }, Math.max(2, slide.duration) * 1000);
     return () => window.clearTimeout(timer);
   }, [playIndex, playing]);
+
+  useEffect(() => () => {
+    if (musicPreviewRef.current) {
+      window.clearTimeout(musicPreviewRef.current.timer);
+      void musicPreviewRef.current.context.close();
+    }
+  }, []);
 
   function startStory() {
     if (!currentMember) return;
@@ -321,12 +334,35 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
     onChange(stories.filter((item) => item.id !== story.id));
   }
 
+  function stopMusicPreview() {
+    const preview = musicPreviewRef.current;
+    if (preview) {
+      window.clearTimeout(preview.timer);
+      void preview.context.close();
+      musicPreviewRef.current = null;
+    }
+    setPreviewingMusic(false);
+  }
+
+  async function toggleMusicPreview() {
+    if (previewingMusic) { stopMusicPreview(); return; }
+    if (musicChoice === "none") return;
+    stopMusicPreview();
+    const context = new AudioContext();
+    await context.resume();
+    scheduleGeneratedMusic(context, context.destination, musicChoice, 7);
+    const timer = window.setTimeout(() => { void context.close(); musicPreviewRef.current = null; setPreviewingMusic(false); }, 7000);
+    musicPreviewRef.current = { context, timer };
+    setPreviewingMusic(true);
+  }
+
   async function saveHighlightVideo(story: TripStory, music: HighlightMusic) {
     if (!story.slides.length || exportingStoryId) return;
     setExportingStoryId(story.id);
     setExportProgress(0);
     setExportMessage("");
     try {
+      stopMusicPreview();
       setVideoExportStory(null);
       const result = await renderSavedHighlight(story, photoUrls, music, setExportProgress);
       if (canSaveDirectlyToPhotos()) await saveBlobToNativePhotos(result.blob, result.blob.type || `video/${result.extension}`);
@@ -361,7 +397,7 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
       {exportMessage && <p className="story-export-message" role="status">{exportMessage}</p>}
     </section>
 
-    {videoExportStory && <div className="modal-backdrop highlight-music-backdrop" role="presentation" onMouseDown={() => setVideoExportStory(null)}><section className="modal highlight-music-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">Save Highlight as Video</p><h2>Add background music?</h2><p className="modal-copy">These instrumental themes are generated by Zora, royalty-free and safe to use in your saved video.</p><div className="highlight-music-options">{musicChoices.map((choice) => <button className={musicChoice === choice.value ? "active" : ""} onClick={() => setMusicChoice(choice.value)} key={choice.value}><span>{choice.value === "none" ? "◯" : choice.value === "gentle" ? "♫" : choice.value === "sunny" ? "☀" : "☾"}</span><div><strong>{choice.label}</strong><small>{choice.description}</small></div><i>{musicChoice === choice.value ? "✓" : ""}</i></button>)}</div><div className="modal-actions"><button className="secondary-button" onClick={() => setVideoExportStory(null)}>Cancel</button><button className="primary-button" onClick={() => void saveHighlightVideo(videoExportStory, musicChoice)}>Create Video</button></div></section></div>}
+    {videoExportStory && <div className="modal-backdrop highlight-music-backdrop" role="presentation" onMouseDown={() => { stopMusicPreview(); setVideoExportStory(null); }}><section className="modal highlight-music-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">Save Highlight as Video</p><h2>Add background music?</h2><p className="modal-copy">These instrumental themes are generated by Zora, royalty-free and safe to use in your saved video.</p><div className="highlight-music-options">{musicChoices.map((choice) => <button className={musicChoice === choice.value ? "active" : ""} onClick={() => { stopMusicPreview(); setMusicChoice(choice.value); }} key={choice.value}><span>{choice.value === "none" ? "◯" : choice.value === "gentle" ? "♫" : choice.value === "sunny" ? "☀" : "☾"}</span><div><strong>{choice.label}</strong><small>{choice.description}</small></div><i>{musicChoice === choice.value ? "✓" : ""}</i></button>)}</div><div className="modal-actions"><button className="secondary-button" onClick={() => { stopMusicPreview(); setVideoExportStory(null); }}>Cancel</button><button className="secondary-button" onClick={() => void toggleMusicPreview()} disabled={musicChoice === "none"}>{previewingMusic ? "■ Stop Preview" : "▶ Preview Music"}</button><button className="primary-button" onClick={() => void saveHighlightVideo(videoExportStory, musicChoice)}>Create Video</button></div></section></div>}
 
     {showTitlePrompt && <div className="modal-backdrop story-title-backdrop" role="presentation" onMouseDown={() => setShowTitlePrompt(false)}><section className="modal story-title-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">New Highlight</p><h2>Give it a title</h2><p className="modal-copy">You can use moments from any day in this trip.</p><input value={titleDraft} onChange={(event) => setTitleDraft(event.target.value)} placeholder="e.g. Our Vienna favourites" autoFocus maxLength={80} onKeyDown={(event) => { if (event.key === "Enter" && titleDraft.trim()) beginHighlight(); }} /><div className="modal-actions"><button className="secondary-button" onClick={() => setShowTitlePrompt(false)}>Cancel</button><button className="primary-button" onClick={beginHighlight} disabled={!titleDraft.trim()}>Choose photos</button></div></section></div>}
 
