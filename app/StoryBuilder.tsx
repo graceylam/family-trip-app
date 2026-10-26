@@ -24,13 +24,13 @@ const layouts: Array<{ value: TripStorySlide["layout"]; label: string }> = [
 type HighlightMusic = "none" | "baroque" | "waltz" | "nocturne" | "sunrise" | "roadtrip" | "indie" | "celebration";
 const musicChoices: Array<{ value: HighlightMusic; label: string; description: string }> = [
   { value: "none", label: "No Music", description: "Keep the slideshow quiet" },
-  { value: "baroque", label: "Baroque Promenade", description: "Elegant strings and a flowing classical melody" },
-  { value: "waltz", label: "Vienna Waltz", description: "Graceful three-beat dance with a romantic lift" },
-  { value: "nocturne", label: "Moonlit Nocturne", description: "Slow, melodic and reflective piano-style theme" },
-  { value: "sunrise", label: "Acoustic Sunrise", description: "Warm, gentle and hopeful instrumental" },
-  { value: "roadtrip", label: "Electric Road Trip", description: "Bright electric guitar with easygoing drums" },
-  { value: "indie", label: "Indie Postcard", description: "Dreamy guitar, soft beat and travel-film warmth" },
-  { value: "celebration", label: "Golden Hour", description: "Joyful melodic pop-rock without the heavy edge" },
+  { value: "baroque", label: "Baroque Promenade", description: "Counterpoint and a lively chamber-string ensemble" },
+  { value: "waltz", label: "Vienna Waltz", description: "Piano and lyrical cello dancing in three-quarter time" },
+  { value: "nocturne", label: "Moonlit Nocturne", description: "Romantic solo piano with flowing arpeggios" },
+  { value: "sunrise", label: "Acoustic Sunrise", description: "Finger-picked acoustic guitar, warm and hopeful" },
+  { value: "roadtrip", label: "Electric Road Trip", description: "Bright pop guitar, bass and easygoing drums" },
+  { value: "indie", label: "Indie Postcard", description: "Dreamy modern indie-pop with a softer pulse" },
+  { value: "celebration", label: "Golden Hour", description: "A joyful, rolling piano riff with a gentle lift" },
 ];
 const musicIcons: Record<HighlightMusic, string> = { none: "◯", baroque: "♬", waltz: "♩", nocturne: "☾", sunrise: "☀", roadtrip: "🎸", indie: "✦", celebration: "♪" };
 
@@ -80,34 +80,81 @@ function addDrum(context: AudioContext, output: AudioNode, at: number, kind: "ki
   source.start(at);
 }
 
+function addString(context: AudioContext, output: AudioNode, midi: number, at: number, length: number, volume = 0.014) {
+  addTone(context, output, note(midi), at, length, volume, "sawtooth");
+  addTone(context, output, note(midi) * 1.0023, at + 0.012, length * 0.98, volume * 0.65, "triangle");
+}
+
+function addPiano(context: AudioContext, output: AudioNode, midi: number, at: number, length: number, volume = 0.024) {
+  addTone(context, output, note(midi), at, length, volume, "triangle", true);
+  addTone(context, output, note(midi) * 2, at, length * 0.48, volume * 0.22, "sine", true);
+}
+
+function addGuitar(context: AudioContext, output: AudioNode, midi: number, at: number, length: number, volume = 0.018, electric = false) {
+  addTone(context, output, note(midi), at, length, volume, electric ? "sawtooth" : "triangle", true);
+  addTone(context, output, note(midi) * 2, at + 0.008, length * 0.58, volume * 0.18, "sine", true);
+}
+
 function scheduleGeneratedMusic(context: AudioContext, output: AudioNode, music: Exclude<HighlightMusic, "none">, duration: number) {
   const start = context.currentTime + 0.05;
-  const classical = music === "baroque" || music === "waltz" || music === "nocturne" || music === "sunrise";
-  const settings = {
-    baroque: { beat: 0.36, melody: [72, 76, 79, 76, 74, 77, 81, 77, 76, 79, 84, 79, 77, 74, 71, 74], roots: [48, 53, 55, 52], wave: "triangle" as OscillatorType },
-    waltz: { beat: 0.58, melody: [67, 72, 76, 74, 72, 79, 77, 74, 71, 74, 77, 76], roots: [48, 55, 53, 50], wave: "sine" as OscillatorType },
-    nocturne: { beat: 0.72, melody: [69, 72, 76, 74, 72, 69, 67, 71, 74, 72, 71, 67], roots: [45, 41, 48, 43], wave: "sine" as OscillatorType },
-    sunrise: { beat: 0.48, melody: [64, 67, 72, 76, 74, 72, 67, 69, 72, 76, 79, 76], roots: [48, 45, 53, 55], wave: "triangle" as OscillatorType },
-    roadtrip: { beat: 0.34, melody: [64, 67, 69, 71, 69, 67, 64, 62, 64, 67, 71, 74, 71, 69, 67, 64], roots: [40, 43, 45, 48], wave: "sawtooth" as OscillatorType },
-    indie: { beat: 0.44, melody: [71, 74, 78, 74, 69, 73, 76, 73, 67, 71, 74, 71], roots: [47, 45, 43, 42], wave: "triangle" as OscillatorType },
-    celebration: { beat: 0.3, melody: [67, 69, 71, 74, 71, 69, 67, 64, 67, 71, 74, 76, 74, 71, 69, 67], roots: [48, 45, 41, 43], wave: "square" as OscillatorType },
-  }[music];
-  const beatsPerBar = music === "waltz" ? 3 : 4;
-  for (let index = 0, time = 0; time < duration + 0.5; index += 1, time += settings.beat) {
-    const at = start + time;
-    const root = settings.roots[Math.floor(index / beatsPerBar) % settings.roots.length];
-    addTone(context, output, note(settings.melody[index % settings.melody.length]), at, settings.beat * (classical ? 0.88 : 0.72), classical ? 0.026 : 0.018, settings.wave, !classical);
-    if (index % beatsPerBar === 0) addTone(context, output, note(root), at, settings.beat * beatsPerBar * 0.85, classical ? 0.025 : 0.03, classical ? "sine" : "triangle");
-    const harmonyBeat = music === "waltz" ? index % 3 !== 0 : index % 2 === 0;
-    if (harmonyBeat) {
-      addTone(context, output, note(root + 12), at, settings.beat * 0.78, classical ? 0.013 : 0.01, classical ? "triangle" : "sawtooth", !classical);
-      addTone(context, output, note(root + (music === "nocturne" || music === "indie" ? 15 : 16)), at, settings.beat * 0.78, 0.009, "sine", !classical);
+  if (music === "baroque") {
+    const step = 0.28, upper = [76, 79, 81, 83, 84, 81, 79, 76, 77, 81, 84, 86, 84, 81, 77, 74], lower = [52, 55, 57, 59, 60, 57, 55, 52, 53, 57, 60, 62, 60, 57, 53, 50];
+    for (let i = 0, time = 0; time < duration + 0.5; i += 1, time += step) {
+      addString(context, output, upper[i % upper.length], start + time, step * 0.92, 0.012);
+      addString(context, output, lower[(i + 4) % lower.length], start + time, step * 0.9, 0.009);
+      if (i % 4 === 0) addString(context, output, lower[i % lower.length] - 12, start + time, step * 3.8, 0.012);
     }
-    if (!classical) {
-      if (index % 4 === 0) addDrum(context, output, at, "kick", 0.055);
-      if (index % 4 === 2) addDrum(context, output, at, "snare", 0.025);
-      if (index % 2 === 1) addDrum(context, output, at, "hat", 0.012);
+    return;
+  }
+  if (music === "waltz") {
+    const beat = 0.52, roots = [48, 55, 53, 50], cello = [60, 64, 67, 65, 64, 72, 69, 67, 62, 65, 69, 67];
+    for (let i = 0, time = 0; time < duration + 0.5; i += 1, time += beat) {
+      const at = start + time, root = roots[Math.floor(i / 3) % roots.length], position = i % 3;
+      if (position === 0) addString(context, output, root, at, beat * 2.8, 0.018);
+      else [root + 12, root + 16, root + 19].forEach((midi) => addPiano(context, output, midi, at, beat * 0.78, 0.011));
+      addString(context, output, cello[i % cello.length], at, beat * 0.86, 0.01);
     }
+    return;
+  }
+  if (music === "nocturne") {
+    const step = 0.42, roots = [45, 41, 48, 43], melody = [69, 72, 76, 81, 79, 76, 74, 72, 71, 74, 79, 77, 74, 71, 69, 68], arp = [0, 12, 15, 19, 24, 19, 15, 12];
+    for (let i = 0, time = 0; time < duration + 0.5; i += 1, time += step) {
+      const root = roots[Math.floor(i / 8) % roots.length], at = start + time;
+      addPiano(context, output, root + arp[i % arp.length], at, step * 1.7, 0.014);
+      if (i % 2 === 0) addPiano(context, output, melody[Math.floor(i / 2) % melody.length], at, step * 2.9, 0.025);
+    }
+    return;
+  }
+  if (music === "sunrise") {
+    const step = 0.36, roots = [48, 45, 53, 55], picking = [0, 7, 12, 16, 12, 7, 12, 19], melody = [64, 67, 72, 74, 76, 74, 72, 67, 69, 72, 76, 79, 76, 72, 69, 67];
+    for (let i = 0, time = 0; time < duration + 0.5; i += 1, time += step) {
+      const at = start + time, root = roots[Math.floor(i / 8) % roots.length];
+      addGuitar(context, output, root + picking[i % picking.length], at, step * 1.75, 0.018);
+      if (i % 4 === 0) addGuitar(context, output, melody[(i / 4) % melody.length], at, step * 3.5, 0.014);
+    }
+    return;
+  }
+  if (music === "celebration") {
+    const step = 0.3, roots = [48, 45, 53, 55], riff = [0, 4, 7, 12, 7, 4, 9, 7, 0, 4, 9, 12, 9, 7, 4, 2];
+    for (let i = 0, time = 0; time < duration + 0.5; i += 1, time += step) {
+      const at = start + time, root = roots[Math.floor(i / 8) % roots.length];
+      addPiano(context, output, root + 12 + riff[i % riff.length], at, step * 1.45, 0.021);
+      if (i % 4 === 0) addPiano(context, output, root, at, step * 3.8, 0.022);
+      if (i % 8 === 4) addString(context, output, root + 19, at, step * 3.6, 0.006);
+    }
+    return;
+  }
+  const roadTrip = music === "roadtrip";
+  const step = roadTrip ? 0.32 : 0.4;
+  const roots = roadTrip ? [40, 43, 45, 48] : [47, 43, 50, 45];
+  const melody = roadTrip ? [64, 67, 69, 71, 69, 67, 64, 62, 64, 67, 71, 74, 71, 69, 67, 64] : [71, 74, 78, 74, 69, 73, 76, 73, 67, 71, 74, 71, 66, 69, 73, 69];
+  for (let i = 0, time = 0; time < duration + 0.5; i += 1, time += step) {
+    const at = start + time, root = roots[Math.floor(i / 8) % roots.length];
+    addGuitar(context, output, melody[i % melody.length], at, step * (roadTrip ? 0.75 : 1.45), roadTrip ? 0.017 : 0.013, true);
+    if (i % 2 === 0) addGuitar(context, output, root + 12 + (i % 4 ? 7 : 0), at, step * 1.55, 0.009, true);
+    if (i % 4 === 0) { addTone(context, output, note(root), at, step * 3.7, 0.028, "sine"); addDrum(context, output, at, "kick", roadTrip ? 0.05 : 0.035); }
+    if (i % 4 === 2) addDrum(context, output, at, "snare", roadTrip ? 0.023 : 0.014);
+    if (roadTrip ? i % 2 === 1 : i % 4 === 3) addDrum(context, output, at, "hat", 0.009);
   }
 }
 
