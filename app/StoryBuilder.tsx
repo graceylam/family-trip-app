@@ -2,6 +2,7 @@
 
 import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useState } from "react";
 import type { SharedPhoto, TripDay, TripHighlightElement, TripMember, TripStory, TripStorySlide } from "../lib/googleDrive";
+import { canSaveDirectlyToPhotos, saveBlobToNativePhotos } from "../lib/nativePhotos";
 
 type StoryBuilderProps = {
   days: TripDay[];
@@ -30,6 +31,122 @@ function coverUrl(story: TripStory, urls: Record<string, string>): string {
   return slide?.photoId ? urls[slide.photoId] : "";
 }
 
+function loadStoryImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("One highlight photo could not be prepared."));
+    image.src = url;
+  });
+}
+
+function drawStoryPhoto(context: CanvasRenderingContext2D, image: HTMLImageElement, width: number, height: number) {
+  const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
+  const drawWidth = image.naturalWidth * scale;
+  const drawHeight = image.naturalHeight * scale;
+  context.drawImage(image, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
+}
+
+function storyTextLines(context: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  words.forEach((word) => {
+    const candidate = line ? `${line} ${word}` : word;
+    if (line && context.measureText(candidate).width > maxWidth) { lines.push(line); line = word; }
+    else line = candidate;
+  });
+  if (line) lines.push(line);
+  return lines;
+}
+
+async function renderSavedHighlight(
+  story: TripStory,
+  photoUrls: Record<string, string>,
+  onProgress: (progress: number) => void,
+): Promise<{ blob: Blob; extension: "mp4" | "webm" }> {
+  if (typeof MediaRecorder === "undefined") throw new Error("Video creation is unavailable on this device.");
+  const canvas = document.createElement("canvas");
+  canvas.width = 720;
+  canvas.height = 1280;
+  const context = canvas.getContext("2d");
+  if (!context || typeof canvas.captureStream !== "function") throw new Error("Video creation is unavailable on this device.");
+  const mimeType = ["video/mp4;codecs=avc1.42E01E", "video/mp4", "video/webm;codecs=vp9", "video/webm"].find((type) => MediaRecorder.isTypeSupported(type));
+  const stream = canvas.captureStream(15);
+  const recorder = mimeType ? new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 4_000_000 }) : new MediaRecorder(stream);
+  const chunks: Blob[] = [];
+  recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+  const stopped = new Promise<void>((resolve, reject) => { recorder.onstop = () => resolve(); recorder.onerror = () => reject(new Error("Video creation stopped unexpectedly.")); });
+  recorder.start(1000);
+  const fps = 15;
+  const totalFrames = story.slides.reduce((total, slide) => total + Math.max(2, slide.duration || 4) * fps, 0);
+  let completedFrames = 0;
+  try {
+    for (const slide of story.slides) {
+      const image = slide.photoId && photoUrls[slide.photoId] ? await loadStoryImage(photoUrls[slide.photoId]) : null;
+      const frames = Math.max(2, slide.duration || 4) * fps;
+      for (let frame = 0; frame < frames; frame += 1) {
+        const progress = frame / Math.max(1, frames - 1);
+        const fade = Math.min(1, progress / 0.12, (1 - progress) / 0.12);
+        context.save();
+        context.fillStyle = slide.background || "#173e54";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.globalAlpha = Math.max(0, fade);
+        if (image && slide.layout !== "quote") {
+          if (slide.layout === "split") {
+            context.save();
+            context.beginPath();
+            context.rect(0, 0, canvas.width, canvas.height * 0.58);
+            context.clip();
+            drawStoryPhoto(context, image, canvas.width, canvas.height * 0.58);
+            context.restore();
+          } else drawStoryPhoto(context, image, canvas.width, canvas.height);
+        }
+        if (slide.layout === "caption" && image) {
+          const gradient = context.createLinearGradient(0, canvas.height * 0.5, 0, canvas.height);
+          gradient.addColorStop(0, "rgba(5,14,19,0)");
+          gradient.addColorStop(1, "rgba(5,14,19,.7)");
+          context.fillStyle = gradient;
+          context.fillRect(0, canvas.height * 0.5, canvas.width, canvas.height * 0.5);
+        }
+        for (const element of slide.elements ?? []) {
+          context.save();
+          context.translate(canvas.width * element.x / 100, canvas.height * element.y / 100);
+          context.rotate(element.rotation * Math.PI / 180);
+          context.scale(element.scale, element.scale);
+          context.textAlign = "center";
+          context.textBaseline = "middle";
+          const fontSize = element.kind === "text" ? 42 : 74;
+          context.font = element.kind === "text" ? `500 ${fontSize}px Georgia` : `${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
+          const lines = storyTextLines(context, element.value, canvas.width * 0.72);
+          const lineHeight = fontSize * 1.12;
+          const boxWidth = Math.min(canvas.width * 0.78, Math.max(70, ...lines.map((line) => context.measureText(line).width)) + 30);
+          if (element.background && element.background !== "transparent") {
+            context.fillStyle = element.background;
+            context.fillRect(-boxWidth / 2, -(lines.length * lineHeight) / 2 - 10, boxWidth, lines.length * lineHeight + 20);
+          }
+          context.fillStyle = element.color || "#ffffff";
+          lines.forEach((line, index) => context.fillText(line, 0, (index - (lines.length - 1) / 2) * lineHeight));
+          context.restore();
+        }
+        context.restore();
+        completedFrames += 1;
+        onProgress(completedFrames / Math.max(1, totalFrames));
+        await new Promise((resolve) => window.setTimeout(resolve, 1000 / fps));
+      }
+    }
+    recorder.stop();
+    await stopped;
+  } catch (error) {
+    if (recorder.state !== "inactive") recorder.stop();
+    await stopped.catch(() => undefined);
+    throw error;
+  } finally { stream.getTracks().forEach((track) => track.stop()); }
+  const outputType = recorder.mimeType || mimeType || "video/webm";
+  return { blob: new Blob(chunks, { type: outputType }), extension: outputType.includes("mp4") ? "mp4" : "webm" };
+}
+
 export default function StoryBuilder({ days, highlights, currentMember, photos, photoUrls, onChange }: StoryBuilderProps) {
   const stories = highlights;
   const [draft, setDraft] = useState<TripStory | null>(null);
@@ -41,6 +158,9 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
   const [playing, setPlaying] = useState<TripStory | null>(null);
   const [playIndex, setPlayIndex] = useState(0);
   const [selectedElementId, setSelectedElementId] = useState("");
+  const [exportingStoryId, setExportingStoryId] = useState("");
+  const [exportProgress, setExportProgress] = useState(0);
+  const [exportMessage, setExportMessage] = useState("");
   const selectedSlide = draft?.slides.find((slide) => slide.id === selectedSlideId) ?? draft?.slides[0];
   const selectedElement = selectedSlide?.elements?.find((element) => element.id === selectedElementId);
   const availablePhotos = useMemo(() => photos.filter((photo) => photoUrls[photo.fileId]), [photoUrls, photos]);
@@ -142,6 +262,31 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
     onChange(stories.filter((item) => item.id !== story.id));
   }
 
+  async function saveHighlightVideo(story: TripStory) {
+    if (!story.slides.length || exportingStoryId) return;
+    setExportingStoryId(story.id);
+    setExportProgress(0);
+    setExportMessage("");
+    try {
+      const result = await renderSavedHighlight(story, photoUrls, setExportProgress);
+      if (canSaveDirectlyToPhotos()) await saveBlobToNativePhotos(result.blob, result.blob.type || `video/${result.extension}`);
+      else {
+        const url = URL.createObjectURL(result.blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${story.title.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "Zora-Highlight"}.${result.extension}`;
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+      setExportMessage(canSaveDirectlyToPhotos() ? "Highlight saved to Photos" : "Highlight downloaded");
+    } catch (error) {
+      setExportMessage(error instanceof Error ? error.message : "The highlight video could not be created.");
+    } finally {
+      setExportingStoryId("");
+      window.setTimeout(() => setExportMessage(""), 3500);
+    }
+  }
+
   return <>
     <section className="story-studio" aria-labelledby="story-studio-title">
       <header><div><p className="eyebrow">Made from the whole adventure</p><h2 id="story-studio-title">Highlights</h2><p>Mix moments from any day, then decorate every slide your way.</p></div><button className="primary-button" onClick={startStory} disabled={!currentMember}>＋ Create Highlight</button></header>
@@ -150,9 +295,10 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
         const mine = story.memberId === currentMember?.id;
         return <article key={story.id} className="story-library-card" style={cover ? { backgroundImage: `linear-gradient(rgba(8,22,29,.16), rgba(8,22,29,.76)), url(${cover})` } : undefined}>
           <button className="story-library-open" onClick={() => { setPlaying(story); setPlayIndex(0); }}><small>{story.status === "draft" ? "Draft" : `${story.slides.length} slides`}</small><strong>{story.title}</strong><span>by {story.memberName}</span></button>
-          {mine && <div><button onClick={() => editStory(story)}>Edit</button><button onClick={() => deleteStory(story)}>Delete</button></div>}
+          <div><button onClick={() => void saveHighlightVideo(story)} disabled={Boolean(exportingStoryId)}>{exportingStoryId === story.id ? `Creating ${Math.round(exportProgress * 100)}%` : "Save Highlight as Video"}</button>{mine && <><button onClick={() => editStory(story)}>Edit</button><button onClick={() => deleteStory(story)}>Delete</button></>}</div>
         </article>;
       })}</div>}
+      {exportMessage && <p className="story-export-message" role="status">{exportMessage}</p>}
     </section>
 
     {showTitlePrompt && <div className="modal-backdrop story-title-backdrop" role="presentation" onMouseDown={() => setShowTitlePrompt(false)}><section className="modal story-title-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">New Highlight</p><h2>Give it a title</h2><p className="modal-copy">You can use moments from any day in this trip.</p><input value={titleDraft} onChange={(event) => setTitleDraft(event.target.value)} placeholder="e.g. Our Vienna favourites" autoFocus maxLength={80} onKeyDown={(event) => { if (event.key === "Enter" && titleDraft.trim()) beginHighlight(); }} /><div className="modal-actions"><button className="secondary-button" onClick={() => setShowTitlePrompt(false)}>Cancel</button><button className="primary-button" onClick={beginHighlight} disabled={!titleDraft.trim()}>Choose photos</button></div></section></div>}
