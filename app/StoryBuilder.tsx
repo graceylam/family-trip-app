@@ -110,6 +110,24 @@ async function renderSavedHighlight(
           context.fillStyle = gradient;
           context.fillRect(0, canvas.height * 0.5, canvas.width, canvas.height * 0.5);
         }
+        if (slide.layout !== "full" && (slide.text.trim() || slide.emoji.trim())) {
+          const panelTop = slide.layout === "split" ? canvas.height * 0.58 : slide.layout === "caption" ? canvas.height * 0.69 : 0;
+          const panelHeight = slide.layout === "quote" ? canvas.height : canvas.height - panelTop;
+          if (slide.layout === "split") {
+            context.fillStyle = slide.background || "#173e54";
+            context.fillRect(0, panelTop, canvas.width, panelHeight);
+          }
+          context.fillStyle = "#fffdf8";
+          context.textAlign = "center";
+          context.textBaseline = "middle";
+          if (slide.emoji.trim()) {
+            context.font = "72px -apple-system, BlinkMacSystemFont, sans-serif";
+            context.fillText(slide.emoji, canvas.width / 2, panelTop + panelHeight * 0.3);
+          }
+          context.font = "500 44px Georgia";
+          const lines = storyTextLines(context, slide.text || "Add a caption", canvas.width * 0.78).slice(0, 5);
+          lines.forEach((line, index) => context.fillText(line, canvas.width / 2, panelTop + panelHeight * 0.55 + (index - (lines.length - 1) / 2) * 54));
+        }
         for (const element of slide.elements ?? []) {
           context.save();
           context.translate(canvas.width * element.x / 100, canvas.height * element.y / 100);
@@ -310,9 +328,11 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
         {selectedSlide ? <main className="story-editing-area">
           <div className={`story-phone-preview freeform layout-${selectedSlide.layout}`} style={{ background: selectedSlide.background }} onClick={() => setSelectedElementId("")}>
             {selectedSlide.photoId && photoUrls[selectedSlide.photoId] && <img src={photoUrls[selectedSlide.photoId]} alt="Story preview" />}
+            {selectedSlide.layout !== "full" && <div className="story-layout-copy"><b>{selectedSlide.emoji}</b><p>{selectedSlide.text || (selectedSlide.layout === "quote" ? "Write a quote to remember…" : "Add a caption…")}</p></div>}
             {(selectedSlide.elements ?? []).map((element) => <button className={`highlight-canvas-element ${element.kind} ${element.id === selectedElementId ? "selected" : ""}`} style={{ left: `${element.x}%`, top: `${element.y}%`, color: element.color, background: element.background, transform: `translate(-50%,-50%) rotate(${element.rotation}deg) scale(${element.scale})` }} onPointerDown={(event) => beginElementDrag(event, element)} key={element.id}>{element.value}</button>)}
           </div>
           <div className="story-controls">
+            {selectedSlide.layout !== "full" && <div className="story-layout-fields"><label><span>{selectedSlide.layout === "quote" ? "Quote" : "Caption"}</span><textarea value={selectedSlide.text} onChange={(event) => updateSlide({ text: event.target.value })} maxLength={180} placeholder={selectedSlide.layout === "quote" ? "Write a quote to remember…" : "Add a caption…"} /></label><label><span>Emoji (optional)</span><input value={selectedSlide.emoji} onChange={(event) => updateSlide({ emoji: event.target.value })} maxLength={8} placeholder="✨" /></label></div>}
             <div className="highlight-add-elements"><button onClick={() => addElement("text")}>＋ Text</button><button onClick={() => addElement("emoji")}>＋ Emoji</button><button onClick={() => addElement("sticker")}>＋ Sticker</button></div>
             {selectedElement ? <div className="highlight-element-controls"><label><span>{selectedElement.kind === "text" ? "Text" : selectedElement.kind === "emoji" ? "Emoji" : "Sticker"}</span><input value={selectedElement.value} onChange={(event) => updateElement({ value: event.target.value })} maxLength={selectedElement.kind === "text" ? 120 : 16} /></label><fieldset><legend>Colour</legend><div className="story-colours">{elementColours.map((colour) => <button className={selectedElement.color === colour ? "active" : ""} style={{ background: colour }} onClick={() => updateElement({ color: colour })} key={colour} aria-label={`Use ${colour}`} />)}</div></fieldset><label><span>Size</span><input type="range" min="0.5" max="2.5" step="0.1" value={selectedElement.scale} onChange={(event) => updateElement({ scale: Number(event.target.value) })} /></label><label><span>Rotation</span><input type="range" min="-30" max="30" value={selectedElement.rotation} onChange={(event) => updateElement({ rotation: Number(event.target.value) })} /></label><button className="danger-button" onClick={() => { updateSlide({ elements: (selectedSlide.elements ?? []).filter((item) => item.id !== selectedElement.id) }); setSelectedElementId(""); }}>Remove element</button></div> : <p className="highlight-drag-hint">Add text, emoji or stickers, then drag them anywhere on the photo.</p>}
             <label><span>Photo layout</span><select value={selectedSlide.layout} onChange={(event) => updateSlide({ layout: event.target.value as TripStorySlide["layout"] })}>{layouts.map((layout) => <option value={layout.value} key={layout.value}>{layout.label}</option>)}</select></label>
@@ -330,6 +350,7 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
     {playing && playing.slides[playIndex] && (() => { const slide = playing.slides[playIndex]; return <div className={`story-player layout-${slide.layout}`} role="dialog" aria-modal="true" style={{ background: slide.background }} onClick={() => playIndex < playing.slides.length - 1 ? setPlayIndex(playIndex + 1) : setPlaying(null)}>
       <div className="story-progress">{playing.slides.map((_, index) => <i className={index <= playIndex ? "active" : ""} key={index} />)}</div><header><strong>{playing.title}</strong><button onClick={(event) => { event.stopPropagation(); setPlaying(null); }}>×</button></header>
       {slide.photoId && photoUrls[slide.photoId] && <img src={photoUrls[slide.photoId]} alt="" />}
+      {slide.layout !== "full" && <div className="story-layout-copy"><b>{slide.emoji}</b><p>{slide.text}</p></div>}
       <main>{(slide.elements ?? []).map((element) => <span className={`highlight-play-element ${element.kind}`} style={{ left: `${element.x}%`, top: `${element.y}%`, color: element.color, background: element.background, transform: `translate(-50%,-50%) rotate(${element.rotation}deg) scale(${element.scale})` }} key={element.id}>{element.value}</span>)}</main><small>{playIndex + 1} / {playing.slides.length}</small>
     </div>; })()}
   </>;

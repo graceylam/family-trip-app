@@ -1809,6 +1809,20 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .story-library-card > div button:first-child { grid-column: 1/-1; min-height: 34px; background: rgba(38,103,132,.9); }
 .story-library-card > div button:disabled { opacity: .7; }
 .story-export-message { margin: 0; padding: 9px 11px; border-radius: 10px; color: #315f76; background: #e8f2f3; font-size: .64rem; font-weight: 750; }
+
+/* Make every Highlight layout visibly distinct in edit, playback and export. */
+.story-phone-preview.freeform > .story-layout-copy,.story-player > .story-layout-copy { position: absolute; z-index: 2; right: 0; bottom: 0; left: 0; display: grid; align-content: center; justify-items: center; gap: 8px; padding: 22px; color: #fffdf8; text-align: center; }
+.story-phone-preview .story-layout-copy b,.story-player .story-layout-copy b { font-family: -apple-system,BlinkMacSystemFont,sans-serif; font-size: 2.1rem; }
+.story-phone-preview .story-layout-copy p,.story-player .story-layout-copy p { margin: 0; font: 500 1.05rem/1.2 Georgia,serif; white-space: pre-wrap; }
+.story-phone-preview.layout-caption > .story-layout-copy,.story-player.layout-caption > .story-layout-copy { min-height: 31%; background: linear-gradient(transparent,rgba(5,14,19,.82) 32%); }
+.story-phone-preview.layout-split > .story-layout-copy,.story-player.layout-split > .story-layout-copy { top: 58%; background: inherit; }
+.story-phone-preview.layout-quote > .story-layout-copy,.story-player.layout-quote > .story-layout-copy { top: 0; background: inherit; }
+.story-player .story-layout-copy { z-index: 3; padding-inline: 12%; }
+.story-player .story-layout-copy b { font-size: clamp(2.5rem,10vw,5rem); }
+.story-player .story-layout-copy p { max-width: 720px; font-size: clamp(1.7rem,5vw,3.2rem); }
+.story-layout-fields { display: grid; grid-template-columns: minmax(0,1fr) 105px; gap: 9px; }
+.story-layout-fields textarea { min-height: 72px; resize: vertical; }
+@media (max-width:600px) { .story-layout-fields { grid-template-columns: minmax(0,1fr) 82px; }.story-phone-preview.freeform > .story-layout-copy { gap: 4px; padding: 12px; }.story-phone-preview .story-layout-copy b { font-size: 1.45rem; }.story-phone-preview .story-layout-copy p { font-size: .72rem; } }
 .story-builder-backdrop { position: fixed; z-index: 2100; inset: 0; display: grid; padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom)); place-items: center; background: rgba(8,18,24,.68); }
 .story-builder { display: grid; grid-template-rows: auto minmax(0,1fr) auto; width: min(980px, 100%); height: min(820px, 100%); overflow: hidden; border-radius: 22px; background: #f8f5ee; box-shadow: 0 30px 90px rgba(0,0,0,.32); }
 .story-builder > header, .story-builder > footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #dfe5e6; background: rgba(255,253,248,.96); }
