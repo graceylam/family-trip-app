@@ -33,6 +33,7 @@ const musicChoices: Array<{ value: HighlightMusic; label: string; description: s
   { value: "celebration", label: "Golden Hour", description: "A joyful, rolling piano riff with a gentle lift" },
 ];
 const musicIcons: Record<HighlightMusic, string> = { none: "◯", baroque: "♬", waltz: "♩", nocturne: "☾", sunrise: "☀", roadtrip: "⚡", indie: "✦", celebration: "♪" };
+const musicAssetUrl = (music: Exclude<HighlightMusic, "none">) => new URL(`music/${music}.wav`, document.baseURI).toString();
 
 const note = (midi: number) => 440 * (2 ** ((midi - 69) / 12));
 
@@ -234,11 +235,25 @@ async function renderSavedHighlight(
   const stream = canvas.captureStream(15);
   const AudioContextClass = window.AudioContext;
   const audioContext = music !== "none" && AudioContextClass ? new AudioContextClass() : null;
+  let soundtrackSource: AudioBufferSourceNode | null = null;
   if (audioContext) {
     await audioContext.resume();
     const destination = audioContext.createMediaStreamDestination();
     const duration = story.slides.reduce((total, slide) => total + Math.max(2, slide.duration || 4), 0);
-    scheduleGeneratedMusic(audioContext, destination, music as Exclude<HighlightMusic, "none">, duration);
+    try {
+      const soundtrack = await fetch(musicAssetUrl(music as Exclude<HighlightMusic, "none">)).then((response) => {
+        if (!response.ok) throw new Error("Soundtrack unavailable");
+        return response.arrayBuffer();
+      });
+      soundtrackSource = audioContext.createBufferSource();
+      soundtrackSource.buffer = await audioContext.decodeAudioData(soundtrack);
+      soundtrackSource.loop = duration > soundtrackSource.buffer.duration;
+      soundtrackSource.loopEnd = Math.min(24, soundtrackSource.buffer.duration);
+      soundtrackSource.connect(destination);
+      soundtrackSource.start();
+    } catch {
+      scheduleGeneratedMusic(audioContext, destination, music as Exclude<HighlightMusic, "none">, duration);
+    }
     const audioTrack = destination.stream.getAudioTracks()[0];
     if (audioTrack) stream.addTrack(audioTrack);
   }
@@ -328,7 +343,7 @@ async function renderSavedHighlight(
     if (recorder.state !== "inactive") recorder.stop();
     await stopped.catch(() => undefined);
     throw error;
-  } finally { stream.getTracks().forEach((track) => track.stop()); await audioContext?.close(); }
+  } finally { try { soundtrackSource?.stop(); } catch {} stream.getTracks().forEach((track) => track.stop()); await audioContext?.close(); }
   const outputType = recorder.mimeType || mimeType || "video/webm";
   return { blob: new Blob(chunks, { type: outputType }), extension: outputType.includes("mp4") ? "mp4" : "webm" };
 }
@@ -350,7 +365,7 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
   const [videoExportStory, setVideoExportStory] = useState<TripStory | null>(null);
   const [musicChoice, setMusicChoice] = useState<HighlightMusic>("baroque");
   const [previewingMusic, setPreviewingMusic] = useState(false);
-  const musicPreviewRef = useRef<{ context: AudioContext; timer: number } | null>(null);
+  const musicPreviewRef = useRef<{ audio: HTMLAudioElement; timer: number } | null>(null);
   const selectedSlide = draft?.slides.find((slide) => slide.id === selectedSlideId) ?? draft?.slides[0];
   const selectedElement = selectedSlide?.elements?.find((element) => element.id === selectedElementId);
   const availablePhotos = useMemo(() => photos.filter((photo) => photoUrls[photo.fileId]), [photoUrls, photos]);
@@ -368,7 +383,7 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
   useEffect(() => () => {
     if (musicPreviewRef.current) {
       window.clearTimeout(musicPreviewRef.current.timer);
-      void musicPreviewRef.current.context.close();
+      musicPreviewRef.current.audio.pause();
     }
   }, []);
 
@@ -463,7 +478,8 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
     const preview = musicPreviewRef.current;
     if (preview) {
       window.clearTimeout(preview.timer);
-      void preview.context.close();
+      preview.audio.pause();
+      preview.audio.currentTime = 0;
       musicPreviewRef.current = null;
     }
     setPreviewingMusic(false);
@@ -473,12 +489,16 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
     if (previewingMusic) { stopMusicPreview(); return; }
     if (musicChoice === "none") return;
     stopMusicPreview();
-    const context = new AudioContext();
-    await context.resume();
-    scheduleGeneratedMusic(context, context.destination, musicChoice, 7);
-    const timer = window.setTimeout(() => { void context.close(); musicPreviewRef.current = null; setPreviewingMusic(false); }, 7000);
-    musicPreviewRef.current = { context, timer };
-    setPreviewingMusic(true);
+    const audio = new Audio(musicAssetUrl(musicChoice));
+    audio.preload = "auto";
+    try {
+      await audio.play();
+      const timer = window.setTimeout(() => { audio.pause(); audio.currentTime = 0; musicPreviewRef.current = null; setPreviewingMusic(false); }, 10_000);
+      musicPreviewRef.current = { audio, timer };
+      setPreviewingMusic(true);
+    } catch {
+      setExportMessage("This soundtrack could not be previewed. Please try again.");
+    }
   }
 
   async function saveHighlightVideo(story: TripStory, music: HighlightMusic) {
