@@ -27,6 +27,12 @@ function displayLabel(value: string): string {
   return value.split("-").map((word) => word ? word[0].toUpperCase() + word.slice(1) : word).join(" ");
 }
 
+function colourWithOpacity(hex: string | undefined, opacity: number | undefined) {
+  const value = hex?.match(/^#([0-9a-f]{6})$/i)?.[1];
+  if (!value || !opacity) return "transparent";
+  return `rgba(${Number.parseInt(value.slice(0, 2), 16)},${Number.parseInt(value.slice(2, 4), 16)},${Number.parseInt(value.slice(4, 6), 16)},${Math.max(0, Math.min(1, opacity))})`;
+}
+
 function isDarkPaper(background: string): boolean {
   if (background.includes("#151515") || background.includes("#393939")) return true;
   const hex = background.trim().match(/^#([0-9a-f]{6})$/i)?.[1];
@@ -38,7 +44,7 @@ function isDarkPaper(background: string): boolean {
 }
 
 function item(kind: TripScrapbookPageElement["kind"], value: string, x: number, y: number, width = 45, rotation = 0): TripScrapbookPageElement {
-  return { id: crypto.randomUUID(), kind, value, x, y, width, rotation, colour: "#294552", frame: kind === "photo" || kind === "video" ? "polaroid" : "none", textStyle: "classic", attachment: "none" };
+  return { id: crypto.randomUUID(), kind, value, x, y, width, rotation, colour: "#294552", backgroundColour: "#fffdf8", backgroundOpacity: 0, opacity: 1, frame: kind === "photo" || kind === "video" ? "polaroid" : "none", textStyle: "classic", attachment: "none" };
 }
 function newPage(member: TripMember, pageType: TripScrapbookPage["pageType"], day?: TripDay, template: Template = "blank"): TripScrapbookPage {
   const now = new Date().toISOString();
@@ -47,7 +53,7 @@ function newPage(member: TripMember, pageType: TripScrapbookPage["pageType"], da
   if (template === "pinboard") elements.push({ ...item("text", "Pin your favourite moments here", 50, 22, 60), textStyle: "cutout" }, { ...item("decoration", "clip", 50, 47, 13), attachment: "clip" });
   if (template === "postcard") elements.push({ ...item("text", "Wish you were here", 52, 34, 64), textStyle: "outline" }, item("sticker", "✈️", 78, 73, 15, 12));
   if (template === "film") elements.push({ ...item("text", "Scenes from our adventure", 50, 18, 70), textStyle: "label", colour: "#fffdf8" }, { ...item("sticker", "✦", 84, 78, 12, 8), colour: "#fffdf8" });
-  return { id: crypto.randomUUID(), title: day ? `${day.label} Recap` : template === "blank" ? "Untitled Scrapbook" : displayLabel(template), pageType, template: pageType === "freeform" ? template : undefined, dayId: day?.id, background: templateBackgrounds[template], freeText: "", favouriteThings: ["", "", ""], weather: "", weatherTemperature: "", weatherDescription: "", steps: "", distance: "", favouriteMemory: "", elements, memberId: member.id, memberName: member.name, contributorNames: [member.name], createdAt: now, updatedAt: now };
+  return { id: crypto.randomUUID(), title: day ? `${day.label} Recap` : template === "blank" ? "Untitled Scrapbook" : displayLabel(template), pageType, template: pageType === "freeform" ? template : undefined, dayId: day?.id, background: templateBackgrounds[template], backgroundPhotoOpacity: 0.35, freeText: "", favouriteThings: ["", "", ""], weather: "", weatherTemperature: "", weatherDescription: "", steps: "", distance: "", favouriteMemory: "", elements, memberId: member.id, memberName: member.name, contributorNames: [member.name], createdAt: now, updatedAt: now };
 }
 
 export default function ScrapbookStudio({ tripName, days, currentMember, media, mediaUrls, pages, onChange }: Props) {
@@ -64,7 +70,7 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
   const [wallPhotoCaption, setWallPhotoCaption] = useState("");
   const [wallPhotoEmoji, setWallPhotoEmoji] = useState("✨");
   const [wallPhotoDecoration, setWallPhotoDecoration] = useState<NonNullable<TripScrapbookPageElement["attachment"]>>("tape");
-  const [mediaPurpose, setMediaPurpose] = useState<"element" | "recap" | null>(null);
+  const [mediaPurpose, setMediaPurpose] = useState<"element" | "recap" | "background" | null>(null);
   const [selectedElementId, setSelectedElementId] = useState("");
   const selectedElement = draft?.elements.find((element) => element.id === selectedElementId);
   const coverPage = pages.find((page) => page.pageType === "cover");
@@ -73,6 +79,44 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
   const visibleBookPages = contentPages.filter((page) => !page.hiddenFromPhotobook);
   const visibleBookIndices = contentPages.map((page, index) => page.hiddenFromPhotobook ? -1 : index + 1).filter((index) => index > 0);
   const availableMedia = useMemo(() => media.filter((entry) => mediaUrls[entry.fileId]), [media, mediaUrls]);
+
+  useEffect(() => {
+    const canvas = document.querySelector<HTMLElement>(".scrapbook-editor .scrapbook-canvas");
+    if (!canvas || !draft) return;
+    const photo = draft.backgroundPhotoId ? mediaUrls[draft.backgroundPhotoId] : "";
+    const veil = 1 - (draft.backgroundPhotoOpacity ?? 0.35);
+    canvas.style.backgroundColor = draft.background.match(/^#[0-9a-f]{6}$/i) ? draft.background : "#fffaf0";
+    canvas.style.backgroundImage = photo ? `linear-gradient(rgba(255,253,248,${veil}),rgba(255,253,248,${veil})),url("${photo}")` : draft.background.includes("gradient") ? draft.background : "none";
+    canvas.style.backgroundSize = photo ? "cover" : "auto";
+    canvas.style.backgroundPosition = "center";
+    canvas.querySelectorAll<HTMLElement>(".scrapbook-canvas-element").forEach((node, index) => {
+      const element = draft.elements[index];
+      if (!element) return;
+      node.style.color = element.colour || "#294552";
+      node.style.backgroundColor = colourWithOpacity(element.backgroundColour, element.backgroundOpacity);
+      node.style.opacity = String(element.opacity ?? 1);
+    });
+  }, [draft, mediaUrls]);
+
+  useEffect(() => {
+    if (!bookOpen || bookPage === 0) return;
+    const page = contentPages[bookPage - 1];
+    const reader = document.querySelector<HTMLElement>(".scrapbook-reader-page");
+    if (!reader || !page) return;
+    const photo = page.backgroundPhotoId ? mediaUrls[page.backgroundPhotoId] : "";
+    const veil = 1 - (page.backgroundPhotoOpacity ?? 0.35);
+    reader.style.backgroundColor = page.background.match(/^#[0-9a-f]{6}$/i) ? page.background : "#fffaf0";
+    reader.style.backgroundImage = photo ? `linear-gradient(rgba(255,253,248,${veil}),rgba(255,253,248,${veil})),url("${photo}")` : page.background.includes("gradient") ? page.background : "none";
+    reader.style.backgroundSize = photo ? "cover" : "auto";
+    reader.style.backgroundPosition = "center";
+    reader.querySelectorAll<HTMLElement>(".scrapbook-reader-element").forEach((node, index) => {
+      const element = page.elements[index];
+      if (!element) return;
+      node.style.color = element.colour || "#294552";
+      node.style.backgroundColor = colourWithOpacity(element.backgroundColour, element.backgroundOpacity);
+      node.style.opacity = String(element.opacity ?? 1);
+    });
+  }, [bookOpen, bookPage, contentPages, mediaUrls]);
 
   function create(pageType: TripScrapbookPage["pageType"], day?: TripDay, template: Template = "blank") { if (!currentMember) return; setDraft(newPage(currentMember, pageType, day, template)); setCreateOpen(false); setAddMenuOpen(false); setSelectedElementId(""); }
   function chooseCover(style: NonNullable<TripScrapbookPage["coverStyle"]>) { if (!currentMember) return; const now = new Date().toISOString(); const cover: TripScrapbookPage = coverPage ? { ...coverPage, coverStyle: style, updatedAt: now, memberId: currentMember.id, memberName: currentMember.name } : { ...newPage(currentMember, "cover"), id: "scrapbook-cover", title: `${tripName} scrapbook`, pageType: "cover", coverStyle: style, elements: [], createdAt: now, updatedAt: now }; onChange([...contentPages, cover]); setCoverPickerOpen(false); }
@@ -191,7 +235,7 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
   function save() { if (!draft) return; const contributors = [...new Set([...(draft.contributorNames ?? [draft.memberName]), ...(currentMember ? [currentMember.name] : [])])]; const saved = { ...draft, favouriteThings: [...draft.favouriteThings.slice(0, 3), "", "", ""].slice(0, 3), title: draft.title.trim() || "Untitled Scrapbook", contributorNames: contributors, updatedAt: new Date().toISOString() }; onChange([...pages.filter((page) => page.id !== saved.id), saved]); setAddMenuOpen(false); setDraft(null); }
   function addElement(kind: TripScrapbookPageElement["kind"], value: string, changes: Partial<TripScrapbookPageElement> = {}) { if (!draft) return; const created = { ...item(kind, value, 50, 45, kind === "emoji" || kind === "sticker" || kind === "decoration" ? 16 : 52), ...changes }; update({ elements: [...draft.elements, created] }); setSelectedElementId(created.id); setMediaPurpose(null); }
   function updateElement(changes: Partial<TripScrapbookPageElement>) { if (!draft || !selectedElementId) return; update({ elements: draft.elements.map((element) => element.id === selectedElementId ? { ...element, ...changes } : element) }); }
-  function selectMedia(entry: SharedPhoto) { if (!draft) return; if (mediaPurpose === "recap") { update({ favouritePhotoId: entry.fileId }); setMediaPurpose(null); return; } if (draft.template === "photo-wall" && entry.mimeType.startsWith("image/")) { setWallPhotoId(entry.fileId); return; } addElement(entry.mimeType.startsWith("video/") ? "video" : "photo", entry.fileId); }
+  function selectMedia(entry: SharedPhoto) { if (!draft) return; if (mediaPurpose === "recap") { update({ favouritePhotoId: entry.fileId }); setMediaPurpose(null); return; } if (mediaPurpose === "background") { if (!entry.mimeType.startsWith("image/")) return; update({ backgroundPhotoId: entry.fileId }); setMediaPurpose(null); return; } if (draft.template === "photo-wall" && entry.mimeType.startsWith("image/")) { setWallPhotoId(entry.fileId); return; } addElement(entry.mimeType.startsWith("video/") ? "video" : "photo", entry.fileId); }
   function duplicateElement() { if (!selectedElement || !draft) return; const copy = { ...selectedElement, id: crypto.randomUUID(), x: Math.min(94, selectedElement.x + 5), y: Math.min(94, selectedElement.y + 5) }; update({ elements: [...draft.elements, copy] }); setSelectedElementId(copy.id); }
   function moveLayer(direction: -1 | 1) { if (!draft || !selectedElement) return; const elements = [...draft.elements]; const index = elements.findIndex((entry) => entry.id === selectedElement.id); const next = Math.max(0, Math.min(elements.length - 1, index + direction)); elements.splice(index, 1); elements.splice(next, 0, selectedElement); update({ elements }); }
   function drag(event: ReactPointerEvent, element: TripScrapbookPageElement) { const canvas = event.currentTarget.parentElement; if (!canvas) return; event.preventDefault(); event.stopPropagation(); setSelectedElementId(element.id); const move = (pointer: PointerEvent) => { const rect = canvas.getBoundingClientRect(); setDraft((page) => page ? { ...page, elements: page.elements.map((entry) => entry.id === element.id ? { ...entry, x: Math.max(3, Math.min(97, (pointer.clientX - rect.left) / rect.width * 100)), y: Math.max(3, Math.min(97, (pointer.clientY - rect.top) / rect.height * 100)) } : entry) } : page); }; const stop = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", stop); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", stop); }
@@ -199,6 +243,8 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
   const recapMedia = draft?.favouritePhotoId ? availableMedia.find((entry) => entry.fileId === draft.favouritePhotoId) : undefined;
 
   return <section className="scrapbook-studio">
+    {draft && <details className="scrapbook-page-style-panel"><summary>Page Style</summary><div className="memory-colour-pair"><label><span>Page Colour</span><input type="color" value={draft.background.match(/^#[0-9a-f]{6}$/i) ? draft.background : "#fffaf0"} onChange={(event) => update({ background: event.target.value })} /></label><label><span>HEX</span><input value={draft.background.match(/^#[0-9a-f]{6}$/i) ? draft.background.toUpperCase() : "#FFFAF0"} onChange={(event) => { if (/^#[0-9a-f]{6}$/i.test(event.target.value)) update({ background: event.target.value }); }} maxLength={7} /></label></div><button onClick={() => setMediaPurpose("background")}>▧ {draft.backgroundPhotoId ? "Change Background Photo" : "Add Background Photo"}</button>{draft.backgroundPhotoId && <><label><span>Background Photo Opacity</span><input type="range" min="0.05" max="1" step="0.05" value={draft.backgroundPhotoOpacity ?? 0.35} onChange={(event) => update({ backgroundPhotoOpacity: Number(event.target.value) })} /></label><button className="text-button" onClick={() => update({ backgroundPhotoId: undefined })}>Remove Background Photo</button></>}</details>}
+    {draft && selectedElement && <section className="scrapbook-colour-inspector"><strong>Colours & Opacity</strong><div className="memory-colour-pair"><label><span>Font Colour</span><input type="color" value={selectedElement.colour || "#294552"} onChange={(event) => updateElement({ colour: event.target.value })} /></label><label><span>Font HEX</span><input value={(selectedElement.colour || "#294552").toUpperCase()} onChange={(event) => { if (/^#[0-9a-f]{6}$/i.test(event.target.value)) updateElement({ colour: event.target.value }); }} maxLength={7} /></label><label><span>Background Colour</span><input type="color" value={selectedElement.backgroundColour || "#fffdf8"} onChange={(event) => updateElement({ backgroundColour: event.target.value })} /></label><label><span>Background HEX</span><input value={(selectedElement.backgroundColour || "#FFFDF8").toUpperCase()} onChange={(event) => { if (/^#[0-9a-f]{6}$/i.test(event.target.value)) updateElement({ backgroundColour: event.target.value }); }} maxLength={7} /></label></div><label><span>Background Opacity</span><input type="range" min="0" max="1" step="0.05" value={selectedElement.backgroundOpacity ?? 0} onChange={(event) => updateElement({ backgroundOpacity: Number(event.target.value) })} /></label><label><span>Item Opacity</span><input type="range" min="0.1" max="1" step="0.05" value={selectedElement.opacity ?? 1} onChange={(event) => updateElement({ opacity: Number(event.target.value) })} /></label></section>}
     <header><div><p className="eyebrow">Pages made together</p><h2>Digital Scrapbook</h2><p>Mix photos, videos, words, frames and decorations—your way.</p></div><button className="primary-button" onClick={() => setCreateOpen(true)} disabled={!currentMember}>＋ New Page</button></header>
     {bookOpen && bookPage > 0 && !arranging && <button className="scrapbook-save-page" onClick={() => void saveCompleteReaderPage()} disabled={pageExportStatus === "Saving…" || pageExportStatus === "Building PDF…"} aria-label="Save page to Photos">↓ {pageExportStatus === "Saving…" ? "Saving…" : "Save Page to Photos"}</button>}
     {bookOpen && !arranging && <button className="scrapbook-export-pdf" onClick={() => void exportBookAsPdf()} disabled={!visibleBookPages.length || pageExportStatus === "Building PDF…"}>↥ {pageExportStatus === "Building PDF…" ? "Building…" : "Export PDF"}</button>}

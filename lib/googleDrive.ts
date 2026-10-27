@@ -145,6 +145,11 @@ export type TripStorySlide = {
   text: string;
   emoji: string;
   background: string;
+  backgroundPhotoId?: string;
+  backgroundPhotoOpacity?: number;
+  textColor?: string;
+  textBackground?: string;
+  textBackgroundOpacity?: number;
   duration: number;
   elements?: TripHighlightElement[];
 };
@@ -161,6 +166,7 @@ export type TripHighlightElement = {
   rotation: number;
   color: string;
   background?: string;
+  backgroundOpacity?: number;
 };
 
 export type TripStory = {
@@ -183,6 +189,9 @@ export type TripScrapbookPageElement = {
   width: number;
   rotation: number;
   colour?: string;
+  backgroundColour?: string;
+  backgroundOpacity?: number;
+  opacity?: number;
   frame?: "none" | "white" | "polaroid" | "film" | "postcard";
   textStyle?: "classic" | "handwritten" | "cutout" | "outline" | "label";
   attachment?: "none" | "tape" | "pin" | "clip" | "postmark";
@@ -198,6 +207,8 @@ export type TripScrapbookPage = {
   template?: "blank" | "journal" | "pinboard" | "photo-wall" | "postcard" | "film";
   dayId?: string;
   background: string;
+  backgroundPhotoId?: string;
+  backgroundPhotoOpacity?: number;
   freeText: string;
   favouriteThings: string[];
   weather: string;

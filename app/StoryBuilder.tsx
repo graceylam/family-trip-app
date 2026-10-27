@@ -183,9 +183,15 @@ function scheduleGeneratedMusic(context: AudioContext, output: AudioNode, music:
 }
 
 function newSlide(photoId = ""): TripStorySlide {
-  return { id: crypto.randomUUID(), photoId: photoId || undefined, layout: photoId ? "full" : "quote", text: "", emoji: "", background: backgrounds[0], duration: 3, elements: [] };
+  return { id: crypto.randomUUID(), photoId: photoId || undefined, layout: photoId ? "full" : "quote", text: "", emoji: "", background: backgrounds[0], backgroundPhotoOpacity: 0.55, textColor: "#fffdf8", textBackground: "#051419", textBackgroundOpacity: 0.62, duration: 3, elements: [] };
 }
 const slideDuration = (slide: TripStorySlide) => Math.min(5, Math.max(1, slide.duration || 3));
+
+function hexWithOpacity(hex: string | undefined, opacity: number | undefined, fallback = "transparent") {
+  const value = hex?.match(/^#([0-9a-f]{6})$/i)?.[1];
+  if (!value) return fallback;
+  return `rgba(${Number.parseInt(value.slice(0, 2), 16)},${Number.parseInt(value.slice(2, 4), 16)},${Number.parseInt(value.slice(4, 6), 16)},${Math.max(0, Math.min(1, opacity ?? 1))})`;
+}
 
 function coverUrl(story: TripStory, urls: Record<string, string>): string {
   const slide = story.slides.find((item) => item.photoId && urls[item.photoId]);
@@ -269,6 +275,7 @@ async function renderSavedHighlight(
   try {
     for (const slide of story.slides) {
       const image = slide.photoId && photoUrls[slide.photoId] ? await loadStoryImage(photoUrls[slide.photoId]) : null;
+      const backgroundImage = slide.backgroundPhotoId && photoUrls[slide.backgroundPhotoId] ? await loadStoryImage(photoUrls[slide.backgroundPhotoId]) : null;
       const frames = slideDuration(slide) * fps;
       for (let frame = 0; frame < frames; frame += 1) {
         const progress = frame / Math.max(1, frames - 1);
@@ -276,6 +283,12 @@ async function renderSavedHighlight(
         context.save();
         context.fillStyle = slide.background || "#173e54";
         context.fillRect(0, 0, canvas.width, canvas.height);
+        if (backgroundImage) {
+          context.save();
+          context.globalAlpha = slide.backgroundPhotoOpacity ?? 0.55;
+          drawStoryPhoto(context, backgroundImage, canvas.width, canvas.height);
+          context.restore();
+        }
         context.globalAlpha = Math.max(0, fade);
         if (image && slide.layout !== "quote") {
           if (slide.layout === "split") {
@@ -297,11 +310,11 @@ async function renderSavedHighlight(
         if (slide.layout !== "full" && (slide.text.trim() || slide.emoji.trim())) {
           const panelTop = slide.layout === "split" ? canvas.height * 0.58 : slide.layout === "caption" ? canvas.height * 0.69 : 0;
           const panelHeight = slide.layout === "quote" ? canvas.height : canvas.height - panelTop;
-          if (slide.layout === "split") {
-            context.fillStyle = slide.background || "#173e54";
+          if (slide.layout === "split" || (slide.textBackgroundOpacity ?? 0) > 0) {
+            context.fillStyle = hexWithOpacity(slide.textBackground || slide.background, slide.textBackgroundOpacity ?? (slide.layout === "split" ? 1 : 0), slide.background);
             context.fillRect(0, panelTop, canvas.width, panelHeight);
           }
-          context.fillStyle = "#fffdf8";
+          context.fillStyle = slide.textColor || "#fffdf8";
           context.textAlign = "center";
           context.textBaseline = "middle";
           if (slide.emoji.trim()) {
@@ -325,7 +338,7 @@ async function renderSavedHighlight(
           const lineHeight = fontSize * 1.12;
           const boxWidth = Math.min(canvas.width * 0.78, Math.max(70, ...lines.map((line) => context.measureText(line).width)) + 30);
           if (element.background && element.background !== "transparent") {
-            context.fillStyle = element.background;
+            context.fillStyle = hexWithOpacity(element.background, element.backgroundOpacity ?? 1, element.background);
             context.fillRect(-boxWidth / 2, -(lines.length * lineHeight) / 2 - 10, boxWidth, lines.length * lineHeight + 20);
           }
           context.fillStyle = element.color || "#ffffff";
@@ -557,16 +570,21 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
         <aside className="story-slide-rail"><button className="story-add-slide" onClick={() => setShowPhotoPicker(true)}>＋</button>{draft.slides.map((slide, index) => <div className={slide.id === selectedSlide?.id ? "active" : ""} key={slide.id}><button onClick={() => setSelectedSlideId(slide.id)}><small>{index + 1}</small>{slide.photoId && photoUrls[slide.photoId] ? <img src={photoUrls[slide.photoId]} alt="" /> : <span style={{ background: slide.background }}>{slide.emoji}</span>}</button><nav><button onClick={() => moveSlide(index, -1)} disabled={index === 0}>↑</button><button onClick={() => moveSlide(index, 1)} disabled={index === draft.slides.length - 1}>↓</button></nav></div>)}</aside>
         {selectedSlide ? <main className="story-editing-area">
           <div className={`story-phone-preview freeform layout-${selectedSlide.layout}`} style={{ background: selectedSlide.background }} onClick={() => setSelectedElementId("")}>
+            {selectedSlide.backgroundPhotoId && photoUrls[selectedSlide.backgroundPhotoId] && <img className="story-background-photo" src={photoUrls[selectedSlide.backgroundPhotoId]} alt="" style={{ opacity: selectedSlide.backgroundPhotoOpacity ?? 0.55 }} />}
             {selectedSlide.photoId && photoUrls[selectedSlide.photoId] && <img src={photoUrls[selectedSlide.photoId]} alt="Story preview" />}
-            {selectedSlide.layout !== "full" && <div className="story-layout-copy"><b>{selectedSlide.emoji}</b><p>{selectedSlide.text || (selectedSlide.layout === "quote" ? "Write a quote to remember…" : "Add a caption…")}</p></div>}
-            {(selectedSlide.elements ?? []).map((element) => <button className={`highlight-canvas-element ${element.kind} ${element.id === selectedElementId ? "selected" : ""}`} style={{ left: `${element.x}%`, top: `${element.y}%`, color: element.color, background: element.background, transform: `translate(-50%,-50%) rotate(${element.rotation}deg) scale(${element.scale})` }} onPointerDown={(event) => beginElementDrag(event, element)} key={element.id}>{element.value}</button>)}
+            {selectedSlide.layout !== "full" && <div className="story-layout-copy" style={{ color: selectedSlide.textColor || "#fffdf8", backgroundColor: hexWithOpacity(selectedSlide.textBackground, selectedSlide.textBackgroundOpacity, "transparent") }}><b>{selectedSlide.emoji}</b><p>{selectedSlide.text || (selectedSlide.layout === "quote" ? "Write a quote to remember…" : "Add a caption…")}</p></div>}
+            {(selectedSlide.elements ?? []).map((element) => <button className={`highlight-canvas-element ${element.kind} ${element.id === selectedElementId ? "selected" : ""}`} style={{ left: `${element.x}%`, top: `${element.y}%`, color: element.color, background: hexWithOpacity(element.background, element.backgroundOpacity, element.background), transform: `translate(-50%,-50%) rotate(${element.rotation}deg) scale(${element.scale})` }} onPointerDown={(event) => beginElementDrag(event, element)} key={element.id}>{element.value}</button>)}
           </div>
           <div className="story-controls">
             {selectedSlide.layout !== "full" && <div className="story-layout-fields"><label><span>{selectedSlide.layout === "quote" ? "Quote" : "Caption"}</span><textarea value={selectedSlide.text} onChange={(event) => updateSlide({ text: event.target.value })} maxLength={180} placeholder={selectedSlide.layout === "quote" ? "Write a quote to remember…" : "Add a caption…"} /></label><label><span>Emoji (optional)</span><input value={selectedSlide.emoji} onChange={(event) => updateSlide({ emoji: event.target.value })} maxLength={8} placeholder="✨" /></label></div>}
             <div className="highlight-add-elements"><button onClick={() => addElement("text")}>＋ Text</button><button onClick={() => addElement("emoji")}>＋ Emoji</button><button onClick={() => addElement("sticker")}>＋ Sticker</button></div>
-            {selectedElement ? <div className="highlight-element-controls"><label><span>{selectedElement.kind === "text" ? "Text" : selectedElement.kind === "emoji" ? "Emoji" : "Sticker"}</span><input value={selectedElement.value} onChange={(event) => updateElement({ value: event.target.value })} maxLength={selectedElement.kind === "text" ? 120 : 16} /></label><fieldset><legend>Colour</legend><div className="story-colours">{elementColours.map((colour) => <button className={selectedElement.color === colour ? "active" : ""} style={{ background: colour }} onClick={() => updateElement({ color: colour })} key={colour} aria-label={`Use ${colour}`} />)}</div></fieldset><label><span>Size</span><input type="range" min="0.5" max="2.5" step="0.1" value={selectedElement.scale} onChange={(event) => updateElement({ scale: Number(event.target.value) })} /></label><label><span>Rotation</span><input type="range" min="-30" max="30" value={selectedElement.rotation} onChange={(event) => updateElement({ rotation: Number(event.target.value) })} /></label><button className="danger-button" onClick={() => { updateSlide({ elements: (selectedSlide.elements ?? []).filter((item) => item.id !== selectedElement.id) }); setSelectedElementId(""); }}>Remove element</button></div> : <p className="highlight-drag-hint">Add text, emoji or stickers, then drag them anywhere on the photo.</p>}
+            {selectedElement ? <div className="highlight-element-controls"><label><span>{selectedElement.kind === "text" ? "Text" : selectedElement.kind === "emoji" ? "Emoji" : "Sticker"}</span><input value={selectedElement.value} onChange={(event) => updateElement({ value: event.target.value })} maxLength={selectedElement.kind === "text" ? 120 : 16} /></label><fieldset><legend>Font Colour</legend><div className="story-colours">{elementColours.map((colour) => <button className={selectedElement.color === colour ? "active" : ""} style={{ background: colour }} onClick={() => updateElement({ color: colour })} key={colour} aria-label={`Use ${colour}`} />)}</div></fieldset><div className="memory-colour-pair"><label><span>Custom Font HEX</span><input type="color" value={selectedElement.color || "#ffffff"} onChange={(event) => updateElement({ color: event.target.value })} /></label><label><span>Background HEX</span><input type="color" value={selectedElement.background && selectedElement.background !== "transparent" ? selectedElement.background : "#173e54"} onChange={(event) => updateElement({ background: event.target.value })} /></label></div><label><span>Background Opacity</span><input type="range" min="0" max="1" step="0.05" value={selectedElement.backgroundOpacity ?? 0} onChange={(event) => updateElement({ backgroundOpacity: Number(event.target.value), background: selectedElement.background === "transparent" || !selectedElement.background ? "#173e54" : selectedElement.background })} /></label><label><span>Size</span><input type="range" min="0.5" max="2.5" step="0.1" value={selectedElement.scale} onChange={(event) => updateElement({ scale: Number(event.target.value) })} /></label><label><span>Rotation</span><input type="range" min="-30" max="30" value={selectedElement.rotation} onChange={(event) => updateElement({ rotation: Number(event.target.value) })} /></label><button className="danger-button" onClick={() => { updateSlide({ elements: (selectedSlide.elements ?? []).filter((item) => item.id !== selectedElement.id) }); setSelectedElementId(""); }}>Remove element</button></div> : <p className="highlight-drag-hint">Add text, emoji or stickers, then drag them anywhere on the photo.</p>}
             <label><span>Photo layout</span><select value={selectedSlide.layout} onChange={(event) => updateSlide({ layout: event.target.value as TripStorySlide["layout"] })}>{layouts.map((layout) => <option value={layout.value} key={layout.value}>{layout.label}</option>)}</select></label>
             <fieldset><legend>Background</legend><div className="story-colours">{backgrounds.map((colour) => <button className={selectedSlide.background === colour ? "active" : ""} style={{ background: colour }} onClick={() => updateSlide({ background: colour })} key={colour} aria-label={`Use ${colour}`} />)}</div></fieldset>
+            <div className="memory-colour-pair"><label><span>Page Colour</span><input type="color" value={selectedSlide.background.match(/^#[0-9a-f]{6}$/i) ? selectedSlide.background : "#173e54"} onChange={(event) => updateSlide({ background: event.target.value })} /></label><label><span>Font Colour</span><input type="color" value={selectedSlide.textColor || "#fffdf8"} onChange={(event) => updateSlide({ textColor: event.target.value })} /></label><label><span>Text Background</span><input type="color" value={selectedSlide.textBackground || "#051419"} onChange={(event) => updateSlide({ textBackground: event.target.value })} /></label></div>
+            <label><span>Text Background Opacity</span><input type="range" min="0" max="1" step="0.05" value={selectedSlide.textBackgroundOpacity ?? 0.62} onChange={(event) => updateSlide({ textBackgroundOpacity: Number(event.target.value) })} /></label>
+            <label><span>Background Photo</span><select value={selectedSlide.backgroundPhotoId || ""} onChange={(event) => updateSlide({ backgroundPhotoId: event.target.value || undefined })}><option value="">None</option>{availablePhotos.map((photo) => <option value={photo.fileId} key={photo.fileId}>{photo.name}</option>)}</select></label>
+            {selectedSlide.backgroundPhotoId && <label><span>Background Photo Opacity</span><input type="range" min="0.1" max="1" step="0.05" value={selectedSlide.backgroundPhotoOpacity ?? 0.55} onChange={(event) => updateSlide({ backgroundPhotoOpacity: Number(event.target.value) })} /></label>}
             <label><span>{selectedSlide.photoId ? "Photo duration" : "Slide duration"}</span><select value={slideDuration(selectedSlide)} onChange={(event) => updateSlide({ duration: Number(event.target.value) })}>{[1, 2, 3, 4, 5].map((seconds) => <option value={seconds} key={seconds}>{seconds} second{seconds === 1 ? "" : "s"}</option>)}</select></label>
             <div className="story-control-actions"><button className="secondary-button" onClick={() => setShowPhotoPicker(true)}>Change/Add photos</button><button className="danger-button" disabled={draft.slides.length === 1} onClick={() => { const remaining = draft.slides.filter((slide) => slide.id !== selectedSlide.id); setDraft({ ...draft, slides: remaining }); setSelectedSlideId(remaining[0]?.id ?? ""); }}>Delete slide</button></div>
           </div>
@@ -579,9 +597,10 @@ export default function StoryBuilder({ days, highlights, currentMember, photos, 
 
     {playing && playing.slides[playIndex] && (() => { const slide = playing.slides[playIndex]; return <div className={`story-player layout-${slide.layout}`} role="dialog" aria-modal="true" style={{ background: slide.background }} onClick={() => playIndex < playing.slides.length - 1 ? setPlayIndex(playIndex + 1) : setPlaying(null)}>
       <div className="story-progress">{playing.slides.map((_, index) => <i className={index <= playIndex ? "active" : ""} key={index} />)}</div><header><strong>{playing.title}</strong><button onClick={(event) => { event.stopPropagation(); setPlaying(null); }}>×</button></header>
+      {slide.backgroundPhotoId && photoUrls[slide.backgroundPhotoId] && <img className="story-background-photo" src={photoUrls[slide.backgroundPhotoId]} alt="" style={{ opacity: slide.backgroundPhotoOpacity ?? 0.55 }} />}
       {slide.photoId && photoUrls[slide.photoId] && <img src={photoUrls[slide.photoId]} alt="" />}
-      {slide.layout !== "full" && <div className="story-layout-copy"><b>{slide.emoji}</b><p>{slide.text}</p></div>}
-      <main>{(slide.elements ?? []).map((element) => <span className={`highlight-play-element ${element.kind}`} style={{ left: `${element.x}%`, top: `${element.y}%`, color: element.color, background: element.background, transform: `translate(-50%,-50%) rotate(${element.rotation}deg) scale(${element.scale})` }} key={element.id}>{element.value}</span>)}</main><small>{playIndex + 1} / {playing.slides.length}</small>
+      {slide.layout !== "full" && <div className="story-layout-copy" style={{ color: slide.textColor || "#fffdf8", backgroundColor: hexWithOpacity(slide.textBackground, slide.textBackgroundOpacity, "transparent") }}><b>{slide.emoji}</b><p>{slide.text}</p></div>}
+      <main>{(slide.elements ?? []).map((element) => <span className={`highlight-play-element ${element.kind}`} style={{ left: `${element.x}%`, top: `${element.y}%`, color: element.color, background: hexWithOpacity(element.background, element.backgroundOpacity, element.background), transform: `translate(-50%,-50%) rotate(${element.rotation}deg) scale(${element.scale})` }} key={element.id}>{element.value}</span>)}</main><small>{playIndex + 1} / {playing.slides.length}</small>
     </div>; })()}
   </>;
 }
