@@ -68,6 +68,16 @@ function newPage(member: TripMember, pageType: TripScrapbookPage["pageType"], da
   return { id: crypto.randomUUID(), title: day ? `${day.label} Recap` : template === "blank" ? "Untitled Scrapbook" : displayLabel(template), pageType, template: pageType === "freeform" ? template : undefined, dayId: day?.id, background: templateBackgrounds[template], pageColour: templatePaperColours[template], backgroundPhotoOpacity: 0.35, freeText: "", favouriteThings: ["", "", ""], weather: "", weatherTemperature: "", weatherDescription: "", steps: "", distance: "", favouriteMemory: "", elements, memberId: member.id, memberName: member.name, contributorNames: [member.name], createdAt: now, updatedAt: now };
 }
 
+function withoutLegacyFilmCentre(page: TripScrapbookPage): TripScrapbookPage {
+  if (page.template !== "film") return page;
+  const elements = page.elements.filter((element) => {
+    const legacyTitle = element.kind === "text" && element.value === "Scenes from our adventure";
+    const legacySticker = element.kind === "sticker" && element.value === "✦" && element.x === 84 && element.y === 78;
+    return !legacyTitle && !legacySticker;
+  });
+  return elements.length === page.elements.length ? page : { ...page, elements };
+}
+
 export default function ScrapbookStudio({ tripName, days, currentMember, media, mediaUrls, pages, onChange }: Props) {
   const [draft, setDraft] = useState<TripScrapbookPage | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -87,7 +97,7 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
   const selectedElement = draft?.elements.find((element) => element.id === selectedElementId);
   const coverPage = pages.find((page) => page.pageType === "cover");
   const coverStyle = coverPage?.coverStyle ?? "journal";
-  const contentPages = pages.filter((page) => page.pageType !== "cover").map((page, index) => ({ page, index })).sort((left, right) => (left.page.pageOrder ?? left.index) - (right.page.pageOrder ?? right.index)).map(({ page }) => page);
+  const contentPages = pages.filter((page) => page.pageType !== "cover").map((page, index) => ({ page: withoutLegacyFilmCentre(page), index })).sort((left, right) => (left.page.pageOrder ?? left.index) - (right.page.pageOrder ?? right.index)).map(({ page }) => page);
   const visibleBookPages = contentPages.filter((page) => !page.hiddenFromPhotobook);
   const visibleBookIndices = contentPages.map((page, index) => page.hiddenFromPhotobook ? -1 : index + 1).filter((index) => index > 0);
   const availableMedia = useMemo(() => media.filter((entry) => mediaUrls[entry.fileId]), [media, mediaUrls]);

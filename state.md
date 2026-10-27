@@ -218,3 +218,4 @@ The laptop experience remains the web/PWA build backed by the same Firebase, R2 
 - The on-device feature set through scrapbook preview commit `985898e` is being promoted unchanged to Zora 1.0 build 3 for the existing external TestFlight group; only the required iOS build number is incremented from build 2.
 - The Film page itself now uses the exact black-and-white film treatment shown by its style-selection preview. New Film pages begin clean, without the preview’s centre icon/label or any automatically inserted title/sticker elements.
 - Empty Film pages no longer show the generic circular “Your blank page” onboarding prompt in their centre; this hint remains available on the other genuinely blank freeform styles.
+- Existing Film pages created under the older template are also normalised at load time: the legacy seeded “Scenes from our adventure” title and its centre sticker are removed, not only omitted from newly created Film pages.
