@@ -17,7 +17,7 @@ const templateBackgrounds: Record<Template, string> = {
   pinboard: "radial-gradient(circle at 2px 2px, rgba(91,72,55,.12) 1px, transparent 1.5px) 0 0/12px 12px",
   "photo-wall": "linear-gradient(135deg, rgba(255,255,255,.42), transparent 55%)",
   postcard: "repeating-linear-gradient(0deg, rgba(70,112,132,.08) 0 1px, transparent 1px 5px)",
-  film: "radial-gradient(ellipse at center, #f4f1e8 0 42%, transparent 45%) 6px 4px/18px 14px repeat-x, radial-gradient(ellipse at center, #f4f1e8 0 42%, transparent 45%) 6px calc(100% - 4px)/18px 14px repeat-x, linear-gradient(90deg,#151515 0 7%,#393939 7% 93%,#151515 93%)",
+  film: "repeating-linear-gradient(to bottom,#f4f1e8 0 8px,transparent 8px 15px) left 7px top/10px 100% no-repeat, repeating-linear-gradient(to bottom,#f4f1e8 0 8px,transparent 8px 15px) right 7px top/10px 100% no-repeat",
 };
 const templatePaperColours: Record<Template, string> = { blank: papers[0], journal: papers[0], pinboard: papers[1], "photo-wall": papers[3], postcard: papers[5], film: "#393939" };
 const textStyles: Array<NonNullable<TripScrapbookPageElement["textStyle"]>> = ["classic", "handwritten", "cutout", "outline", "label"];
