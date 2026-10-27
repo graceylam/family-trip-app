@@ -1963,6 +1963,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .scrapbook-colour-inspector { right: 8px; bottom: max(178px,calc(env(safe-area-inset-bottom) + 158px)); width: min(238px,calc(100vw - 16px)); }
 }
 
+/* Give the scrapbook canvas back its full working area while an item moves. */
+.scrapbook-is-dragging .scrapbook-selection-inspector,.scrapbook-is-dragging .scrapbook-colour-inspector,.scrapbook-is-dragging .scrapbook-page-style-panel { visibility: hidden; opacity: 0; pointer-events: none; transition: opacity .1s ease; }
+
 /* Keep page styling on the page, and make colour controls part of Selected Item. */
 .scrapbook-page-style-panel { right: auto; left: max(14px,calc(50% - 366px)); width: min(280px,calc(100vw - 28px)); }
 .scrapbook-page-style-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: stretch; }
