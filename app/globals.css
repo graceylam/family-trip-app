@@ -1962,6 +1962,24 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .profile-data-toggle input:checked + i { background: #4f8da1; }
 .profile-data-toggle input:checked + i::after { transform: translateX(17px); }
 
+/* Gallery upload progress mirrors the itinerary's durable upload queue. */
+.gallery-heading-upload-actions { display: flex; align-items: center; gap: 8px; }
+.gallery-upload-status-icon { display: grid; flex: 0 0 34px; width: 34px; height: 34px; padding: 0; place-items: center; border: 1px solid #c9d8d9; border-radius: 50%; color: #397c9c; background: #f7fbfa; box-shadow: 0 4px 12px rgba(38,61,68,.09); font-size: .75rem; font-weight: 900; }
+.gallery-upload-status-icon.uploading { color: white; border-color: #397c9c; background: #397c9c; }
+.gallery-upload-status-icon.uploading span { animation: gallery-upload-pulse 1s ease-in-out infinite alternate; }
+.gallery-upload-status-icon.queued { color: #876d24; border-color: #e2d39d; background: #fff8dc; }
+.gallery-upload-status-icon.paused { color: #6d687d; border-color: #d5cfe0; background: #f3eff8; }
+.gallery-upload-status-icon.error { color: #9a4438; border-color: #e8bbb2; background: #fff0ec; }
+.gallery-upload-progress { display: grid; grid-template-columns: minmax(0,1fr) minmax(105px,28%); align-items: center; gap: 12px; margin: -4px 0 14px; padding: 10px 12px; border: 1px solid #cfe0dc; border-radius: 12px; color: #315947; background: #edf6f2; }
+.gallery-upload-progress > div { display: grid; gap: 2px; }
+.gallery-upload-progress strong { font-size: .68rem; }
+.gallery-upload-progress small { color: inherit; font-size: .55rem; opacity: .78; }
+.gallery-upload-progress progress { width: 100%; height: 8px; accent-color: #397c9c; }
+.gallery-upload-progress.paused,.gallery-upload-progress.queued { color: #756323; border-color: #e5d7a7; background: #fff9e3; }
+.gallery-upload-progress.error { color: #914237; border-color: #efc4bc; background: #fff1ed; }
+@keyframes gallery-upload-pulse { from { transform: translateY(2px); opacity: .65; } to { transform: translateY(-2px); opacity: 1; } }
+@media (max-width:600px) { .gallery-page-heading { position: relative; }.gallery-heading-upload-actions { align-self: stretch; justify-content: space-between; }.gallery-upload-progress { grid-template-columns: 1fr; }.gallery-upload-progress progress { grid-row: 2; } }
+
 /* Memory Lane colour, opacity and background-photo controls. */
 .story-background-photo { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .memory-colour-pair { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; }

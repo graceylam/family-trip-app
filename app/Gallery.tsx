@@ -16,6 +16,13 @@ type GalleryProps = {
   currentUid: string;
   isAdmin: boolean;
   dataPreferences?: DataPreferences;
+  uploadStatus?: {
+    state: "idle" | "queued" | "uploading" | "paused" | "error";
+    completed: number;
+    total: number;
+    message: string;
+  };
+  onRetryUploads?: () => void;
   state: "idle" | "loading" | "ready" | "offline" | "error";
   error: string | null;
   onUpload: (files: File[], dayId: string, stopId: string) => Promise<void>;
@@ -32,7 +39,7 @@ function mediaUrl(item: TripMedia, display = false) {
   return display ? item.displayUrl || item.downloadUrl : item.thumbnailUrl || item.displayUrl || item.downloadUrl;
 }
 
-export default function Gallery({ tripId, days, media, memberProfiles, currentUid, isAdmin, dataPreferences = defaultDataPreferences, state, error, onUpload, onUpdate, onDelete }: GalleryProps) {
+export default function Gallery({ tripId, days, media, memberProfiles, currentUid, isAdmin, dataPreferences = defaultDataPreferences, uploadStatus = { state: "idle", completed: 0, total: 0, message: "Uploads are up to date" }, onRetryUploads, state, error, onUpload, onUpdate, onDelete }: GalleryProps) {
   const [dayFilter, setDayFilter] = useState("");
   const [personFilter, setPersonFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState<"" | "photo" | "video" | "favorite">("");
@@ -266,7 +273,8 @@ export default function Gallery({ tripId, days, media, memberProfiles, currentUi
   }
 
   return <section className="gallery-page gallery-v2" aria-labelledby="gallery-title">
-    <header className="gallery-page-heading"><div><p className="eyebrow">Seen through all of our eyes</p><h1 id="gallery-title">Our Snapshots</h1><p>Photos and videos from every stop, ready as soon as the group shares them.</p></div><button className="secondary-button gallery-upload-button" onClick={() => setShowUpload(true)}>＋ Upload photos</button></header>
+    <header className="gallery-page-heading"><div><p className="eyebrow">Seen through all of our eyes</p><h1 id="gallery-title">Our Snapshots</h1><p>Photos and videos from every stop, ready as soon as the group shares them.</p></div><div className="gallery-heading-upload-actions"><button className="secondary-button gallery-upload-button" onClick={() => setShowUpload(true)}>＋ Upload photos</button><button className={`gallery-upload-status-icon ${uploadStatus.state}`} onClick={() => uploadStatus.state !== "idle" && onRetryUploads?.()} aria-label={`Upload status: ${uploadStatus.message}`} title={uploadStatus.message}><span aria-hidden="true">{uploadStatus.state === "uploading" ? "↑" : uploadStatus.state === "queued" ? "◷" : uploadStatus.state === "paused" ? "Ⅱ" : uploadStatus.state === "error" ? "!" : "✓"}</span></button></div></header>
+    {uploadStatus.state !== "idle" && <div className={`gallery-upload-progress ${uploadStatus.state}`} role={uploadStatus.state === "error" ? "alert" : "status"} aria-live="polite"><div><strong>{uploadStatus.message}</strong>{uploadStatus.state !== "uploading" && uploadStatus.state !== "queued" ? <small>{uploadStatus.state === "paused" ? "Zora will continue automatically on Wi-Fi." : "Tap the status icon to try again."}</small> : <small>{uploadStatus.completed} of {uploadStatus.total} uploaded</small>}</div><progress value={uploadStatus.completed} max={Math.max(1, uploadStatus.total)} aria-label="Gallery upload progress" /></div>}
     {error && <p className="gallery-alert" role="alert">{error}</p>}
     {actionError && <p className="gallery-alert" role="alert">{actionError}</p>}
     {!sharedMediaAllowed && <p className="gallery-alert">{wifiOnlyMessage("shared-media")} Previously cached memories may still remain visible.</p>}

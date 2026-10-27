@@ -1239,6 +1239,14 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const uploadProgressPercent = uploadProgress?.total
     ? Math.round((uploadProgress.completed / uploadProgress.total) * 100)
     : 0;
+  const galleryUploadStatus = (() => {
+    const paused = Boolean(googleError?.includes("paused until") || (isOffline && waitingCount > 0));
+    if (googleState === "uploading") return { state: "uploading" as const, completed: uploadProgress?.completed ?? 0, total: uploadProgress?.total ?? Math.max(1, waitingCount), message: `Uploading ${uploadProgress?.completed ?? 0} of ${uploadProgress?.total ?? waitingCount} memories…` };
+    if (paused) return { state: "paused" as const, completed: 0, total: waitingCount, message: googleError || `${waitingCount} memories waiting safely for a connection` };
+    if (googleError) return { state: "error" as const, completed: 0, total: waitingCount, message: googleError };
+    if (waitingCount > 0 || queueState === "saving") return { state: "queued" as const, completed: 0, total: Math.max(1, waitingCount), message: queueState === "saving" ? "Adding memories to the upload queue…" : `${waitingCount} memories ready to upload` };
+    return { state: "idle" as const, completed: 0, total: 0, message: "Uploads are up to date" };
+  })();
 
   useEffect(() => {
     if (!stopMediaViewerOpen) return;
@@ -3097,6 +3105,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           currentUid={account.uid}
           isAdmin={isAdmin}
           dataPreferences={account.dataPreferences}
+          uploadStatus={galleryUploadStatus}
+          onRetryUploads={() => void uploadQueuedPhotos()}
           state={galleryState}
           error={galleryError}
           onUpload={(files, dayId, stopId) => addFilesToPhotoQueue(files, dayId, stopId)}
