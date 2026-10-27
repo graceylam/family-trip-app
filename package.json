@@ -19,6 +19,7 @@
   "dependencies": {
     "@capacitor/core": "^8.5.0",
     "@capacitor/ios": "^8.5.0",
+    "@capacitor/network": "^8.0.1",
     "drizzle-orm": "0.45.2",
     "firebase": "^12.17.1",
     "html-to-image": "^1.11.13",

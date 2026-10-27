@@ -27,6 +27,7 @@ import {
   type Firestore,
   type Unsubscribe,
 } from "firebase/firestore";
+import { defaultDataPreferences, type DataPreferences } from "./dataSaver";
 
 type PublicFirebaseConfig = {
   apiKey: string;
@@ -95,6 +96,7 @@ export type FamilyAccount = {
   profilePhotoY: number;
   avatarEmoji?: string;
   avatarColor: string;
+  dataPreferences: DataPreferences;
 };
 
 export type TripRole = "admin" | "contributor";
@@ -153,6 +155,12 @@ function accountFromUser(user: User, profile: Record<string, unknown> = {}): Fam
     profilePhotoY: Number(profile.profilePhotoY ?? 50),
     avatarEmoji: String(profile.avatarEmoji || ""),
     avatarColor: String(profile.avatarColor || "#8bb8cf"),
+    dataPreferences: {
+      wifiOnlyUploads: Boolean(profile.wifiOnlyUploads ?? defaultDataPreferences.wifiOnlyUploads),
+      wifiOnlyDownloads: Boolean(profile.wifiOnlyDownloads ?? defaultDataPreferences.wifiOnlyDownloads),
+      wifiOnlyVideos: Boolean(profile.wifiOnlyVideos ?? defaultDataPreferences.wifiOnlyVideos),
+      wifiOnlySharedMedia: Boolean(profile.wifiOnlySharedMedia ?? defaultDataPreferences.wifiOnlySharedMedia),
+    },
   };
 }
 
@@ -190,6 +198,7 @@ export async function createFamilyAccount(displayName: string, email: string, pa
     profilePhotoY: 50,
     avatarEmoji: "",
     avatarColor: "#8bb8cf",
+    ...defaultDataPreferences,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   }, { merge: true });
@@ -204,7 +213,7 @@ export async function signInToFamilyAccount(email: string, password: string): Pr
 
 export async function updateFamilyProfile(
   account: FamilyAccount,
-  updates: Pick<FamilyAccount, "displayName" | "homeCurrency" | "profilePhotoX" | "profilePhotoY" | "avatarColor"> & { profilePhotoDataUrl?: string; avatarEmoji?: string },
+  updates: Pick<FamilyAccount, "displayName" | "homeCurrency" | "profilePhotoX" | "profilePhotoY" | "avatarColor"> & { profilePhotoDataUrl?: string; avatarEmoji?: string; dataPreferences?: DataPreferences },
 ): Promise<void> {
   const { auth, db } = services();
   const cleanName = updates.displayName.trim();
@@ -212,6 +221,8 @@ export async function updateFamilyProfile(
   if (auth.currentUser) await updateProfile(auth.currentUser, { displayName: cleanName });
   await setDoc(doc(db, "users", account.uid), {
     ...updates,
+    ...(updates.dataPreferences ?? {}),
+    dataPreferences: undefined,
     displayName: cleanName,
     updatedAt: serverTimestamp(),
   }, { merge: true });

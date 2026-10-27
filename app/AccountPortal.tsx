@@ -3,6 +3,7 @@
 import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import ZoraLoader from "./ZoraLoader";
+import { defaultDataPreferences, type DataPreferences } from "../lib/dataSaver";
 import {
   attachLegacyViennaTrip,
   createAccountTrip,
@@ -124,6 +125,7 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
   const [profileY, setProfileY] = useState(50);
   const [profileEmoji, setProfileEmoji] = useState("");
   const [profileColor, setProfileColor] = useState("#8bb8cf");
+  const [dataPreferences, setDataPreferences] = useState<DataPreferences>(defaultDataPreferences);
   const [profileState, setProfileState] = useState<"idle" | "saving">("idle");
   const [profileError, setProfileError] = useState("");
   const [confirmSignOut, setConfirmSignOut] = useState(false);
@@ -138,6 +140,7 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
     setProfileY(account.profilePhotoY ?? 50);
     setProfileEmoji(account.avatarEmoji || "");
     setProfileColor(account.avatarColor || "#8bb8cf");
+    setDataPreferences(account.dataPreferences || defaultDataPreferences);
     setProfileError("");
     setConfirmSignOut(false);
     setShowProfile(true);
@@ -157,7 +160,7 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
     if (!account) return;
     setProfileState("saving"); setProfileError("");
     try {
-      await updateFamilyProfile(account, { displayName: profileName, homeCurrency: profileCurrency, profilePhotoDataUrl: profilePhoto || undefined, profilePhotoX: profileX, profilePhotoY: profileY, avatarEmoji: profileEmoji, avatarColor: profileColor });
+      await updateFamilyProfile(account, { displayName: profileName, homeCurrency: profileCurrency, profilePhotoDataUrl: profilePhoto || undefined, profilePhotoX: profileX, profilePhotoY: profileY, avatarEmoji: profileEmoji, avatarColor: profileColor, dataPreferences });
       setShowProfile(false);
     } catch (error) { setProfileError(firebaseErrorMessage(error)); }
     finally { setProfileState("idle"); }
@@ -447,6 +450,15 @@ export default function AccountPortal({ renderTrip }: AccountPortalProps) {
               </section>
               <label><span>Your name</span><input value={profileName} onChange={(event) => setProfileName(event.target.value)} required /></label>
               <label><span>Default home currency</span><select value={profileCurrency} onChange={(event) => setProfileCurrency(event.target.value)}>{["AUD","EUR","USD","GBP","NZD","CAD","JPY","CHF","SGD","HKD"].map((currency) => <option key={currency}>{currency}</option>)}</select></label>
+              <section className="profile-data-saver" aria-labelledby="data-saver-title">
+                <div><strong id="data-saver-title">Mobile data controls</strong><small>When enabled, Zora waits for Wi-Fi before using data for that activity.</small></div>
+                {([
+                  ["wifiOnlyUploads", "Upload photos and videos", "New uploads stay safely queued on this device."],
+                  ["wifiOnlyDownloads", "Save or download memories", "Photos, videos and scrapbook exports wait for Wi-Fi."],
+                  ["wifiOnlyVideos", "View new videos", "Video playback waits for Wi-Fi."],
+                  ["wifiOnlySharedMedia", "Load new shared media", "New shared photos and scrapbook media wait for Wi-Fi."],
+                ] as const).map(([key, title, description]) => <label className="profile-data-toggle" key={key}><span><b>{title}</b><small>{description}</small></span><input type="checkbox" checked={dataPreferences[key]} onChange={(event) => setDataPreferences((current) => ({ ...current, [key]: event.target.checked }))} /><i /></label>)}
+              </section>
               {profileError && <p className="account-alert" role="alert">{profileError}</p>}
               <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowProfile(false)}>Cancel</button><button className="primary-button" disabled={profileState === "saving"}>{profileState === "saving" ? "Saving…" : "Save profile"}</button></div>
             </form>

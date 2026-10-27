@@ -6,6 +6,7 @@ import type { TripMedia } from "../lib/firebaseMedia";
 import type { TripAccountMember } from "../lib/firebaseAccounts";
 import { canSaveDirectlyToPhotos, saveUrlToPhotos } from "../lib/nativePhotos";
 import MediaSwipeStage from "./MediaSwipeStage";
+import { canUseData, defaultDataPreferences, wifiOnlyMessage, type DataPreferences } from "../lib/dataSaver";
 
 type GalleryProps = {
   tripId: string;
@@ -14,6 +15,7 @@ type GalleryProps = {
   memberProfiles: TripAccountMember[];
   currentUid: string;
   isAdmin: boolean;
+  dataPreferences?: DataPreferences;
   state: "idle" | "loading" | "ready" | "offline" | "error";
   error: string | null;
   onUpload: (files: File[], dayId: string, stopId: string) => Promise<void>;
@@ -30,7 +32,7 @@ function mediaUrl(item: TripMedia, display = false) {
   return display ? item.displayUrl || item.downloadUrl : item.thumbnailUrl || item.displayUrl || item.downloadUrl;
 }
 
-export default function Gallery({ tripId, days, media, memberProfiles, currentUid, isAdmin, state, error, onUpload, onUpdate, onDelete }: GalleryProps) {
+export default function Gallery({ tripId, days, media, memberProfiles, currentUid, isAdmin, dataPreferences = defaultDataPreferences, state, error, onUpload, onUpdate, onDelete }: GalleryProps) {
   const [dayFilter, setDayFilter] = useState("");
   const [personFilter, setPersonFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState<"" | "photo" | "video" | "favorite">("");
@@ -48,6 +50,8 @@ export default function Gallery({ tripId, days, media, memberProfiles, currentUi
   const [uploadDayId, setUploadDayId] = useState(days[0]?.id || "");
   const [uploadStopId, setUploadStopId] = useState(days[0]?.stops[0]?.id || "");
   const [uploadState, setUploadState] = useState<"idle" | "saving">("idle");
+  const [sharedMediaAllowed, setSharedMediaAllowed] = useState(true);
+  const [videoAllowed, setVideoAllowed] = useState(true);
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const galleryScrollY = useRef(0);
@@ -60,6 +64,18 @@ export default function Gallery({ tripId, days, media, memberProfiles, currentUi
     const timer = window.setTimeout(() => window.localStorage.setItem(visitKey, new Date().toISOString()), 1500);
     return () => window.clearTimeout(timer);
   }, [visitKey]);
+
+  useEffect(() => {
+    let active = true;
+    void canUseData(dataPreferences, "shared-media").then((allowed) => { if (active) setSharedMediaAllowed(allowed); });
+    return () => { active = false; };
+  }, [dataPreferences]);
+
+  useEffect(() => {
+    let active = true;
+    void canUseData(dataPreferences, "video").then((allowed) => { if (active) setVideoAllowed(allowed); });
+    return () => { active = false; };
+  }, [dataPreferences]);
 
   const people = useMemo(() => Array.from(new Map(media.map((item) => [item.memberId, item.memberName])).entries()), [media]);
   const visible = useMemo(() => media.filter((item) =>
@@ -86,6 +102,7 @@ export default function Gallery({ tripId, days, media, memberProfiles, currentUi
     const files = Array.from(event.target.files ?? []);
     event.target.value = "";
     if (!files.length || !uploadDay || !uploadStop) return;
+    if (!await canUseData(dataPreferences, "upload")) { setActionError(wifiOnlyMessage("upload")); return; }
     setUploadState("saving");
     setActionError("");
     try {
@@ -131,6 +148,10 @@ export default function Gallery({ tripId, days, media, memberProfiles, currentUi
       setSelectedIds((current) => current.includes(item.fileId) ? current.filter((id) => id !== item.fileId) : [...current, item.fileId]);
       return;
     }
+    if (item.mediaType === "video" && !videoAllowed) {
+      setActionError(wifiOnlyMessage("video"));
+      return;
+    }
     setViewerId(item.fileId);
   }
 
@@ -141,6 +162,7 @@ export default function Gallery({ tripId, days, media, memberProfiles, currentUi
 
   async function shareItems(items: TripMedia[]) {
     if (!items.length) return;
+    if (!await canUseData(dataPreferences, "download")) { setActionError(wifiOnlyMessage("download")); return; }
     setShareState("sharing"); setShareProgress({ completed: 0, total: items.length }); setActionError("");
     try {
       const files: File[] = [];
@@ -158,6 +180,7 @@ export default function Gallery({ tripId, days, media, memberProfiles, currentUi
   }
 
   async function saveItemsToPhotos(items: TripMedia[]) {
+    if (!await canUseData(dataPreferences, "download")) { setActionError(wifiOnlyMessage("download")); return; }
     if (!items.length) return;
     if (!canSaveDirectlyToPhotos()) {
       await shareItems(items);
@@ -186,6 +209,7 @@ export default function Gallery({ tripId, days, media, memberProfiles, currentUi
 
   async function saveViewerToPhotos() {
     if (!viewer) return;
+    if (!await canUseData(dataPreferences, "download")) { setSaveMessage(wifiOnlyMessage("download")); return; }
     if (!canSaveDirectlyToPhotos()) {
       await shareItems([viewer]);
       return;
@@ -245,6 +269,8 @@ export default function Gallery({ tripId, days, media, memberProfiles, currentUi
     <header className="gallery-page-heading"><div><p className="eyebrow">Seen through all of our eyes</p><h1 id="gallery-title">Our Snapshots</h1><p>Photos and videos from every stop, ready as soon as the group shares them.</p></div><button className="secondary-button gallery-upload-button" onClick={() => setShowUpload(true)}>＋ Upload photos</button></header>
     {error && <p className="gallery-alert" role="alert">{error}</p>}
     {actionError && <p className="gallery-alert" role="alert">{actionError}</p>}
+    {!sharedMediaAllowed && <p className="gallery-alert">{wifiOnlyMessage("shared-media")} Previously cached memories may still remain visible.</p>}
+    {sharedMediaAllowed && !videoAllowed && <p className="gallery-alert">{wifiOnlyMessage("video")}</p>}
     {state === "offline" && <p className="gallery-alert">Previously opened thumbnails remain available. New group uploads will appear when you reconnect.</p>}
     {newItems > 0 && <button className="gallery-new-banner" onClick={() => { setDayFilter(""); setPersonFilter(""); setTypeFilter(""); }}>{newItems} new {newItems === 1 ? "memory" : "memories"} since your last visit</button>}
 
@@ -254,7 +280,7 @@ export default function Gallery({ tripId, days, media, memberProfiles, currentUi
 
     {selectionMode && <div className="gallery-selection-bar"><strong>{selected.length} selected</strong><div className="gallery-selection-actions"><button className="secondary-button" disabled={!visible.length || shareState !== "idle"} onClick={toggleSelectAll}>{allVisibleSelected ? "Deselect All" : `Select All (${visible.length})`}</button><button className="primary-button" disabled={!selected.length || shareState !== "idle"} onClick={() => void saveItemsToPhotos(selected)}>{shareState === "saving" ? `Saving ${shareProgress.completed}/${shareProgress.total}` : "Save Selected to Photos"}</button><button className="secondary-button danger-button" disabled={!deletableSelected.length || shareState !== "idle"} onClick={() => void deleteSelected()}>{shareState === "deleting" ? `Deleting ${shareProgress.completed}/${shareProgress.total}` : `Delete Selected (${deletableSelected.length})`}</button></div></div>}
 
-    {state === "loading" && !media.length ? <div className="gallery-v2-empty">Opening the group gallery…</div> : visible.length === 0 ? <div className="gallery-v2-empty"><strong>No matching memories yet</strong><p>Use Upload photos to add photos or videos to a day and stop.</p></div> : <div className="gallery-v2-days">{days.filter((day) => !dayFilter || day.id === dayFilter).map((day, dayIndex) => {
+    {!sharedMediaAllowed ? <div className="gallery-v2-empty"><strong>Shared media is waiting for Wi-Fi</strong><p>Your itinerary and other lightweight trip details remain available.</p></div> : state === "loading" && !media.length ? <div className="gallery-v2-empty">Opening the group gallery…</div> : visible.length === 0 ? <div className="gallery-v2-empty"><strong>No matching memories yet</strong><p>Use Upload photos to add photos or videos to a day and stop.</p></div> : <div className="gallery-v2-days">{days.filter((day) => !dayFilter || day.id === dayFilter).map((day, dayIndex) => {
       const dayItems = visible.filter((item) => item.dayId === day.id);
       if (!dayItems.length) return null;
       return <section className="gallery-v2-day" key={day.id}><header><div><p>Day {days.indexOf(day) + 1}</p><h2>{day.label}</h2><time>{prettyDate(day.date)}</time></div><span>{dayItems.length} memories</span></header>{day.stops.map((stop, stopIndex) => { const items = dayItems.filter((item) => item.stopId === stop.id); if (!items.length) return null; return <article className="gallery-v2-stop" key={stop.id}><div className="gallery-v2-stop-title"><div><small>Stop {stopIndex + 1}</small><h3>{stop.title}</h3></div>{stop.time && <time>{stop.time}</time>}</div><div className="gallery-v2-grid">{items.map((item) => <button className={`gallery-v2-tile ${selectedIds.includes(item.fileId) ? "selected" : ""}`} onClick={() => open(item)} key={item.fileId}>{item.mediaType === "video" ? <video src={mediaUrl(item)} muted preload="metadata" playsInline /> : <img src={mediaUrl(item)} alt={item.caption || `${item.memberName}'s photo at ${stop.title}`} loading="lazy" />}<span className="gallery-tile-overlay"><b className="member-avatar" style={{ background: memberProfilesByUid.get(item.memberId)?.avatarColor || "#8bb8cf" }}>{memberProfilesByUid.get(item.memberId)?.avatarEmoji || (memberProfilesByUid.get(item.memberId)?.displayName || item.memberName).slice(0, 1).toUpperCase()}</b>{item.mediaType === "video" && <i>▶ Video</i>}{item.favoriteBy.length > 0 && <i>♥ {item.favoriteBy.length}</i>}</span>{selectionMode && <span className="gallery-select-mark">{selectedIds.includes(item.fileId) ? "✓" : ""}</span>}</button>)}</div></article>; })}</section>;

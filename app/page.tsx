@@ -21,6 +21,7 @@ import {
 import { deleteTripMedia, observeTripMedia, updateTripMedia, uploadTripMedia, type TripMedia } from "../lib/firebaseMedia";
 import { canSaveDirectlyToPhotos, saveBlobToNativePhotos, saveUrlToPhotos } from "../lib/nativePhotos";
 import { canPreviewDocumentsNatively, previewBlobNatively } from "../lib/nativeDocuments";
+import { canUseData, wifiOnlyMessage } from "../lib/dataSaver";
 import { sortItineraryChronologically } from "../lib/chronology";
 import { convertedAmount, getLatestExchangeRate } from "../lib/exchangeRates";
 import {
@@ -426,8 +427,15 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [coverUploadError, setCoverUploadError] = useState<string | null>(null);
   const [tripDefaultCurrency, setTripDefaultCurrency] = useState(accountTrip.defaultCurrency || "EUR");
   const [tripCurrencyState, setTripCurrencyState] = useState<"idle" | "saving" | "error">("idle");
+  const [memoryMediaAllowed, setMemoryMediaAllowed] = useState(true);
   const tripId = sharedTripId;
   const [previousTripId, setPreviousTripId] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    void canUseData(account.dataPreferences, "shared-media").then((allowed) => { if (active) setMemoryMediaAllowed(allowed); });
+    return () => { active = false; };
+  }, [account.dataPreferences]);
   const [adminSecret, setAdminSecret] = useState("");
   const [tripAccessKey, setTripAccessKey] = useState("");
   const [members, setMembers] = useState<TripMember[]>(workspaceInitialMembers);
@@ -1085,7 +1093,6 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       setHasPendingTripSave(false);
       return;
     }
-
     if (!existingPending || existingPending.fingerprint !== fingerprint) {
       const draft: SharedTripState = {
         tripId: sharedTripId,
@@ -1466,6 +1473,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   async function saveSharedMemoryToPhotos(media: TripMedia) {
     setQueueError(null);
     try {
+      if (!await canUseData(account.dataPreferences, "download")) throw new Error(wifiOnlyMessage("download"));
       if (canSaveDirectlyToPhotos()) await saveUrlToPhotos(media.downloadUrl, media.mimeType);
       else {
         const response = await fetch(media.downloadUrl);
@@ -1486,6 +1494,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   }
 
   async function shareSharedMemory(media: TripMedia) {
+    if (!await canUseData(account.dataPreferences, "download")) { setPhotoActionMessage(wifiOnlyMessage("download")); return; }
     const response = await fetch(media.downloadUrl);
     if (!response.ok) throw new Error("The shared original could not be downloaded.");
     await shareBlob(await response.blob(), media.name, media.mimeType);
@@ -1497,6 +1506,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
   async function saveSelectedStopMedia() {
     if (!selectedStopMediaCount) return;
+    if (selectedRemoteStopPhotos.length && !await canUseData(account.dataPreferences, "download")) { setQueueError(wifiOnlyMessage("download")); return; }
     const total = selectedStopMediaCount;
     setStopMediaBulkState("saving"); setStopMediaBulkProgress({ completed: 0, total }); setQueueError(null);
     try {
@@ -1591,6 +1601,11 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     if (!navigator.onLine) {
       setCoverUploadState("error");
       setCoverUploadError("Connect to the internet before changing the shared trip cover.");
+      return;
+    }
+    if (!await canUseData(account.dataPreferences, "upload")) {
+      setCoverUploadState("error");
+      setCoverUploadError(wifiOnlyMessage("upload"));
       return;
     }
     if (!file.type.startsWith("image/")) {
@@ -2231,6 +2246,10 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       setDocumentError("Documents need an internet connection to upload. The original files have not been changed.");
       return;
     }
+    if (!await canUseData(account.dataPreferences, "upload")) {
+      setDocumentError(wifiOnlyMessage("upload"));
+      return;
+    }
     const oversized = files.find((file) => file.size > 15 * 1024 * 1024);
     if (oversized) {
       setDocumentError(`${oversized.name} is larger than the current 15 MB document limit.`);
@@ -2273,6 +2292,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
   async function viewDocument(document: TripDocument) {
     setDocumentError(null);
+    if (!await canUseData(account.dataPreferences, "download")) { setDocumentError(wifiOnlyMessage("download")); return; }
     setDocumentPreviewLoading(document);
     try {
       const { blob, name } = await getSharedFileBlob(tripId, document.fileId);
@@ -2345,6 +2365,10 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     if (!currentMember) {
       setGoogleError("Choose your group profile before sharing memories.");
       setShowSettings(true);
+      return;
+    }
+    if (!await canUseData(account.dataPreferences, "upload")) {
+      setGoogleError(wifiOnlyMessage("upload"));
       return;
     }
 
@@ -3072,6 +3096,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           memberProfiles={tripAccountMembers}
           currentUid={account.uid}
           isAdmin={isAdmin}
+          dataPreferences={account.dataPreferences}
           state={galleryState}
           error={galleryError}
           onUpload={(files, dayId, stopId) => addFilesToPhotoQueue(files, dayId, stopId)}
@@ -3112,6 +3137,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
             </div>
           )}
         </section>
+      ) : activeTab === "memory" && !memoryMediaAllowed ? (
+        <section className="gallery-v2-empty data-saver-paused"><strong>Memory Lane is waiting for Wi-Fi</strong><p>{wifiOnlyMessage("shared-media")}</p><small>Your itinerary, expenses, stops and documents remain available.</small></section>
       ) : activeTab === "memory" ? (
         <MemoryLane
           tripName={tripName}
