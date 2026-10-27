@@ -17,7 +17,7 @@ const templateBackgrounds: Record<Template, string> = {
   pinboard: "radial-gradient(circle at 2px 2px, rgba(91,72,55,.12) 1px, transparent 1.5px) 0 0/12px 12px",
   "photo-wall": "linear-gradient(135deg, rgba(255,255,255,.42), transparent 55%)",
   postcard: "repeating-linear-gradient(0deg, rgba(70,112,132,.08) 0 1px, transparent 1px 5px)",
-  film: "repeating-linear-gradient(to bottom,#fffdf8 0 9px,transparent 9px 17px) left 7px top/9px 100% no-repeat, repeating-linear-gradient(to bottom,#fffdf8 0 9px,transparent 9px 17px) right 7px top/9px 100% no-repeat, linear-gradient(90deg,#17191a 0 23px,transparent 23px calc(100% - 23px),#17191a calc(100% - 23px))",
+  film: "radial-gradient(ellipse at center,#f3efe4 0 42%,transparent 45%) 3px 4px/14px 11px repeat-x,radial-gradient(ellipse at center,#f3efe4 0 42%,transparent 45%) 3px calc(100% - 4px)/14px 11px repeat-x,linear-gradient(90deg,#111 0 9%,#3b3b3b 9% 91%,#111 91%)",
 };
 const templatePaperColours: Record<Template, string> = { blank: papers[0], journal: papers[0], pinboard: papers[1], "photo-wall": papers[3], postcard: papers[5], film: "#393939" };
 const textStyles: Array<NonNullable<TripScrapbookPageElement["textStyle"]>> = ["classic", "handwritten", "cutout", "outline", "label"];
@@ -65,7 +65,6 @@ function newPage(member: TripMember, pageType: TripScrapbookPage["pageType"], da
   if (template === "journal") elements.push({ ...item("text", "A little moment worth remembering…", 60, 40, 56, -2), textStyle: "handwritten" });
   if (template === "pinboard") elements.push({ ...item("text", "Pin your favourite moments here", 50, 22, 60), textStyle: "cutout" }, { ...item("decoration", "clip", 50, 47, 13), attachment: "clip" });
   if (template === "postcard") elements.push({ ...item("text", "Wish you were here", 52, 34, 64), textStyle: "outline" }, item("sticker", "✈️", 78, 73, 15, 12));
-  if (template === "film") elements.push({ ...item("text", "Scenes from our adventure", 50, 18, 70), textStyle: "label", colour: "#fffdf8" }, { ...item("sticker", "✦", 84, 78, 12, 8), colour: "#fffdf8" });
   return { id: crypto.randomUUID(), title: day ? `${day.label} Recap` : template === "blank" ? "Untitled Scrapbook" : displayLabel(template), pageType, template: pageType === "freeform" ? template : undefined, dayId: day?.id, background: templateBackgrounds[template], pageColour: templatePaperColours[template], backgroundPhotoOpacity: 0.35, freeText: "", favouriteThings: ["", "", ""], weather: "", weatherTemperature: "", weatherDescription: "", steps: "", distance: "", favouriteMemory: "", elements, memberId: member.id, memberName: member.name, contributorNames: [member.name], createdAt: now, updatedAt: now };
 }
 
