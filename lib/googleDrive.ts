@@ -207,6 +207,7 @@ export type TripScrapbookPage = {
   template?: "blank" | "journal" | "pinboard" | "photo-wall" | "postcard" | "film";
   dayId?: string;
   background: string;
+  pageColour?: string;
   backgroundPhotoId?: string;
   backgroundPhotoOpacity?: number;
   freeText: string;

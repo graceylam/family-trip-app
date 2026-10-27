@@ -1962,3 +1962,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .scrapbook-page-style-panel { top: max(60px,calc(env(safe-area-inset-top) + 48px)); right: 8px; width: min(238px,calc(100vw - 16px)); max-height: 43dvh; overflow-y: auto; }
   .scrapbook-colour-inspector { right: 8px; bottom: max(178px,calc(env(safe-area-inset-bottom) + 158px)); width: min(238px,calc(100vw - 16px)); }
 }
+
+/* Keep page styling on the page, and make colour controls part of Selected Item. */
+.scrapbook-page-style-panel { right: auto; left: max(14px,calc(50% - 366px)); width: min(205px,calc(100vw - 28px)); }
+.scrapbook-selection-inspector { max-height: min(78dvh,720px); padding-bottom: 250px; }
+.scrapbook-colour-inspector { z-index: 2390; right: 25px; bottom: max(25px,calc(env(safe-area-inset-bottom) + 13px)); width: min(334px,calc(100% - 50px)); padding: 10px 0 0; border: 0; border-top: 1px solid #d7e1e1; border-radius: 0; background: #fffdf8; box-shadow: none; }
+@media (max-width:760px) {
+  .scrapbook-page-style-panel { right: auto; left: 13px; width: min(190px,calc(100vw - 26px)); }
+  .scrapbook-colour-inspector { right: 25px; bottom: max(25px,calc(env(safe-area-inset-bottom) + 13px)); width: calc(100% - 50px); }
+}

@@ -12,13 +12,14 @@ type Props = { tripName: string; days: TripDay[]; currentMember?: TripMember; me
 type Template = "blank" | "journal" | "pinboard" | "photo-wall" | "postcard" | "film";
 const papers = ["#fffaf0", "#eee6dc", "#eef6f5", "#f8eee9", "#f1edf7", "#edf3fa", "#dce9df"];
 const templateBackgrounds: Record<Template, string> = {
-  blank: papers[0],
-  journal: "repeating-linear-gradient(#fffaf0 0 37px, #d9e5e4 38px, #fffaf0 39px)",
-  pinboard: "radial-gradient(circle at 2px 2px, rgba(91,72,55,.12) 1px, transparent 1.5px) 0 0/12px 12px, #eee6dc",
-  "photo-wall": "linear-gradient(135deg, rgba(255,255,255,.42), transparent 55%), #f8eee9",
-  postcard: "repeating-linear-gradient(0deg, rgba(70,112,132,.05) 0 1px, transparent 1px 5px), #edf3fa",
+  blank: "none",
+  journal: "repeating-linear-gradient(transparent 0 37px, #d9e5e4 38px, transparent 39px)",
+  pinboard: "radial-gradient(circle at 2px 2px, rgba(91,72,55,.12) 1px, transparent 1.5px) 0 0/12px 12px",
+  "photo-wall": "linear-gradient(135deg, rgba(255,255,255,.42), transparent 55%)",
+  postcard: "repeating-linear-gradient(0deg, rgba(70,112,132,.08) 0 1px, transparent 1px 5px)",
   film: "radial-gradient(ellipse at center, #f4f1e8 0 42%, transparent 45%) 6px 4px/18px 14px repeat-x, radial-gradient(ellipse at center, #f4f1e8 0 42%, transparent 45%) 6px calc(100% - 4px)/18px 14px repeat-x, linear-gradient(90deg,#151515 0 7%,#393939 7% 93%,#151515 93%)",
 };
+const templatePaperColours: Record<Template, string> = { blank: papers[0], journal: papers[0], pinboard: papers[1], "photo-wall": papers[3], postcard: papers[5], film: "#393939" };
 const textStyles: Array<NonNullable<TripScrapbookPageElement["textStyle"]>> = ["classic", "handwritten", "cutout", "outline", "label"];
 const attachments: Array<NonNullable<TripScrapbookPageElement["attachment"]>> = ["none", "tape", "pin", "clip", "postmark"];
 const frames: Array<NonNullable<TripScrapbookPageElement["frame"]>> = ["none", "white", "polaroid", "film", "postcard"];
@@ -53,7 +54,7 @@ function newPage(member: TripMember, pageType: TripScrapbookPage["pageType"], da
   if (template === "pinboard") elements.push({ ...item("text", "Pin your favourite moments here", 50, 22, 60), textStyle: "cutout" }, { ...item("decoration", "clip", 50, 47, 13), attachment: "clip" });
   if (template === "postcard") elements.push({ ...item("text", "Wish you were here", 52, 34, 64), textStyle: "outline" }, item("sticker", "✈️", 78, 73, 15, 12));
   if (template === "film") elements.push({ ...item("text", "Scenes from our adventure", 50, 18, 70), textStyle: "label", colour: "#fffdf8" }, { ...item("sticker", "✦", 84, 78, 12, 8), colour: "#fffdf8" });
-  return { id: crypto.randomUUID(), title: day ? `${day.label} Recap` : template === "blank" ? "Untitled Scrapbook" : displayLabel(template), pageType, template: pageType === "freeform" ? template : undefined, dayId: day?.id, background: templateBackgrounds[template], backgroundPhotoOpacity: 0.35, freeText: "", favouriteThings: ["", "", ""], weather: "", weatherTemperature: "", weatherDescription: "", steps: "", distance: "", favouriteMemory: "", elements, memberId: member.id, memberName: member.name, contributorNames: [member.name], createdAt: now, updatedAt: now };
+  return { id: crypto.randomUUID(), title: day ? `${day.label} Recap` : template === "blank" ? "Untitled Scrapbook" : displayLabel(template), pageType, template: pageType === "freeform" ? template : undefined, dayId: day?.id, background: templateBackgrounds[template], pageColour: templatePaperColours[template], backgroundPhotoOpacity: 0.35, freeText: "", favouriteThings: ["", "", ""], weather: "", weatherTemperature: "", weatherDescription: "", steps: "", distance: "", favouriteMemory: "", elements, memberId: member.id, memberName: member.name, contributorNames: [member.name], createdAt: now, updatedAt: now };
 }
 
 export default function ScrapbookStudio({ tripName, days, currentMember, media, mediaUrls, pages, onChange }: Props) {
@@ -85,8 +86,9 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
     if (!canvas || !draft) return;
     const photo = draft.backgroundPhotoId ? mediaUrls[draft.backgroundPhotoId] : "";
     const veil = 1 - (draft.backgroundPhotoOpacity ?? 0.35);
-    canvas.style.backgroundColor = draft.background.match(/^#[0-9a-f]{6}$/i) ? draft.background : "#fffaf0";
-    canvas.style.backgroundImage = photo ? `linear-gradient(rgba(255,253,248,${veil}),rgba(255,253,248,${veil})),url("${photo}")` : draft.background.includes("gradient") ? draft.background : "none";
+    canvas.style.backgroundColor = draft.pageColour || (draft.background.match(/^#[0-9a-f]{6}$/i) ? draft.background : "#fffaf0");
+    const texture = draft.template ? templateBackgrounds[draft.template] : draft.background.includes("gradient") ? draft.background : "none";
+    canvas.style.backgroundImage = photo ? `${texture !== "none" ? `${texture},` : ""}linear-gradient(rgba(255,253,248,${veil}),rgba(255,253,248,${veil})),url("${photo}")` : texture;
     canvas.style.backgroundSize = photo ? "cover" : "auto";
     canvas.style.backgroundPosition = "center";
     canvas.querySelectorAll<HTMLElement>(".scrapbook-canvas-element").forEach((node, index) => {
@@ -105,8 +107,9 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
     if (!reader || !page) return;
     const photo = page.backgroundPhotoId ? mediaUrls[page.backgroundPhotoId] : "";
     const veil = 1 - (page.backgroundPhotoOpacity ?? 0.35);
-    reader.style.backgroundColor = page.background.match(/^#[0-9a-f]{6}$/i) ? page.background : "#fffaf0";
-    reader.style.backgroundImage = photo ? `linear-gradient(rgba(255,253,248,${veil}),rgba(255,253,248,${veil})),url("${photo}")` : page.background.includes("gradient") ? page.background : "none";
+    reader.style.backgroundColor = page.pageColour || (page.background.match(/^#[0-9a-f]{6}$/i) ? page.background : "#fffaf0");
+    const texture = page.template ? templateBackgrounds[page.template] : page.background.includes("gradient") ? page.background : "none";
+    reader.style.backgroundImage = photo ? `${texture !== "none" ? `${texture},` : ""}linear-gradient(rgba(255,253,248,${veil}),rgba(255,253,248,${veil})),url("${photo}")` : texture;
     reader.style.backgroundSize = photo ? "cover" : "auto";
     reader.style.backgroundPosition = "center";
     reader.querySelectorAll<HTMLElement>(".scrapbook-reader-element").forEach((node, index) => {
@@ -243,7 +246,7 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
   const recapMedia = draft?.favouritePhotoId ? availableMedia.find((entry) => entry.fileId === draft.favouritePhotoId) : undefined;
 
   return <section className="scrapbook-studio">
-    {draft && <details className="scrapbook-page-style-panel"><summary>Page Style</summary><div className="memory-colour-pair"><label><span>Page Colour</span><input type="color" value={draft.background.match(/^#[0-9a-f]{6}$/i) ? draft.background : "#fffaf0"} onChange={(event) => update({ background: event.target.value })} /></label><label><span>HEX</span><input value={draft.background.match(/^#[0-9a-f]{6}$/i) ? draft.background.toUpperCase() : "#FFFAF0"} onChange={(event) => { if (/^#[0-9a-f]{6}$/i.test(event.target.value)) update({ background: event.target.value }); }} maxLength={7} /></label></div><button onClick={() => setMediaPurpose("background")}>▧ {draft.backgroundPhotoId ? "Change Background Photo" : "Add Background Photo"}</button>{draft.backgroundPhotoId && <><label><span>Background Photo Opacity</span><input type="range" min="0.05" max="1" step="0.05" value={draft.backgroundPhotoOpacity ?? 0.35} onChange={(event) => update({ backgroundPhotoOpacity: Number(event.target.value) })} /></label><button className="text-button" onClick={() => update({ backgroundPhotoId: undefined })}>Remove Background Photo</button></>}</details>}
+    {draft && <details className="scrapbook-page-style-panel"><summary>Page Style</summary><div className="memory-colour-pair"><label><span>Page Colour</span><input type="color" value={draft.pageColour || (draft.background.match(/^#[0-9a-f]{6}$/i) ? draft.background : "#fffaf0")} onChange={(event) => update({ pageColour: event.target.value })} /></label><label><span>HEX</span><input value={(draft.pageColour || (draft.background.match(/^#[0-9a-f]{6}$/i) ? draft.background : "#fffaf0")).toUpperCase()} onChange={(event) => { if (/^#[0-9a-f]{6}$/i.test(event.target.value)) update({ pageColour: event.target.value }); }} maxLength={7} /></label></div><button onClick={() => setMediaPurpose("background")}>▧ {draft.backgroundPhotoId ? "Change Background Photo" : "Add Background Photo"}</button>{draft.backgroundPhotoId && <><label><span>Background Photo Opacity</span><input type="range" min="0.05" max="1" step="0.05" value={draft.backgroundPhotoOpacity ?? 0.35} onChange={(event) => update({ backgroundPhotoOpacity: Number(event.target.value) })} /></label><button className="text-button" onClick={() => update({ backgroundPhotoId: undefined })}>Remove Background Photo</button></>}</details>}
     {draft && selectedElement && <section className="scrapbook-colour-inspector"><strong>Colours & Opacity</strong><div className="memory-colour-pair"><label><span>Font Colour</span><input type="color" value={selectedElement.colour || "#294552"} onChange={(event) => updateElement({ colour: event.target.value })} /></label><label><span>Font HEX</span><input value={(selectedElement.colour || "#294552").toUpperCase()} onChange={(event) => { if (/^#[0-9a-f]{6}$/i.test(event.target.value)) updateElement({ colour: event.target.value }); }} maxLength={7} /></label><label><span>Background Colour</span><input type="color" value={selectedElement.backgroundColour || "#fffdf8"} onChange={(event) => updateElement({ backgroundColour: event.target.value })} /></label><label><span>Background HEX</span><input value={(selectedElement.backgroundColour || "#FFFDF8").toUpperCase()} onChange={(event) => { if (/^#[0-9a-f]{6}$/i.test(event.target.value)) updateElement({ backgroundColour: event.target.value }); }} maxLength={7} /></label></div><label><span>Background Opacity</span><input type="range" min="0" max="1" step="0.05" value={selectedElement.backgroundOpacity ?? 0} onChange={(event) => updateElement({ backgroundOpacity: Number(event.target.value) })} /></label><label><span>Item Opacity</span><input type="range" min="0.1" max="1" step="0.05" value={selectedElement.opacity ?? 1} onChange={(event) => updateElement({ opacity: Number(event.target.value) })} /></label></section>}
     <header><div><p className="eyebrow">Pages made together</p><h2>Digital Scrapbook</h2><p>Mix photos, videos, words, frames and decorations—your way.</p></div><button className="primary-button" onClick={() => setCreateOpen(true)} disabled={!currentMember}>＋ New Page</button></header>
     {bookOpen && bookPage > 0 && !arranging && <button className="scrapbook-save-page" onClick={() => void saveCompleteReaderPage()} disabled={pageExportStatus === "Saving…" || pageExportStatus === "Building PDF…"} aria-label="Save page to Photos">↓ {pageExportStatus === "Saving…" ? "Saving…" : "Save Page to Photos"}</button>}
