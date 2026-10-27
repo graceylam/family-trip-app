@@ -4,6 +4,7 @@ import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { TripDay } from "../lib/googleDrive";
 import type { TripMedia } from "../lib/firebaseMedia";
 import type { TripAccountMember } from "../lib/firebaseAccounts";
+import type { QueuedPhotoView } from "../lib/photoQueue";
 import { canSaveDirectlyToPhotos, saveUrlToPhotos } from "../lib/nativePhotos";
 import MediaSwipeStage from "./MediaSwipeStage";
 import { canUseData, defaultDataPreferences, wifiOnlyMessage, type DataPreferences } from "../lib/dataSaver";
@@ -12,6 +13,7 @@ type GalleryProps = {
   tripId: string;
   days: TripDay[];
   media: TripMedia[];
+  queuedMedia?: QueuedPhotoView[];
   memberProfiles: TripAccountMember[];
   currentUid: string;
   isAdmin: boolean;
@@ -39,7 +41,7 @@ function mediaUrl(item: TripMedia, display = false) {
   return display ? item.displayUrl || item.downloadUrl : item.thumbnailUrl || item.displayUrl || item.downloadUrl;
 }
 
-export default function Gallery({ tripId, days, media, memberProfiles, currentUid, isAdmin, dataPreferences = defaultDataPreferences, uploadStatus = { state: "idle", completed: 0, total: 0, message: "Uploads are up to date" }, onRetryUploads, state, error, onUpload, onUpdate, onDelete }: GalleryProps) {
+export default function Gallery({ tripId, days, media, queuedMedia = [], memberProfiles, currentUid, isAdmin, dataPreferences = defaultDataPreferences, uploadStatus = { state: "idle", completed: 0, total: 0, message: "Uploads are up to date" }, onRetryUploads, state, error, onUpload, onUpdate, onDelete }: GalleryProps) {
   const [dayFilter, setDayFilter] = useState("");
   const [personFilter, setPersonFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState<"" | "photo" | "video" | "favorite">("");
@@ -91,6 +93,13 @@ export default function Gallery({ tripId, days, media, memberProfiles, currentUi
     && (!personFilter || item.memberId === personFilter)
     && (!typeFilter || (typeFilter === "favorite" ? item.favoriteBy.includes(currentUid) : item.mediaType === typeFilter)),
   ), [currentUid, dayFilter, media, personFilter, typeFilter]);
+  const visibleQueued = useMemo(() => queuedMedia.filter((item) =>
+    !item.isPrivate
+    && item.status !== "uploaded"
+    && !item.pendingCloudDeletion
+    && (!personFilter || item.memberId === personFilter)
+    && (!typeFilter || (typeFilter !== "favorite" && (typeFilter === "video" ? item.mimeType.startsWith("video/") : item.mimeType.startsWith("image/"))))
+  ), [personFilter, queuedMedia, typeFilter]);
   const newItems = useMemo(() => lastVisit ? media.filter((item) => item.uploadedAt > lastVisit).length : 0, [lastVisit, media]);
   const viewerIndex = visible.findIndex((item) => item.fileId === viewerId);
   const viewer = viewerIndex >= 0 ? visible[viewerIndex] : null;
@@ -288,10 +297,39 @@ export default function Gallery({ tripId, days, media, memberProfiles, currentUi
 
     {selectionMode && <div className="gallery-selection-bar"><strong>{selected.length} selected</strong><div className="gallery-selection-actions"><button className="secondary-button" disabled={!visible.length || shareState !== "idle"} onClick={toggleSelectAll}>{allVisibleSelected ? "Deselect All" : `Select All (${visible.length})`}</button><button className="primary-button" disabled={!selected.length || shareState !== "idle"} onClick={() => void saveItemsToPhotos(selected)}>{shareState === "saving" ? `Saving ${shareProgress.completed}/${shareProgress.total}` : "Save Selected to Photos"}</button><button className="secondary-button danger-button" disabled={!deletableSelected.length || shareState !== "idle"} onClick={() => void deleteSelected()}>{shareState === "deleting" ? `Deleting ${shareProgress.completed}/${shareProgress.total}` : `Delete Selected (${deletableSelected.length})`}</button></div></div>}
 
-    {!sharedMediaAllowed ? <div className="gallery-v2-empty"><strong>Shared media is waiting for Wi-Fi</strong><p>Your itinerary and other lightweight trip details remain available.</p></div> : state === "loading" && !media.length ? <div className="gallery-v2-empty">Opening the group gallery…</div> : visible.length === 0 ? <div className="gallery-v2-empty"><strong>No matching memories yet</strong><p>Use Upload photos to add photos or videos to a day and stop.</p></div> : <div className="gallery-v2-days">{days.filter((day) => !dayFilter || day.id === dayFilter).map((day, dayIndex) => {
+    {!sharedMediaAllowed ? <div className="gallery-v2-empty"><strong>Shared media is waiting for Wi-Fi</strong><p>Your itinerary and other lightweight trip details remain available.</p></div> : state === "loading" && !media.length && !visibleQueued.length ? <div className="gallery-v2-empty">Opening the group gallery…</div> : visible.length === 0 && visibleQueued.length === 0 ? <div className="gallery-v2-empty"><strong>No matching memories yet</strong><p>Use Upload photos to add photos or videos to a day and stop.</p></div> : <div className="gallery-v2-days">{days.filter((day) => !dayFilter || day.id === dayFilter).map((day) => {
       const dayItems = visible.filter((item) => item.dayId === day.id);
-      if (!dayItems.length) return null;
-      return <section className="gallery-v2-day" key={day.id}><header><div><p>Day {days.indexOf(day) + 1}</p><h2>{day.label}</h2><time>{prettyDate(day.date)}</time></div><span>{dayItems.length} memories</span></header>{day.stops.map((stop, stopIndex) => { const items = dayItems.filter((item) => item.stopId === stop.id); if (!items.length) return null; return <article className="gallery-v2-stop" key={stop.id}><div className="gallery-v2-stop-title"><div><small>Stop {stopIndex + 1}</small><h3>{stop.title}</h3></div>{stop.time && <time>{stop.time}</time>}</div><div className="gallery-v2-grid">{items.map((item) => <button className={`gallery-v2-tile ${selectedIds.includes(item.fileId) ? "selected" : ""}`} onClick={() => open(item)} key={item.fileId}>{item.mediaType === "video" ? <video src={mediaUrl(item)} muted preload="metadata" playsInline /> : <img src={mediaUrl(item)} alt={item.caption || `${item.memberName}'s photo at ${stop.title}`} loading="lazy" />}<span className="gallery-tile-overlay"><b className="member-avatar" style={{ background: memberProfilesByUid.get(item.memberId)?.avatarColor || "#8bb8cf" }}>{memberProfilesByUid.get(item.memberId)?.avatarEmoji || (memberProfilesByUid.get(item.memberId)?.displayName || item.memberName).slice(0, 1).toUpperCase()}</b>{item.mediaType === "video" && <i>▶ Video</i>}{item.favoriteBy.length > 0 && <i>♥ {item.favoriteBy.length}</i>}</span>{selectionMode && <span className="gallery-select-mark">{selectedIds.includes(item.fileId) ? "✓" : ""}</span>}</button>)}</div></article>; })}</section>;
+      const dayQueued = visibleQueued.filter((item) => day.stops.some((stop) => stop.id === item.stopId));
+      if (!dayItems.length && !dayQueued.length) return null;
+      return <section className="gallery-v2-day" key={day.id}>
+        <header><div><p>Day {days.indexOf(day) + 1}</p><h2>{day.label}</h2><time>{prettyDate(day.date)}</time></div><span>{dayItems.length + dayQueued.length} memories</span></header>
+        {day.stops.map((stop, stopIndex) => {
+          const items = dayItems.filter((item) => item.stopId === stop.id);
+          const queuedItems = dayQueued.filter((item) => item.stopId === stop.id);
+          if (!items.length && !queuedItems.length) return null;
+          return <article className="gallery-v2-stop" key={stop.id}>
+            <div className="gallery-v2-stop-title"><div><small>Stop {stopIndex + 1}</small><h3>{stop.title}</h3></div>{stop.time && <time>{stop.time}</time>}</div>
+            <div className="gallery-v2-grid">
+              {queuedItems.map((item) => {
+                const status = item.status === "needsAttention" ? "error" : uploadStatus.state === "paused" ? "paused" : item.status === "uploading" || uploadStatus.state === "uploading" ? "uploading" : "queued";
+                const symbol = status === "error" ? "!" : status === "paused" ? "Ⅱ" : status === "uploading" ? "↑" : "◷";
+                const label = status === "error" ? "Upload failed" : status === "paused" ? "Upload paused" : status === "uploading" ? "Uploading" : "Waiting to upload";
+                return <div className="gallery-v2-tile pending" key={`queued-${item.id}`} title={label}>
+                  {item.mimeType.startsWith("video/") ? <video src={item.previewUrl} muted preload="metadata" playsInline /> : <img src={item.previewUrl} alt={`${item.memberName}'s photo waiting to upload`} />}
+                  <i className={`gallery-photo-status ${status}`} aria-label={label}>{symbol}</i>
+                  <span className="gallery-tile-overlay"><b className="member-avatar" style={{ background: memberProfilesByUid.get(item.memberId)?.avatarColor || "#8bb8cf" }}>{memberProfilesByUid.get(item.memberId)?.avatarEmoji || (memberProfilesByUid.get(item.memberId)?.displayName || item.memberName).slice(0, 1).toUpperCase()}</b>{item.mimeType.startsWith("video/") && <i>▶ Video</i>}</span>
+                </div>;
+              })}
+              {items.map((item) => <button className={`gallery-v2-tile ${selectedIds.includes(item.fileId) ? "selected" : ""}`} onClick={() => open(item)} key={item.fileId}>
+                {item.mediaType === "video" ? <video src={mediaUrl(item)} muted preload="metadata" playsInline /> : <img src={mediaUrl(item)} alt={item.caption || `${item.memberName}'s photo at ${stop.title}`} loading="lazy" />}
+                {!selectionMode && <i className="gallery-photo-status uploaded" aria-label="Uploaded">✓</i>}
+                <span className="gallery-tile-overlay"><b className="member-avatar" style={{ background: memberProfilesByUid.get(item.memberId)?.avatarColor || "#8bb8cf" }}>{memberProfilesByUid.get(item.memberId)?.avatarEmoji || (memberProfilesByUid.get(item.memberId)?.displayName || item.memberName).slice(0, 1).toUpperCase()}</b>{item.mediaType === "video" && <i>▶ Video</i>}{item.favoriteBy.length > 0 && <i>♥ {item.favoriteBy.length}</i>}</span>
+                {selectionMode && <span className="gallery-select-mark">{selectedIds.includes(item.fileId) ? "✓" : ""}</span>}
+              </button>)}
+            </div>
+          </article>;
+        })}
+      </section>;
     })}</div>}
 
     {showUpload && <div className="modal-backdrop" role="presentation" onMouseDown={() => uploadState === "idle" && setShowUpload(false)}><section className="modal gallery-upload-modal" role="dialog" aria-modal="true" aria-labelledby="gallery-upload-title" onMouseDown={(event) => event.stopPropagation()}><p className="eyebrow">Add to the shared gallery</p><h2 id="gallery-upload-title">Where were these taken?</h2><p className="modal-copy">Choose a day and stop, then select photos or videos from your library.</p><div className="gallery-upload-fields"><label><span>Day</span><select value={uploadDay?.id ?? ""} onChange={(event) => { const nextDay = days.find((day) => day.id === event.target.value); setUploadDayId(event.target.value); setUploadStopId(nextDay?.stops[0]?.id ?? ""); }}>{days.map((day, index) => <option value={day.id} key={day.id}>Day {index + 1}: {day.label}</option>)}</select></label><label><span>Stop</span><select value={uploadStop?.id ?? ""} onChange={(event) => setUploadStopId(event.target.value)} disabled={!uploadDay?.stops.length}><option value="" disabled>{uploadDay?.stops.length ? "Choose a stop" : "No stops on this day"}</option>{uploadDay?.stops.map((stop, index) => <option value={stop.id} key={stop.id}>Stop {index + 1}: {stop.title}</option>)}</select></label></div><input ref={uploadInputRef} className="visually-hidden" type="file" accept="image/*,video/*" multiple onChange={(event) => void addFromGallery(event)} /><div className="modal-actions"><button className="secondary-button" onClick={() => setShowUpload(false)} disabled={uploadState === "saving"}>Cancel</button><button className="primary-button" onClick={() => uploadInputRef.current?.click()} disabled={!uploadStop || uploadState === "saving"}>{uploadState === "saving" ? "Adding safely…" : "Choose photos & videos"}</button></div></section></div>}

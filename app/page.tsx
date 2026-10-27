@@ -3101,6 +3101,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           tripId={accountTrip.id}
           days={days}
           media={sharedPhotos}
+          queuedMedia={queuedPhotos}
           memberProfiles={tripAccountMembers}
           currentUid={account.uid}
           isAdmin={isAdmin}
