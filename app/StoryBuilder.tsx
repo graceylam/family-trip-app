@@ -209,44 +209,6 @@ function drawStoryPhoto(context: CanvasRenderingContext2D, image: HTMLImageEleme
   context.drawImage(image, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
 }
 
-function decodeZoraWave(context: AudioContext, source: ArrayBuffer): AudioBuffer {
-  const view = new DataView(source);
-  const ascii = (offset: number, length: number) => Array.from({ length }, (_, index) => String.fromCharCode(view.getUint8(offset + index))).join("");
-  if (ascii(0, 4) !== "RIFF" || ascii(8, 4) !== "WAVE") throw new Error("The selected soundtrack is not a valid Zora audio file.");
-  let offset = 12;
-  let channels = 0;
-  let sampleRate = 0;
-  let bitsPerSample = 0;
-  let dataOffset = 0;
-  let dataLength = 0;
-  while (offset + 8 <= view.byteLength) {
-    const chunk = ascii(offset, 4);
-    const length = view.getUint32(offset + 4, true);
-    const body = offset + 8;
-    if (chunk === "fmt ") {
-      if (view.getUint16(body, true) !== 1) throw new Error("This soundtrack uses an unsupported audio format.");
-      channels = view.getUint16(body + 2, true);
-      sampleRate = view.getUint32(body + 4, true);
-      bitsPerSample = view.getUint16(body + 14, true);
-    } else if (chunk === "data") {
-      dataOffset = body;
-      dataLength = Math.min(length, view.byteLength - body);
-      break;
-    }
-    offset = body + length + (length % 2);
-  }
-  if (!dataOffset || !dataLength || !channels || !sampleRate || bitsPerSample !== 16) throw new Error("The selected soundtrack could not be decoded.");
-  const frameCount = Math.floor(dataLength / (channels * 2));
-  const buffer = context.createBuffer(channels, frameCount, sampleRate);
-  for (let channel = 0; channel < channels; channel += 1) {
-    const output = buffer.getChannelData(channel);
-    for (let frame = 0; frame < frameCount; frame += 1) {
-      output[frame] = view.getInt16(dataOffset + (frame * channels + channel) * 2, true) / 32768;
-    }
-  }
-  return buffer;
-}
-
 function storyTextLines(context: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const words = text.trim().split(/\s+/).filter(Boolean);
   const lines: string[] = [];
@@ -279,29 +241,28 @@ async function renderSavedHighlight(
   const stream = canvas.captureStream(15);
   const AudioContextClass = window.AudioContext;
   const audioContext = music !== "none" && AudioContextClass ? new AudioContextClass() : null;
-  let soundtrackSource: AudioBufferSourceNode | null = null;
+  let soundtrackElement: HTMLAudioElement | null = null;
+  let soundtrackPlayback: Promise<void> | null = null;
   if (audioContext) {
     await audioContext.resume();
     const destination = audioContext.createMediaStreamDestination();
-    const duration = story.slides.reduce((total, slide) => total + slideDuration(slide), 0);
-    const soundtrack = await fetch(musicAssetUrl(music as Exclude<HighlightMusic, "none">)).then((response) => {
-      if (!response.ok) throw new Error("The selected soundtrack could not be loaded for video export.");
-      return response.arrayBuffer();
-    });
-    soundtrackSource = audioContext.createBufferSource();
-    soundtrackSource.buffer = decodeZoraWave(audioContext, soundtrack);
-    soundtrackSource.loop = duration > soundtrackSource.buffer.duration;
-    soundtrackSource.loopEnd = Math.min(24, soundtrackSource.buffer.duration);
-    soundtrackSource.connect(destination);
+    soundtrackElement = new Audio(musicAssetUrl(music as Exclude<HighlightMusic, "none">));
+    soundtrackElement.preload = "auto";
+    soundtrackElement.loop = true;
+    const source = audioContext.createMediaElementSource(soundtrackElement);
+    source.connect(destination);
     const audioTrack = destination.stream.getAudioTracks()[0];
     if (audioTrack) stream.addTrack(audioTrack);
+    // HTMLAudioElement uses Capacitor's working local-media loader—the exact
+    // same path as Preview—while fetch() cannot read capacitor:// audio files.
+    soundtrackPlayback = soundtrackElement.play();
   }
   const recorder = mimeType ? new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 4_000_000 }) : new MediaRecorder(stream);
   const chunks: Blob[] = [];
   recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
   const stopped = new Promise<void>((resolve, reject) => { recorder.onstop = () => resolve(); recorder.onerror = () => reject(new Error("Video creation stopped unexpectedly.")); });
   recorder.start(1000);
-  soundtrackSource?.start(audioContext ? audioContext.currentTime + 0.05 : 0);
+  if (soundtrackPlayback) await soundtrackPlayback.catch(() => { throw new Error("The selected soundtrack could not start for video export."); });
   const fps = 15;
   const totalFrames = story.slides.reduce((total, slide) => total + slideDuration(slide) * fps, 0);
   let completedFrames = 0;
@@ -383,7 +344,7 @@ async function renderSavedHighlight(
     if (recorder.state !== "inactive") recorder.stop();
     await stopped.catch(() => undefined);
     throw error;
-  } finally { try { soundtrackSource?.stop(); } catch {} stream.getTracks().forEach((track) => track.stop()); await audioContext?.close(); }
+  } finally { if (soundtrackElement) { soundtrackElement.pause(); soundtrackElement.currentTime = 0; } stream.getTracks().forEach((track) => track.stop()); await audioContext?.close(); }
   const outputType = recorder.mimeType || mimeType || "video/webm";
   return { blob: new Blob(chunks, { type: outputType }), extension: outputType.includes("mp4") ? "mp4" : "webm" };
 }
