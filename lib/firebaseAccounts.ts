@@ -218,6 +218,10 @@ export async function updateFamilyProfile(
   const { auth, db } = services();
   const cleanName = updates.displayName.trim();
   if (!cleanName) throw new Error("Enter the name you would like your family to see.");
+  const cleanEmoji = updates.avatarEmoji || "";
+  const sharedProfileChanged = cleanName !== account.displayName ||
+    cleanEmoji !== (account.avatarEmoji || "") ||
+    updates.avatarColor !== account.avatarColor;
   if (auth.currentUser) await updateProfile(auth.currentUser, { displayName: cleanName });
   await setDoc(doc(db, "users", account.uid), {
     ...updates,
@@ -227,13 +231,15 @@ export async function updateFamilyProfile(
     updatedAt: serverTimestamp(),
   }, { merge: true });
 
-  const references = await getDocs(collection(db, "users", account.uid, "trips"));
-  const batch = writeBatch(db);
-  references.docs.forEach((reference) => {
-    batch.set(reference.ref, { memberName: cleanName, updatedAt: serverTimestamp() }, { merge: true });
-    batch.set(doc(db, "trips", reference.id, "members", account.uid), { displayName: cleanName, avatarEmoji: updates.avatarEmoji || "", avatarColor: updates.avatarColor }, { merge: true });
-  });
-  if (!references.empty) await batch.commit();
+  if (sharedProfileChanged) {
+    const references = await getDocs(collection(db, "users", account.uid, "trips"));
+    const batch = writeBatch(db);
+    references.docs.forEach((reference) => {
+      batch.set(reference.ref, { memberName: cleanName, updatedAt: serverTimestamp() }, { merge: true });
+      batch.set(doc(db, "trips", reference.id, "members", account.uid), { displayName: cleanName, avatarEmoji: cleanEmoji, avatarColor: updates.avatarColor }, { merge: true });
+    });
+    if (!references.empty) await batch.commit();
+  }
 }
 
 export async function updateTripCoverPresentation(
