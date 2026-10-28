@@ -88,7 +88,12 @@ service cloud.firestore {
             request.resource.data.userId == request.auth.uid &&
             request.resource.data.role == "contributor" &&
             validInvite(request.resource.data.inviteId, tripId));
-        allow update, delete: if isTripAdmin(tripId);
+        allow update: if isTripAdmin(tripId) ||
+          (signedIn() && request.auth.uid == userId &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              "displayName", "avatarEmoji", "avatarColor"
+            ]));
+        allow delete: if isTripAdmin(tripId);
       }
 
       match /state/{documentId} {
