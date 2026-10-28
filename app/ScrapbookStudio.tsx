@@ -1,6 +1,6 @@
 "use client";
 
-import { type PointerEvent as ReactPointerEvent, type TouchEvent as ReactTouchEvent, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, type TouchEvent as ReactTouchEvent, useEffect, useMemo, useState } from "react";
 import { toPng } from "html-to-image";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
@@ -14,7 +14,7 @@ const papers = ["#fffaf0", "#eee6dc", "#eef6f5", "#f8eee9", "#f1edf7", "#edf3fa"
 const templateBackgrounds: Record<Template, string> = {
   blank: "none",
   journal: "repeating-linear-gradient(transparent 0 37px, #d9e5e4 38px, transparent 39px)",
-  pinboard: "radial-gradient(circle at 2px 2px, rgba(91,72,55,.12) 1px, transparent 1.5px) 0 0/12px 12px",
+  pinboard: "radial-gradient(circle at 2px 2px, rgba(91,72,55,.12) 1px, transparent 1.5px)",
   "photo-wall": "linear-gradient(135deg, rgba(255,255,255,.42), transparent 55%)",
   postcard: "repeating-linear-gradient(0deg, rgba(70,112,132,.08) 0 1px, transparent 1px 5px)",
   film: "url(\"./film-frame.png\") center / 100% 100% no-repeat",
@@ -45,16 +45,33 @@ function isDarkPaper(background: string): boolean {
 }
 
 function previewPageStyle(page: TripScrapbookPage, mediaUrls: Record<string, string>) {
+  return pageSurfaceStyle(page, mediaUrls);
+}
+
+function pageSurfaceStyle(page: TripScrapbookPage, mediaUrls: Record<string, string>): CSSProperties {
   const photo = page.backgroundPhotoId ? mediaUrls[page.backgroundPhotoId] : "";
   const isFilm = page.template === "film";
   const texture = page.template ? templateBackgrounds[page.template] : page.background.includes("gradient") ? page.background : "none";
   const veil = 1 - (page.backgroundPhotoOpacity ?? 0.35);
+  const tiled = page.template === "pinboard";
+  const textureSize = page.template === "pinboard" ? "12px 12px" : "auto";
+  const textureRepeat = tiled ? "repeat" : "no-repeat";
+  const paper = page.pageColour || (page.background.match(/^#[0-9a-f]{6}$/i) ? page.background : "#fffaf0");
+  if (isFilm) {
+    return {
+      backgroundColor: paper,
+      backgroundImage: photo ? `url("./film-frame.png"),linear-gradient(rgba(255,253,248,${veil}),rgba(255,253,248,${veil})),url("${photo}")` : `url("./film-frame.png")`,
+      backgroundPosition: "center,center,center",
+      backgroundRepeat: "no-repeat,no-repeat,no-repeat",
+      backgroundSize: photo ? "100% 100%,100% 100%,cover" : "100% 100%",
+    };
+  }
   return {
-    backgroundColor: page.pageColour || (page.background.match(/^#[0-9a-f]{6}$/i) ? page.background : "#fffaf0"),
-    backgroundImage: isFilm ? photo ? `url("./film-frame.png"),linear-gradient(rgba(255,253,248,${veil}),rgba(255,253,248,${veil})),url("${photo}")` : `url("./film-frame.png")` : photo ? `${texture !== "none" ? `${texture},` : ""}linear-gradient(rgba(255,253,248,${veil}),rgba(255,253,248,${veil})),url("${photo}")` : texture,
-    backgroundPosition: "center",
-    backgroundRepeat: isFilm ? "no-repeat" : undefined,
-    backgroundSize: isFilm ? photo ? "100% 100%,cover,cover" : "100% 100%" : photo ? "cover" : "auto",
+    backgroundColor: paper,
+    backgroundImage: photo ? `${texture !== "none" ? `${texture},` : ""}linear-gradient(rgba(255,253,248,${veil}),rgba(255,253,248,${veil})),url("${photo}")` : texture,
+    backgroundPosition: photo && texture !== "none" ? "0 0,center,center" : "center",
+    backgroundRepeat: photo && texture !== "none" ? `${textureRepeat},no-repeat,no-repeat` : texture !== "none" ? textureRepeat : "no-repeat",
+    backgroundSize: photo && texture !== "none" ? `${textureSize},100% 100%,cover` : photo ? "100% 100%,cover" : textureSize,
   };
 }
 
@@ -107,14 +124,7 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
   useEffect(() => {
     const canvas = document.querySelector<HTMLElement>(".scrapbook-editor .scrapbook-canvas");
     if (!canvas || !draft) return;
-    const photo = draft.backgroundPhotoId ? mediaUrls[draft.backgroundPhotoId] : "";
-    const veil = 1 - (draft.backgroundPhotoOpacity ?? 0.35);
-    canvas.style.backgroundColor = draft.pageColour || (draft.background.match(/^#[0-9a-f]{6}$/i) ? draft.background : "#fffaf0");
-    const texture = draft.template ? templateBackgrounds[draft.template] : draft.background.includes("gradient") ? draft.background : "none";
-    canvas.style.backgroundImage = draft.template === "film" ? photo ? `url("./film-frame.png"),linear-gradient(rgba(255,253,248,${veil}),rgba(255,253,248,${veil})),url("${photo}")` : `url("./film-frame.png")` : photo ? `${texture !== "none" ? `${texture},` : ""}linear-gradient(rgba(255,253,248,${veil}),rgba(255,253,248,${veil})),url("${photo}")` : texture;
-    canvas.style.backgroundRepeat = draft.template === "film" ? "no-repeat" : "";
-    canvas.style.backgroundSize = draft.template === "film" ? photo ? "100% 100%,cover,cover" : "100% 100%" : photo ? "cover" : "auto";
-    canvas.style.backgroundPosition = "center";
+    Object.assign(canvas.style, pageSurfaceStyle(draft, mediaUrls));
     canvas.querySelectorAll<HTMLElement>(".scrapbook-canvas-element").forEach((node, index) => {
       const element = draft.elements[index];
       if (!element) return;
@@ -129,14 +139,7 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
     const page = contentPages[bookPage - 1];
     const reader = document.querySelector<HTMLElement>(".scrapbook-reader-page");
     if (!reader || !page) return;
-    const photo = page.backgroundPhotoId ? mediaUrls[page.backgroundPhotoId] : "";
-    const veil = 1 - (page.backgroundPhotoOpacity ?? 0.35);
-    reader.style.backgroundColor = page.pageColour || (page.background.match(/^#[0-9a-f]{6}$/i) ? page.background : "#fffaf0");
-    const texture = page.template ? templateBackgrounds[page.template] : page.background.includes("gradient") ? page.background : "none";
-    reader.style.backgroundImage = page.template === "film" ? photo ? `url("./film-frame.png"),linear-gradient(rgba(255,253,248,${veil}),rgba(255,253,248,${veil})),url("${photo}")` : `url("./film-frame.png")` : photo ? `${texture !== "none" ? `${texture},` : ""}linear-gradient(rgba(255,253,248,${veil}),rgba(255,253,248,${veil})),url("${photo}")` : texture;
-    reader.style.backgroundRepeat = page.template === "film" ? "no-repeat" : "";
-    reader.style.backgroundSize = page.template === "film" ? photo ? "100% 100%,cover,cover" : "100% 100%" : photo ? "cover" : "auto";
-    reader.style.backgroundPosition = "center";
+    Object.assign(reader.style, pageSurfaceStyle(page, mediaUrls));
     reader.querySelectorAll<HTMLElement>(".scrapbook-reader-element").forEach((node, index) => {
       const element = page.elements[index];
       if (!element) return;
