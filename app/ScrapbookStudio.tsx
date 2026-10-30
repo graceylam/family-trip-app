@@ -114,7 +114,7 @@ function drawCoverImage(context: CanvasRenderingContext2D, image: CanvasImageSou
   context.drawImage(image, (width - drawnWidth) / 2, (height - drawnHeight) / 2, drawnWidth, drawnHeight);
 }
 
-async function composeScrapbookExport(capture: string, page: TripScrapbookPage, mediaUrls: Record<string, string>): Promise<string> {
+async function composeScrapbookExport(capture: string, page: TripScrapbookPage, mediaUrls: Record<string, string>, sourceWidth: number): Promise<string> {
   const foreground = await loadExportImage(capture);
   const canvas = document.createElement("canvas");
   canvas.width = foreground.naturalWidth;
@@ -134,7 +134,7 @@ async function composeScrapbookExport(capture: string, page: TripScrapbookPage, 
       context.fillRect(0, 0, width, height);
     } catch { /* Preserve the paper and template if a remote background is unavailable. */ }
   }
-  const unit = width / 900;
+  const unit = width / Math.max(1, sourceWidth);
   if (page.template === "journal") {
     context.strokeStyle = "rgba(166,190,190,.55)";
     context.lineWidth = Math.max(1, unit);
@@ -261,7 +261,17 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
     setPageExportStatus("Building PDF…");
     const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
     let added = 0;
-    const addCapture = (data: string) => { if (added > 0) pdf.addPage(); pdf.addImage(data, "PNG", 0, 0, pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight(), undefined, "FAST"); added += 1; };
+    const addCapture = (data: string) => {
+      if (added > 0) pdf.addPage();
+      const properties = pdf.getImageProperties(data);
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const scale = Math.min(pageWidth / properties.width, pageHeight / properties.height);
+      const width = properties.width * scale;
+      const height = properties.height * scale;
+      pdf.addImage(data, "PNG", (pageWidth - width) / 2, (pageHeight - height) / 2, width, height, undefined, "FAST");
+      added += 1;
+    };
     try {
       setBookPage(0);
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
@@ -287,12 +297,15 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
     } finally { setBookPage(originalPage); }
     window.setTimeout(() => setPageExportStatus(""), 2800);
   }
-  async function captureNodeForPdf(node: HTMLElement, page?: TripScrapbookPage): Promise<string> { const clone = node.cloneNode(true) as HTMLElement; clone.querySelectorAll(".scrapbook-reader-edit").forEach((element) => element.remove()); clone.classList.add("scrapbook-pdf-capture"); clone.style.position = "fixed"; clone.style.left = "0"; clone.style.top = "0"; clone.style.zIndex = "0"; clone.style.width = "900px"; clone.style.minHeight = "1200px"; clone.style.height = "1200px"; if (page) { clone.style.background = "transparent"; clone.style.backgroundColor = "transparent"; clone.style.backgroundImage = "none"; } const sourceImages = [...node.querySelectorAll<HTMLImageElement>("img")]; const clonedImages = [...clone.querySelectorAll<HTMLImageElement>("img")]; await Promise.all(clonedImages.map(async (image, index) => { const source = sourceImages[index]?.currentSrc || sourceImages[index]?.src || image.src; if (!source) return; try { const response = await fetch(source); if (!response.ok) throw new Error("Image fetch failed"); const blob = await response.blob(); image.src = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(blob); }); } catch { image.src = source; } })); document.body.append(clone); try { await Promise.all(clonedImages.map((image) => image.complete ? Promise.resolve() : image.decode().catch(() => undefined))); await document.fonts.ready; const captured = await toPng(clone, { cacheBust: false, pixelRatio: 1.6, backgroundColor: page ? undefined : "#fffaf0" }); return page ? composeScrapbookExport(captured, page, mediaUrls) : captured; } finally { clone.remove(); } }
+  async function captureNodeForPdf(node: HTMLElement, page?: TripScrapbookPage): Promise<string> { const bounds = node.getBoundingClientRect(); const sourceWidth = Math.max(1, Math.round(bounds.width)); const sourceHeight = Math.max(1, Math.round(Math.max(bounds.height, node.scrollHeight))); const clone = node.cloneNode(true) as HTMLElement; clone.querySelectorAll(".scrapbook-reader-edit").forEach((element) => element.remove()); clone.classList.add("scrapbook-pdf-capture"); clone.style.position = "fixed"; clone.style.left = "0"; clone.style.top = "0"; clone.style.zIndex = "0"; clone.style.width = `${sourceWidth}px`; clone.style.minHeight = `${sourceHeight}px`; clone.style.height = `${sourceHeight}px`; if (page) { clone.style.background = "transparent"; clone.style.backgroundColor = "transparent"; clone.style.backgroundImage = "none"; } const sourceImages = [...node.querySelectorAll<HTMLImageElement>("img")]; const clonedImages = [...clone.querySelectorAll<HTMLImageElement>("img")]; await Promise.all(clonedImages.map(async (image, index) => { const source = sourceImages[index]?.currentSrc || sourceImages[index]?.src || image.src; if (!source) return; try { const response = await fetch(source); if (!response.ok) throw new Error("Image fetch failed"); const blob = await response.blob(); image.src = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(blob); }); } catch { image.src = source; } })); document.body.append(clone); try { await Promise.all(clonedImages.map((image) => image.complete ? Promise.resolve() : image.decode().catch(() => undefined))); await document.fonts.ready; const captured = await toPng(clone, { cacheBust: false, pixelRatio: 2, width: sourceWidth, height: sourceHeight, backgroundColor: page ? undefined : "#fffaf0" }); return page ? composeScrapbookExport(captured, page, mediaUrls, sourceWidth) : captured; } finally { clone.remove(); } }
   async function captureNodeReliably(node: HTMLElement, page?: TripScrapbookPage): Promise<string> {
+    const bounds = node.getBoundingClientRect();
+    const sourceWidth = Math.max(1, Math.round(bounds.width));
+    const sourceHeight = Math.max(1, Math.round(Math.max(bounds.height, node.scrollHeight)));
     const clone = node.cloneNode(true) as HTMLElement;
     clone.querySelectorAll(".scrapbook-reader-edit").forEach((element) => element.remove());
     clone.classList.add("scrapbook-pdf-capture");
-    Object.assign(clone.style, { position: "fixed", left: "0", top: "0", zIndex: "-1", width: "900px", minHeight: "1200px", height: "1200px" });
+    Object.assign(clone.style, { position: "fixed", left: "0", top: "0", zIndex: "-1", width: `${sourceWidth}px`, minHeight: `${sourceHeight}px`, height: `${sourceHeight}px` });
     if (page) Object.assign(clone.style, { background: "transparent", backgroundColor: "transparent", backgroundImage: "none" });
     const sourceImages = [...node.querySelectorAll<HTMLImageElement>("img")];
     const clonedImages = [...clone.querySelectorAll<HTMLImageElement>("img")];
@@ -316,9 +329,9 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
     try {
       await Promise.all(clonedImages.map((image) => image.decode().catch(() => undefined)));
       await document.fonts.ready;
-      const canvas = await html2canvas(clone, { backgroundColor: page ? null : "#fffaf0", scale: 2, useCORS: true, allowTaint: false, logging: false, width: 900, height: 1200, windowWidth: 900, windowHeight: 1200 });
+      const canvas = await html2canvas(clone, { backgroundColor: page ? null : "#fffaf0", scale: 2, useCORS: true, allowTaint: false, logging: false, width: sourceWidth, height: sourceHeight, windowWidth: sourceWidth, windowHeight: sourceHeight });
       const captured = canvas.toDataURL("image/png", 1);
-      return page ? await composeScrapbookExport(captured, page, mediaUrls) : captured;
+      return page ? await composeScrapbookExport(captured, page, mediaUrls, sourceWidth) : captured;
     } catch {
       return await captureNodeForPdf(node, page);
     } finally { clone.remove(); }
