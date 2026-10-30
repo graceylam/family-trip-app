@@ -2480,8 +2480,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       };
 
       let uploadFailures = 0;
-      for (let start = 0; start < uploadCandidates.length; start += 2) {
-        const results = await Promise.all(uploadCandidates.slice(start, start + 2).map(uploadOnePhoto));
+      for (let start = 0; start < uploadCandidates.length; start += 3) {
+        const results = await Promise.all(uploadCandidates.slice(start, start + 3).map(uploadOnePhoto));
         uploadFailures += results.filter((uploaded) => uploaded !== true).length;
       }
 

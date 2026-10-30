@@ -111,8 +111,7 @@ function requireMediaApi(): string {
   return mediaApiUrl;
 }
 
-async function uploadBlob(path: string, blob: Blob, fileName: string, accessKey: string, onProgress?: (progress: number) => void): Promise<void> {
-  const token = await getFamilyIdToken();
+async function uploadBlob(path: string, blob: Blob, fileName: string, accessKey: string, token: string, onProgress?: (progress: number) => void): Promise<void> {
   const base = requireMediaApi();
   await new Promise<void>((resolve, reject) => {
     const request = new XMLHttpRequest();
@@ -144,10 +143,17 @@ export async function uploadTripMedia(account: FamilyAccount, tripId: string, re
   const { thumbnail, display } = await imageRenditions(record.blob);
   const thumbnailPath = thumbnail ? `/v1/media/${encodeURIComponent(tripId)}/${encodeURIComponent(id)}/thumbnail` : undefined;
   const displayPath = display ? `/v1/media/${encodeURIComponent(tripId)}/${encodeURIComponent(id)}/display` : undefined;
-  const originalWeight = display ? .75 : thumbnail ? .9 : 1;
-  await uploadBlob(originalPath, record.blob, record.name, accessKey, (progress) => onProgress?.(progress * originalWeight));
-  if (display && displayPath) await uploadBlob(displayPath, display, "display.jpg", accessKey, (progress) => onProgress?.(.75 + progress * .2));
-  if (thumbnail && thumbnailPath) await uploadBlob(thumbnailPath, thumbnail, "thumbnail.jpg", accessKey, (progress) => onProgress?.((display ? .95 : .9) + progress * (display ? .05 : .1)));
+  const token = await getFamilyIdToken();
+  const jobs = [
+    { path: originalPath, blob: record.blob, name: record.name, weight: display ? .75 : thumbnail ? .9 : 1 },
+    ...(display && displayPath ? [{ path: displayPath, blob: display, name: "display.jpg", weight: .2 }] : []),
+    ...(thumbnail && thumbnailPath ? [{ path: thumbnailPath, blob: thumbnail, name: "thumbnail.jpg", weight: display ? .05 : .1 }] : []),
+  ];
+  const progressByJob = jobs.map(() => 0);
+  await Promise.all(jobs.map((job, index) => uploadBlob(job.path, job.blob, job.name, accessKey, token, (progress) => {
+    progressByJob[index] = progress;
+    onProgress?.(jobs.reduce((total, entry, jobIndex) => total + entry.weight * progressByJob[jobIndex], 0));
+  })));
   const media: TripMedia = {
     fileId: id, photoId: id, name: record.name, mimeType: record.mimeType,
     mediaType: record.mimeType.startsWith("video/") ? "video" : "photo",

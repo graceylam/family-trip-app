@@ -97,6 +97,66 @@ function withoutLegacyFilmCentre(page: TripScrapbookPage): TripScrapbookPage {
   return elements.length === page.elements.length ? page : { ...page, elements };
 }
 
+function loadExportImage(source: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    if (/^https?:/i.test(source)) image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("A scrapbook background could not be rendered."));
+    image.src = source;
+  });
+}
+
+function drawCoverImage(context: CanvasRenderingContext2D, image: CanvasImageSource, sourceWidth: number, sourceHeight: number, width: number, height: number) {
+  const scale = Math.max(width / sourceWidth, height / sourceHeight);
+  const drawnWidth = sourceWidth * scale;
+  const drawnHeight = sourceHeight * scale;
+  context.drawImage(image, (width - drawnWidth) / 2, (height - drawnHeight) / 2, drawnWidth, drawnHeight);
+}
+
+async function composeScrapbookExport(capture: string, page: TripScrapbookPage, mediaUrls: Record<string, string>): Promise<string> {
+  const foreground = await loadExportImage(capture);
+  const canvas = document.createElement("canvas");
+  canvas.width = foreground.naturalWidth;
+  canvas.height = foreground.naturalHeight;
+  const context = canvas.getContext("2d");
+  if (!context) return capture;
+  const width = canvas.width;
+  const height = canvas.height;
+  context.fillStyle = page.pageColour || (page.background.match(/^#[0-9a-f]{6}$/i) ? page.background : "#fffaf0");
+  context.fillRect(0, 0, width, height);
+  const backgroundPhoto = page.backgroundPhotoId ? mediaUrls[page.backgroundPhotoId] : "";
+  if (backgroundPhoto) {
+    try {
+      const image = await loadExportImage(backgroundPhoto);
+      drawCoverImage(context, image, image.naturalWidth, image.naturalHeight, width, height);
+      context.fillStyle = `rgba(255,253,248,${1 - (page.backgroundPhotoOpacity ?? 0.35)})`;
+      context.fillRect(0, 0, width, height);
+    } catch { /* Preserve the paper and template if a remote background is unavailable. */ }
+  }
+  const unit = width / 900;
+  if (page.template === "journal") {
+    context.strokeStyle = "rgba(166,190,190,.55)";
+    context.lineWidth = Math.max(1, unit);
+    for (let y = 39 * unit; y < height; y += 40 * unit) { context.beginPath(); context.moveTo(0, y); context.lineTo(width, y); context.stroke(); }
+  } else if (page.template === "pinboard") {
+    context.fillStyle = "rgba(91,72,55,.16)";
+    for (let y = 2 * unit; y < height; y += 12 * unit) for (let x = 2 * unit; x < width; x += 12 * unit) { context.beginPath(); context.arc(x, y, Math.max(1, unit), 0, Math.PI * 2); context.fill(); }
+  } else if (page.template === "photo-wall") {
+    const glow = context.createLinearGradient(0, 0, width, height);
+    glow.addColorStop(0, "rgba(255,255,255,.52)"); glow.addColorStop(.56, "rgba(255,255,255,0)");
+    context.fillStyle = glow; context.fillRect(0, 0, width, height);
+  } else if (page.template === "postcard") {
+    context.strokeStyle = "rgba(70,112,132,.12)";
+    context.lineWidth = Math.max(1, unit);
+    for (let y = 1 * unit; y < height; y += 5 * unit) { context.beginPath(); context.moveTo(0, y); context.lineTo(width, y); context.stroke(); }
+  } else if (page.template === "film") {
+    try { const film = await loadExportImage("./film-frame.png"); context.drawImage(film, 0, 0, width, height); } catch { /* Keep the chosen paper colour. */ }
+  }
+  context.drawImage(foreground, 0, 0, width, height);
+  return canvas.toDataURL("image/png", 1);
+}
+
 export default function ScrapbookStudio({ tripName, days, currentMember, media, mediaUrls, pages, onChange }: Props) {
   const [draft, setDraft] = useState<TripScrapbookPage | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -161,7 +221,7 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
     if (!visible || !page) return;
     setPageExportStatus("Saving…");
     try {
-      const data = await captureNodeReliably(visible);
+      const data = await captureNodeReliably(visible, page);
       const blob = await (await fetch(data)).blob();
       if (canSaveDirectlyToPhotos()) await saveBlobToNativePhotos(blob, "image/png");
       else { const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `Scrapbook Page ${bookPage}.png`; anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); }
@@ -176,7 +236,7 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
     setPageExportStatus("Saving…");
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     try {
-      const data = await captureNodeReliably(canvas);
+      const data = await captureNodeReliably(canvas, draft);
       const blob = await (await fetch(data)).blob();
       if (canSaveDirectlyToPhotos()) await saveBlobToNativePhotos(blob, "image/png");
       else {
@@ -211,7 +271,7 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
         setBookPage(pageIndex);
         await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
         const node = document.querySelector<HTMLElement>(".scrapbook-reader-page");
-        if (node) addCapture(await captureNodeReliably(node));
+        if (node) addCapture(await captureNodeReliably(node, contentPages[pageIndex - 1]));
       }
       if (!added) throw new Error("No photobook pages could be rendered.");
       const blob = pdf.output("blob");
@@ -227,12 +287,13 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
     } finally { setBookPage(originalPage); }
     window.setTimeout(() => setPageExportStatus(""), 2800);
   }
-  async function captureNodeForPdf(node: HTMLElement): Promise<string> { const clone = node.cloneNode(true) as HTMLElement; clone.querySelectorAll(".scrapbook-reader-edit").forEach((element) => element.remove()); clone.classList.add("scrapbook-pdf-capture"); clone.style.position = "fixed"; clone.style.left = "0"; clone.style.top = "0"; clone.style.zIndex = "0"; clone.style.width = "900px"; clone.style.minHeight = "1200px"; clone.style.height = "1200px"; const sourceImages = [...node.querySelectorAll<HTMLImageElement>("img")]; const clonedImages = [...clone.querySelectorAll<HTMLImageElement>("img")]; await Promise.all(clonedImages.map(async (image, index) => { const source = sourceImages[index]?.currentSrc || sourceImages[index]?.src || image.src; if (!source) return; try { const response = await fetch(source); if (!response.ok) throw new Error("Image fetch failed"); const blob = await response.blob(); image.src = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(blob); }); } catch { image.src = source; } })); document.body.append(clone); try { await Promise.all(clonedImages.map((image) => image.complete ? Promise.resolve() : image.decode().catch(() => undefined))); await document.fonts.ready; return await toPng(clone, { cacheBust: false, pixelRatio: 1.6, backgroundColor: "#fffaf0" }); } finally { clone.remove(); } }
-  async function captureNodeReliably(node: HTMLElement): Promise<string> {
+  async function captureNodeForPdf(node: HTMLElement, page?: TripScrapbookPage): Promise<string> { const clone = node.cloneNode(true) as HTMLElement; clone.querySelectorAll(".scrapbook-reader-edit").forEach((element) => element.remove()); clone.classList.add("scrapbook-pdf-capture"); clone.style.position = "fixed"; clone.style.left = "0"; clone.style.top = "0"; clone.style.zIndex = "0"; clone.style.width = "900px"; clone.style.minHeight = "1200px"; clone.style.height = "1200px"; if (page) { clone.style.background = "transparent"; clone.style.backgroundColor = "transparent"; clone.style.backgroundImage = "none"; } const sourceImages = [...node.querySelectorAll<HTMLImageElement>("img")]; const clonedImages = [...clone.querySelectorAll<HTMLImageElement>("img")]; await Promise.all(clonedImages.map(async (image, index) => { const source = sourceImages[index]?.currentSrc || sourceImages[index]?.src || image.src; if (!source) return; try { const response = await fetch(source); if (!response.ok) throw new Error("Image fetch failed"); const blob = await response.blob(); image.src = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(blob); }); } catch { image.src = source; } })); document.body.append(clone); try { await Promise.all(clonedImages.map((image) => image.complete ? Promise.resolve() : image.decode().catch(() => undefined))); await document.fonts.ready; const captured = await toPng(clone, { cacheBust: false, pixelRatio: 1.6, backgroundColor: page ? undefined : "#fffaf0" }); return page ? composeScrapbookExport(captured, page, mediaUrls) : captured; } finally { clone.remove(); } }
+  async function captureNodeReliably(node: HTMLElement, page?: TripScrapbookPage): Promise<string> {
     const clone = node.cloneNode(true) as HTMLElement;
     clone.querySelectorAll(".scrapbook-reader-edit").forEach((element) => element.remove());
     clone.classList.add("scrapbook-pdf-capture");
     Object.assign(clone.style, { position: "fixed", left: "0", top: "0", zIndex: "-1", width: "900px", minHeight: "1200px", height: "1200px" });
+    if (page) Object.assign(clone.style, { background: "transparent", backgroundColor: "transparent", backgroundImage: "none" });
     const sourceImages = [...node.querySelectorAll<HTMLImageElement>("img")];
     const clonedImages = [...clone.querySelectorAll<HTMLImageElement>("img")];
     await Promise.all(clonedImages.map(async (image, index) => {
@@ -255,10 +316,11 @@ export default function ScrapbookStudio({ tripName, days, currentMember, media, 
     try {
       await Promise.all(clonedImages.map((image) => image.decode().catch(() => undefined)));
       await document.fonts.ready;
-      const canvas = await html2canvas(clone, { backgroundColor: "#fffaf0", scale: 2, useCORS: true, allowTaint: false, logging: false, width: 900, height: 1200, windowWidth: 900, windowHeight: 1200 });
-      return canvas.toDataURL("image/png", 1);
+      const canvas = await html2canvas(clone, { backgroundColor: page ? null : "#fffaf0", scale: 2, useCORS: true, allowTaint: false, logging: false, width: 900, height: 1200, windowWidth: 900, windowHeight: 1200 });
+      const captured = canvas.toDataURL("image/png", 1);
+      return page ? await composeScrapbookExport(captured, page, mediaUrls) : captured;
     } catch {
-      return await captureNodeForPdf(node);
+      return await captureNodeForPdf(node, page);
     } finally { clone.remove(); }
   }
   function addWallPhoto() { if (!wallPhotoId) return; addElement("photo", wallPhotoId, { caption: wallPhotoCaption.trim(), emoji: wallPhotoEmoji.trim(), attachment: wallPhotoDecoration, frame: "polaroid" }); setWallPhotoId(""); setWallPhotoCaption(""); setWallPhotoEmoji("✨"); setWallPhotoDecoration("tape"); }
