@@ -19,7 +19,7 @@ const templateBackgrounds: Record<Template, string> = {
   postcard: "repeating-linear-gradient(0deg, rgba(70,112,132,.08) 0 1px, transparent 1px 5px)",
   film: "url(\"./film-frame.png\") center / 100% 100% no-repeat",
 };
-const templatePaperColours: Record<Template, string> = { blank: papers[0], journal: papers[0], pinboard: papers[1], "photo-wall": papers[3], postcard: papers[5], film: "#393939" };
+const templatePaperColours: Record<Template, string> = { blank: papers[0], journal: papers[0], pinboard: papers[1], "photo-wall": papers[3], postcard: papers[5], film: "#fff7e8" };
 const textStyles: Array<NonNullable<TripScrapbookPageElement["textStyle"]>> = ["classic", "handwritten", "cutout", "outline", "label"];
 const attachments: Array<NonNullable<TripScrapbookPageElement["attachment"]>> = ["none", "tape", "pin", "clip", "postmark"];
 const frames: Array<NonNullable<TripScrapbookPageElement["frame"]>> = ["none", "white", "polaroid", "film", "postcard"];
