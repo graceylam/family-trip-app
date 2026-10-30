@@ -549,6 +549,14 @@ button { cursor: pointer; }
 .expenses-table tfoot th { font-size: .68rem; letter-spacing: .07em; text-transform: uppercase; }
 .expenses-table tfoot td:last-child small { display: block; margin-top: 3px; color: var(--muted); font-size: .58rem; }
 .expense-table-edit { display: block; margin-top: 5px; padding: 0; border: 0; color: var(--forest); background: transparent; font-size: .62rem; font-weight: 800; text-decoration: underline; text-underline-offset: 2px; }
+.expense-table-actions { display: flex; align-items: center; gap: 9px; }
+.expense-table-actions button { padding: 5px 0; border: 0; color: var(--forest); background: transparent; font-size: .64rem; font-weight: 850; text-decoration: underline; text-underline-offset: 3px; }
+.expense-table-actions button.danger { color: #9a3f31; }
+.expenses-table .expense-table-edit-row td { padding: 10px; background: #f3f7f4; white-space: normal; }
+.expense-table-editor { display: grid; gap: 10px; padding: 12px; border: 1px solid #b8c9bd; border-radius: 13px; background: #fff; }
+.expense-table-editor-context { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; color: var(--ink); }
+.expense-table-editor-context span { color: var(--muted); font-size: .66rem; }
+.expense-table-editor .money-input { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 6px; }
 .expense-category { display: inline-block; padding: 5px 8px; border-radius: 99px; color: var(--forest); background: var(--sage); font-size: .65rem; font-weight: 800; }
 .expenses-empty { display: grid; justify-items: center; gap: 7px; padding: 48px 20px; border-top: 1px solid var(--line); color: var(--muted); text-align: center; }
 .expenses-empty span { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 50%; color: white; background: #91aa99; font-family: Georgia, serif; font-size: 1.3rem; }

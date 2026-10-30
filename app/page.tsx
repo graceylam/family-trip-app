@@ -510,6 +510,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
   const [newExpenseLocalCurrency, setNewExpenseLocalCurrency] = useState(accountTrip.defaultCurrency || "EUR");
   const [newExpenseMemberId, setNewExpenseMemberId] = useState("");
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [editingExpenseLocation, setEditingExpenseLocation] = useState<{ dayId: string; stopId: string } | null>(null);
   const [expenseEditDraft, setExpenseEditDraft] = useState({ item: "", amount: "", category: expenseCategories[0], localCurrency: "EUR" });
   const [expenseConversionState, setExpenseConversionState] = useState<"idle" | "converting">("idle");
   const [expenseConversionError, setExpenseConversionError] = useState<string | null>(null);
@@ -1944,6 +1945,16 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
     updateSelectedStop({ expenses: (selectedStop.expenses ?? []).filter((item) => item.id !== expenseId) });
   }
 
+  function deleteExpenseFromTable(dayId: string, stopId: string, expenseId: string) {
+    if (!currentMember) return;
+    const stop = days.find((day) => day.id === dayId)?.stops.find((item) => item.id === stopId);
+    const expense = (stop?.expenses ?? []).find((item) => item.id === expenseId);
+    if (!stop || !expense || (!isAdmin && expense.memberId !== currentMember.id)) return;
+    if (!window.confirm(`Delete “${expense.item}”? This cannot be undone.`)) return;
+    updateStopInDay(dayId, stopId, { expenses: (stop.expenses ?? []).filter((item) => item.id !== expenseId) });
+    if (editingExpenseId === expenseId) cancelEditingExpense();
+  }
+
   function startEditingExpense(expense: TripExpense) {
     if (!currentMember || (!isAdmin && expense.memberId !== currentMember.id)) return;
     setExpenseEditDraft({
@@ -1958,20 +1969,23 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
 
   function cancelEditingExpense() {
     setEditingExpenseId(null);
+    setEditingExpenseLocation(null);
     setExpenseConversionError(null);
   }
 
   function openExpenseEditor(dayId: string, stopId: string, expense: TripExpense) {
     if (!currentMember || (!isAdmin && expense.memberId !== currentMember.id)) return;
-    setSelectedDayId(dayId);
-    setSelectedStopId(stopId);
     startEditingExpense(expense);
-    setActiveTab("itinerary");
+    setEditingExpenseLocation({ dayId, stopId });
   }
 
-  async function saveEditedExpense(expenseId: string) {
-    if (!currentMember || !selectedStop) return;
-    const existingExpense = (selectedStop.expenses ?? []).find((expense) => expense.id === expenseId);
+  async function saveEditedExpense(expenseId: string, location = editingExpenseLocation) {
+    if (!currentMember) return;
+    const targetDayId = location?.dayId ?? selectedDay?.id;
+    const targetStopId = location?.stopId ?? selectedStop?.id;
+    const targetStop = days.find((day) => day.id === targetDayId)?.stops.find((stop) => stop.id === targetStopId);
+    if (!targetDayId || !targetStopId || !targetStop) return;
+    const existingExpense = (targetStop.expenses ?? []).find((expense) => expense.id === expenseId);
     if (!existingExpense || (!isAdmin && existingExpense.memberId !== currentMember.id)) return;
     const item = expenseEditDraft.item.trim();
     const localAmount = Number(expenseEditDraft.amount);
@@ -1991,8 +2005,8 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       setExpenseConversionError(`Expense updated in its local currency, but ${account.homeCurrency} conversion is waiting. Use Refresh conversions from the Expenses tab when online.`);
     }
 
-    updateSelectedStop({
-      expenses: (selectedStop.expenses ?? []).map((expense) => expense.id === expenseId ? {
+    updateStopInDay(targetDayId, targetStopId, {
+      expenses: (targetStop.expenses ?? []).map((expense) => expense.id === expenseId ? {
         ...expense,
         item,
         category: expenseEditDraft.category,
@@ -2005,6 +2019,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
       } : expense),
     });
     setEditingExpenseId(null);
+    setEditingExpenseLocation(null);
     setExpenseConversionState("idle");
   }
 
@@ -3243,21 +3258,35 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
           <div className="expenses-table-card">
             <div className="expenses-table-scroll">
               <table className="expenses-table">
-                <thead><tr><th>Date</th><th>Item</th><th>Location</th><th>Category</th><th>Person</th><th>Local Currency</th><th>Home Currency</th></tr></thead>
+                <thead><tr><th>Date</th><th>Item</th><th>Location</th><th>Category</th><th>Person</th><th>Local Currency</th><th>Home Currency</th><th>Actions</th></tr></thead>
                 <tbody>
                   {filteredExpenseRows.map(({ day, dayIndex, stop, stopIndex, expense }) => (
-                    <tr key={expense.id}>
-                      <td data-label="Date"><time dateTime={day.date}>{expenseDate(day.date)}</time></td>
-                      <td data-label="Item">
-                        <strong>{expense.item}</strong>
-                        {(isAdmin || expense.memberId === currentMember?.id) && <button className="expense-table-edit" onClick={() => openExpenseEditor(day.id, stop.id, expense)} aria-label={`Edit ${expense.item} from Day ${dayIndex + 1}, Stop ${stopIndex + 1}`}>Edit</button>}
-                      </td>
-                      <td data-label="Location">{stop.title}</td>
-                      <td data-label="Category"><span className="expense-category">{expense.category}</span></td>
-                      <td data-label="Person">{expense.memberName}</td>
-                      <td data-label="Local Currency">{expenseMoney(expense.localAmount, expense.localCurrency)}</td>
-                      <td data-label="Home Currency">{expenseMoney(expense.homeAmount, expense.homeCurrency || account.homeCurrency)}{expense.exchangeRateDate && <small>Rate dated {expense.exchangeRateDate}</small>}</td>
-                    </tr>
+                    editingExpenseId === expense.id && editingExpenseLocation?.dayId === day.id && editingExpenseLocation.stopId === stop.id ? (
+                      <tr className="expense-table-edit-row" key={expense.id}>
+                        <td colSpan={8}>
+                          <div className="expense-table-editor">
+                            <div className="expense-table-editor-context"><strong>Editing {expense.item}</strong><span>Day {dayIndex + 1} · Stop {stopIndex + 1}: {stop.title} · {expense.memberName}</span></div>
+                            <div className="expense-edit-grid">
+                              <label><span>Item</span><input value={expenseEditDraft.item} onChange={(event) => setExpenseEditDraft((draft) => ({ ...draft, item: event.target.value }))} aria-label="Edit expense item" /></label>
+                              <label><span>Amount</span><div className="money-input"><select value={expenseEditDraft.localCurrency} onChange={(event) => setExpenseEditDraft((draft) => ({ ...draft, localCurrency: event.target.value }))} aria-label="Edit expense currency">{currencyOptions.map((currency) => <option key={currency}>{currency}</option>)}</select><input type="number" inputMode="decimal" min="0" step="0.01" value={expenseEditDraft.amount} onChange={(event) => setExpenseEditDraft((draft) => ({ ...draft, amount: event.target.value }))} aria-label="Edit expense amount" /></div></label>
+                              <label><span>Category</span><select value={expenseEditDraft.category} onChange={(event) => setExpenseEditDraft((draft) => ({ ...draft, category: event.target.value }))} aria-label="Edit expense category">{expenseCategories.map((category) => <option key={category}>{category}</option>)}</select></label>
+                            </div>
+                            <div className="expense-edit-actions"><button className="text-button" onClick={cancelEditingExpense} disabled={expenseConversionState === "converting"}>Cancel</button><button className="primary-button" onClick={() => void saveEditedExpense(expense.id, { dayId: day.id, stopId: stop.id })} disabled={!expenseEditDraft.item.trim() || !(Number(expenseEditDraft.amount) > 0) || expenseConversionState === "converting"}>{expenseConversionState === "converting" ? `Updating ${account.homeCurrency}…` : "Save expense"}</button></div>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr key={expense.id}>
+                        <td data-label="Date"><time dateTime={day.date}>{expenseDate(day.date)}</time></td>
+                        <td data-label="Item"><strong>{expense.item}</strong></td>
+                        <td data-label="Location">{stop.title}</td>
+                        <td data-label="Category"><span className="expense-category">{expense.category}</span></td>
+                        <td data-label="Person">{expense.memberName}</td>
+                        <td data-label="Local Currency">{expenseMoney(expense.localAmount, expense.localCurrency)}</td>
+                        <td data-label="Home Currency">{expenseMoney(expense.homeAmount, expense.homeCurrency || account.homeCurrency)}{expense.exchangeRateDate && <small>Rate dated {expense.exchangeRateDate}</small>}</td>
+                        <td data-label="Actions">{(isAdmin || expense.memberId === currentMember?.id) && <div className="expense-table-actions"><button onClick={() => openExpenseEditor(day.id, stop.id, expense)} aria-label={`Edit ${expense.item} from Day ${dayIndex + 1}, Stop ${stopIndex + 1}`}>Edit</button><button className="danger" onClick={() => deleteExpenseFromTable(day.id, stop.id, expense.id)} aria-label={`Delete ${expense.item} from Day ${dayIndex + 1}, Stop ${stopIndex + 1}`}>Delete</button></div>}</td>
+                      </tr>
+                    )
                   ))}
                 </tbody>
                 {filteredExpenseRows.length > 0 && (
@@ -3269,6 +3298,7 @@ function TripWorkspace({ account, accountTrip, onBackToTrips }: TripWorkspacePro
                         <strong>{expenseMoney(expenseTotals.homeAmount, account.homeCurrency)}</strong>
                         {expenseTotals.missingHomeAmounts > 0 && <small>{expenseTotals.missingHomeAmounts} awaiting conversion</small>}
                       </td>
+                      <td />
                     </tr>
                   </tfoot>
                 )}
